@@ -325,6 +325,14 @@ export default function Player() {
             config={{
               youtube: { playerVars: { showinfo: 1, controls: 0 } },
               vimeo: { playerOptions: { controls: false } },
+              twitch: {
+                options: {
+                  parent:
+                    typeof window !== "undefined"
+                      ? [window.location.hostname]
+                      : [],
+                },
+              },
             }}
           />
         )}
