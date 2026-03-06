@@ -66,18 +66,20 @@ export default function Player() {
     setIsBuffering(false);
   }, [room?.currentMediaId]);
 
+  // In strict server state, we don't emit commands from native events
+  const emitCommand = (type: string, payload: any) => {
+    lastStateEmittedRef.current = {
+      status: type,
+      position: payload.position,
+      time: Date.now(),
+    };
+    sendCommand(type, payload);
+  };
+
   useEffect(() => {
     if (!playback || !isReady || seeking) return;
 
     const syncPlayback = () => {
-      // Don't force sync if we recently emitted a command (trust optimistic UI)
-      if (
-        lastStateEmittedRef.current &&
-        Date.now() - lastStateEmittedRef.current.time < 1500
-      ) {
-        return;
-      }
-
       const currentServerTime = Date.now() + serverClockOffset;
       const currentPosition = getAccurateTime();
 
@@ -89,7 +91,6 @@ export default function Player() {
         setDrift(currentDrift);
 
         if (!playing) {
-          ignoreNextPlayPauseEvent.current = true;
           setPlaying(true);
         }
 
@@ -101,7 +102,6 @@ export default function Player() {
         setDrift(currentDrift);
 
         if (playing) {
-          ignoreNextPlayPauseEvent.current = true;
           setPlaying(false);
         }
 
@@ -109,12 +109,10 @@ export default function Player() {
           performProgrammaticSeek(playback.basePosition);
         }
       } else if (playback.status === "buffering") {
-        // Someone else buffering. We should pause and sync position.
         const currentDrift = Math.abs(playback.basePosition - currentPosition);
         setDrift(currentDrift);
 
         if (playing) {
-          ignoreNextPlayPauseEvent.current = true;
           setPlaying(false);
         }
 
@@ -125,7 +123,7 @@ export default function Player() {
     };
 
     syncPlayback();
-    const interval = setInterval(syncPlayback, 1000); // Tighter sync loop
+    const interval = setInterval(syncPlayback, 1000);
     return () => clearInterval(interval);
   }, [
     playback,
@@ -137,26 +135,19 @@ export default function Player() {
     serverClockOffset,
   ]);
 
-  const emitCommand = (type: string, payload: any) => {
-    lastStateEmittedRef.current = {
-      status: type,
-      position: payload.position,
-      time: Date.now(),
-    };
-    sendCommand(type, payload);
-  };
-
   const handlePlay = () => {
     if (!room || !participantId || !canControl) return;
-    ignoreNextPlayPauseEvent.current = true;
-    setPlaying(true);
+    // We do NOT setPlaying(true) locally anymore. We wait for the server.
+    // Instead we trigger visual buffering if playing state hasn't applied yet.
+    setIsBuffering(true);
     emitCommand("play", { position: getAccurateTime() });
   };
 
   const handlePause = () => {
     if (!room || !participantId || !canControl) return;
-    ignoreNextPlayPauseEvent.current = true;
-    setPlaying(false);
+    // We do NOT setPlaying(false) locally anymore. We wait for the server.
+    // Visual indicator:
+    setIsBuffering(true);
     emitCommand("pause", { position: getAccurateTime() });
   };
 
@@ -268,23 +259,13 @@ export default function Player() {
           }}
           onPlay={() => {
             setIsBuffering(false);
-            if (ignoreNextPlayPauseEvent.current) {
-              ignoreNextPlayPauseEvent.current = false;
-              return;
-            }
-            if (canControl && playback?.status !== "playing") {
-              emitCommand("play", { position: getAccurateTime() });
-            }
+            // Native play events should NOT broadcast state to the room.
+            // Only user intents (handlePlay) broadcast state.
           }}
           onPause={() => {
             setIsBuffering(false);
-            if (ignoreNextPlayPauseEvent.current) {
-              ignoreNextPlayPauseEvent.current = false;
-              return;
-            }
-            if (canControl && playback?.status !== "paused") {
-              emitCommand("pause", { position: getAccurateTime() });
-            }
+            // Native pause events should NOT broadcast state to the room.
+            // Only user intents (handlePause) broadcast state.
           }}
           style={{ position: "absolute", top: 0, left: 0 }}
           config={{
