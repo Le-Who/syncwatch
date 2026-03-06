@@ -300,17 +300,7 @@ app.prepare().then(() => {
       const participant = room.participants[currentParticipantId];
       if (!participant) return;
 
-      // Stale event rejection logic
-      if (sequence !== undefined && sequence < room.sequence) {
-        // Client sent a stale command (e.g., delayed in transit)
-        socket.emit("room_state", { room, serverTime: Date.now() });
-        return;
-      }
-      if (sequence !== undefined) {
-        room.sequence = sequence;
-      } else {
-        room.sequence++;
-      }
+      room.sequence++;
 
       // Permission checks
       const isOwnerOrMod =

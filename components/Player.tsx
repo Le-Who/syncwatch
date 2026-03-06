@@ -30,10 +30,14 @@ export default function Player() {
   const [isBuffering, setIsBuffering] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [drift, setDrift] = useState(0);
-  
+
   // To avoid loopbacks, track manually initiated actions vs programmatic state syncs
   const ignoreNextPlayPauseEvent = useRef(false);
-  const lastStateEmittedRef = useRef<{ status: string, position: number, time: number } | null>(null);
+  const lastStateEmittedRef = useRef<{
+    status: string;
+    position: number;
+    time: number;
+  } | null>(null);
 
   const currentMedia = room?.playlist.find(
     (item) => item.id === room.currentMediaId,
@@ -67,7 +71,10 @@ export default function Player() {
 
     const syncPlayback = () => {
       // Don't force sync if we recently emitted a command (trust optimistic UI)
-      if (lastStateEmittedRef.current && Date.now() - lastStateEmittedRef.current.time < 1500) {
+      if (
+        lastStateEmittedRef.current &&
+        Date.now() - lastStateEmittedRef.current.time < 1500
+      ) {
         return;
       }
 
@@ -75,7 +82,9 @@ export default function Player() {
       const currentPosition = getAccurateTime();
 
       if (playback.status === "playing") {
-        const expectedPosition = playback.basePosition + (currentServerTime - playback.baseTimestamp) / 1000;
+        const expectedPosition =
+          playback.basePosition +
+          (currentServerTime - playback.baseTimestamp) / 1000;
         const currentDrift = Math.abs(expectedPosition - currentPosition);
         setDrift(currentDrift);
 
@@ -118,21 +127,35 @@ export default function Player() {
     syncPlayback();
     const interval = setInterval(syncPlayback, 1000); // Tighter sync loop
     return () => clearInterval(interval);
-  }, [playback, isReady, seeking, isBuffering, playing, getAccurateTime, serverClockOffset]);
+  }, [
+    playback,
+    isReady,
+    seeking,
+    isBuffering,
+    playing,
+    getAccurateTime,
+    serverClockOffset,
+  ]);
 
   const emitCommand = (type: string, payload: any) => {
-    lastStateEmittedRef.current = { status: type, position: payload.position, time: Date.now() };
+    lastStateEmittedRef.current = {
+      status: type,
+      position: payload.position,
+      time: Date.now(),
+    };
     sendCommand(type, payload);
   };
 
   const handlePlay = () => {
     if (!room || !participantId || !canControl) return;
+    ignoreNextPlayPauseEvent.current = true;
     setPlaying(true);
     emitCommand("play", { position: getAccurateTime() });
   };
 
   const handlePause = () => {
     if (!room || !participantId || !canControl) return;
+    ignoreNextPlayPauseEvent.current = true;
     setPlaying(false);
     emitCommand("pause", { position: getAccurateTime() });
   };
@@ -147,7 +170,8 @@ export default function Player() {
 
   const handleSeekMouseUp = (e: React.MouseEvent<HTMLInputElement>) => {
     setSeeking(false);
-    const newPosition = parseFloat((e.target as HTMLInputElement).value) * duration;
+    const newPosition =
+      parseFloat((e.target as HTMLInputElement).value) * duration;
     playerRef.current?.seekTo(newPosition, "seconds");
 
     if (canControl) {
@@ -183,7 +207,9 @@ export default function Player() {
       <div className="flex-1 flex flex-col items-center justify-center bg-black text-zinc-500">
         <Play className="w-16 h-16 mb-4 opacity-20" />
         <p>No video selected</p>
-        <p className="text-sm mt-2">Add a video to the playlist to start watching</p>
+        <p className="text-sm mt-2">
+          Add a video to the playlist to start watching
+        </p>
       </div>
     );
   }
@@ -206,13 +232,19 @@ export default function Player() {
           }}
           onError={(e: any) => {
             console.error("Player error:", e);
-            setError("Failed to load media. Check the URL or provider restrictions.");
+            setError(
+              "Failed to load media. Check the URL or provider restrictions.",
+            );
             setIsBuffering(false);
           }}
           onProgress={handleProgress}
           onDuration={(dur: number) => setDuration(dur)}
           onEnded={() => {
-            if (room?.settings.autoplayNext && room.playlist.length > 1 && canControl) {
+            if (
+              room?.settings.autoplayNext &&
+              room.playlist.length > 1 &&
+              canControl
+            ) {
               handleNext();
             }
           }}
@@ -220,8 +252,11 @@ export default function Player() {
             setIsBuffering(true);
             if (canControl && playback?.status !== "buffering") {
               // Only broadcast if we didn't just recently emit a command
-              if (!lastStateEmittedRef.current || Date.now() - lastStateEmittedRef.current.time > 1500) {
-                 emitCommand("buffering", { position: getAccurateTime() });
+              if (
+                !lastStateEmittedRef.current ||
+                Date.now() - lastStateEmittedRef.current.time > 1500
+              ) {
+                emitCommand("buffering", { position: getAccurateTime() });
               }
             }
           }}
@@ -234,8 +269,8 @@ export default function Player() {
           onPlay={() => {
             setIsBuffering(false);
             if (ignoreNextPlayPauseEvent.current) {
-               ignoreNextPlayPauseEvent.current = false;
-               return;
+              ignoreNextPlayPauseEvent.current = false;
+              return;
             }
             if (canControl && playback?.status !== "playing") {
               emitCommand("play", { position: getAccurateTime() });
@@ -244,8 +279,8 @@ export default function Player() {
           onPause={() => {
             setIsBuffering(false);
             if (ignoreNextPlayPauseEvent.current) {
-               ignoreNextPlayPauseEvent.current = false;
-               return;
+              ignoreNextPlayPauseEvent.current = false;
+              return;
             }
             if (canControl && playback?.status !== "paused") {
               emitCommand("pause", { position: getAccurateTime() });
@@ -254,12 +289,12 @@ export default function Player() {
           style={{ position: "absolute", top: 0, left: 0 }}
           config={{
             youtube: { playerVars: { showinfo: 1, controls: 0 } },
-            vimeo: { playerOptions: { controls: false } }
+            vimeo: { playerOptions: { controls: false } },
           }}
         />
 
         {/* Interaction overlay */}
-        <div 
+        <div
           className={`absolute inset-0 z-10 ${canControl ? "cursor-pointer" : "cursor-default"}`}
           onClick={() => {
             if (canControl) {
@@ -271,7 +306,9 @@ export default function Player() {
         {error && (
           <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/80 backdrop-blur-sm">
             <AlertCircle className="w-12 h-12 text-red-500 mb-2" />
-            <p className="text-white font-medium text-lg px-4 text-center">{error}</p>
+            <p className="text-white font-medium text-lg px-4 text-center">
+              {error}
+            </p>
           </div>
         )}
 
@@ -279,8 +316,8 @@ export default function Player() {
           <div className="absolute px-6 py-4 rounded-xl inset-0 z-20 flex flex-col items-center justify-center bg-black/50 backdrop-blur-md transition-opacity">
             <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500 mb-4"></div>
             <p className="text-white font-medium tracking-wide">
-              {playback?.status === "buffering" && !isBuffering 
-                ? `Waiting for ${playback.updatedBy}...` 
+              {playback?.status === "buffering" && !isBuffering
+                ? `Waiting for ${playback.updatedBy}...`
                 : "Buffering..."}
             </p>
           </div>
@@ -304,7 +341,9 @@ export default function Player() {
             onChange={canControl ? handleSeekChange : undefined}
             onMouseUp={canControl ? handleSeekMouseUp : undefined}
             className={`flex-1 h-1.5 bg-zinc-700/50 rounded-full appearance-none [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:rounded-full transition-all ${
-              canControl ? "cursor-pointer hover:[&::-webkit-slider-thumb]:scale-125 [&::-webkit-slider-thumb]:bg-indigo-500" : "cursor-not-allowed [&::-webkit-slider-thumb]:bg-zinc-500"
+              canControl
+                ? "cursor-pointer hover:[&::-webkit-slider-thumb]:scale-125 [&::-webkit-slider-thumb]:bg-indigo-500"
+                : "cursor-not-allowed [&::-webkit-slider-thumb]:bg-zinc-500"
             }`}
           />
           <span className="text-xs text-zinc-300 font-mono w-10">
@@ -315,15 +354,25 @@ export default function Player() {
         <div className="flex items-center justify-between mt-1">
           <div className="flex items-center space-x-5">
             <button
-              onClick={(e) => { e.stopPropagation(); playing ? handlePause() : handlePlay() }}
+              onClick={(e) => {
+                e.stopPropagation();
+                playing ? handlePause() : handlePlay();
+              }}
               disabled={!canControl}
               className={`transition-all hover:scale-110 ${canControl ? "text-white drop-shadow-[0_0_8px_rgba(99,102,241,0.5)]" : "text-zinc-600 cursor-not-allowed"}`}
             >
-              {playing ? <Pause className="w-6 h-6 fill-current" /> : <Play className="w-6 h-6 fill-current ml-0.5" />}
+              {playing ? (
+                <Pause className="w-6 h-6 fill-current" />
+              ) : (
+                <Play className="w-6 h-6 fill-current ml-0.5" />
+              )}
             </button>
 
             <button
-              onClick={(e) => { e.stopPropagation(); handleNext() }}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleNext();
+              }}
               disabled={!canControl}
               className={`transition-colors hover:scale-110 ${canControl ? "text-zinc-200 hover:text-white" : "text-zinc-600 cursor-not-allowed"}`}
             >
@@ -332,10 +381,17 @@ export default function Player() {
 
             <div className="flex items-center space-x-2 group/volume relative">
               <button
-                onClick={(e) => { e.stopPropagation(); setMuted(!muted) }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setMuted(!muted);
+                }}
                 className="text-zinc-300 hover:text-white transition-colors"
               >
-                {muted || volume === 0 ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
+                {muted || volume === 0 ? (
+                  <VolumeX className="w-5 h-5" />
+                ) : (
+                  <Volume2 className="w-5 h-5" />
+                )}
               </button>
               <input
                 type="range"
@@ -350,9 +406,9 @@ export default function Player() {
                 className="w-0 group-hover/volume:w-24 overflow-hidden transition-all duration-300 h-1.5 bg-zinc-600 rounded-full appearance-none [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-2.5 [&::-webkit-slider-thumb]:h-2.5 [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:rounded-full cursor-pointer opacity-0 group-hover/volume:opacity-100"
               />
             </div>
-            
+
             <div className="hidden md:flex ml-4 px-2 py-0.5 rounded text-xs font-medium bg-zinc-800 text-zinc-300 capitalize">
-               {currentMedia.provider}
+              {currentMedia.provider}
             </div>
 
             <div className="text-sm font-medium text-white max-w-[200px] lg:max-w-md truncate ml-2">
@@ -367,8 +423,8 @@ export default function Player() {
                   drift < 0.5
                     ? "bg-emerald-500 shadow-emerald-500/50"
                     : drift < 2
-                    ? "bg-yellow-500 shadow-yellow-500/50"
-                    : "bg-red-500 shadow-red-500/50"
+                      ? "bg-yellow-500 shadow-yellow-500/50"
+                      : "bg-red-500 shadow-red-500/50"
                 }`}
               />
               <span className="text-zinc-300 font-medium hidden sm:inline-block">
@@ -378,7 +434,9 @@ export default function Player() {
             {playback?.updatedBy && (
               <span className="text-xs text-zinc-400 hidden lg:inline-block opacity-80">
                 {playback.status === "playing" ? "Played" : "Paused"} by{" "}
-                <strong className="text-zinc-200 font-medium">{playback.updatedBy}</strong>
+                <strong className="text-zinc-200 font-medium">
+                  {playback.updatedBy}
+                </strong>
               </span>
             )}
             <button

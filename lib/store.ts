@@ -162,26 +162,10 @@ export const useStore = create<AppState>((set, get) => ({
         // we ignore their playback state but we can accept participant changes.
         // For simplicity and safety, we merge the room but keep our command sequence.
 
-        set((state) => {
-          if (state.commandSequence > payload.room.sequence) {
-            // We are ahead. Ignore playback updates from this payload to prevent rubber-banding.
-            return {
-              room: {
-                ...payload.room,
-                playback: state.room
-                  ? state.room.playback
-                  : payload.room.playback,
-                sequence: state.commandSequence,
-              },
-              serverClockOffset: newOffset,
-            };
-          }
-
-          return {
-            room: payload.room,
-            serverClockOffset: newOffset,
-            commandSequence: payload.room.sequence,
-          };
+        set({
+          room: payload.room,
+          serverClockOffset: newOffset,
+          commandSequence: payload.room.sequence,
         });
       },
     );
