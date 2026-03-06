@@ -30,6 +30,7 @@ export default function Player() {
   const [isBuffering, setIsBuffering] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [drift, setDrift] = useState(0);
+  const [hostName, setHostName] = useState<string>("localhost");
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
@@ -68,6 +69,12 @@ export default function Player() {
     setIsReady(false);
     setIsBuffering(false);
   }, [room?.currentMediaId]);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setHostName(window.location.hostname);
+    }
+  }, []);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -327,10 +334,7 @@ export default function Player() {
               vimeo: { playerOptions: { controls: false } },
               twitch: {
                 options: {
-                  parent:
-                    typeof window !== "undefined"
-                      ? [window.location.hostname]
-                      : [],
+                  parent: [hostName],
                 },
               },
             }}
