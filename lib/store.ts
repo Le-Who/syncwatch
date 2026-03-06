@@ -42,6 +42,7 @@ export interface RoomState {
   currentMediaId: string | null;
   playback: PlaybackState;
   version: number;
+  sequence: number;
 }
 
 interface AppState {
@@ -50,6 +51,7 @@ interface AppState {
   isConnected: boolean;
   participantId: string | null;
   nickname: string;
+  commandSequence: number;
   setNickname: (name: string) => void;
   connect: (roomId: string, nickname: string) => void;
   disconnect: () => void;
@@ -63,6 +65,7 @@ export const useStore = create<AppState>((set, get) => ({
   isConnected: false,
   participantId: null,
   nickname: "",
+  commandSequence: 1,
   init: () => {
     if (typeof window !== "undefined") {
       const storedName = localStorage.getItem("nickname") || "";
@@ -101,16 +104,87 @@ export const useStore = create<AppState>((set, get) => ({
     socket.on("connect", () => {
       set({ isConnected: true });
       socket.emit("join_room", { roomId, nickname, participantId: pId });
+
+      // NTP-style clock sync
+      let pings = 0;
+      let offsets: number[] = [];
+
+      const doPing = () => {
+        socket.emit(
+          "ping_time",
+          Date.now(),
+          (serverTime: number, clientTime: number) => {
+            const end = Date.now();
+            const rtt = end - clientTime;
+            // Offset = server point of view - client point of view
+            // If server is 1000 and client is 500, offset is 500 (sync client + 500)
+            const offset = serverTime - (end - rtt / 2);
+
+            offsets.push(offset);
+            if (offsets.length > 5) offsets.shift();
+
+            const sorted = [...offsets].sort((a, b) => a - b);
+            const median = sorted[Math.floor(sorted.length / 2)];
+
+            set({ serverClockOffset: median });
+          },
+        );
+      };
+
+      doPing();
+      const pingInterval = setInterval(() => {
+        pings++;
+        if (pings > 5) {
+          clearInterval(pingInterval);
+        } else {
+          doPing();
+        }
+      }, 1000);
     });
 
     socket.on("disconnect", () => {
       set({ isConnected: false });
     });
 
-    socket.on("room_state", (payload: { room: RoomState; serverTime: number }) => {
-      const offset = payload.serverTime - Date.now();
-      set({ room: payload.room, serverClockOffset: offset });
-    });
+    socket.on(
+      "room_state",
+      (payload: { room: RoomState; serverTime: number }) => {
+        const { serverClockOffset, commandSequence } = get();
+
+        // Update our sync offset if we haven't done NTP yet
+        let newOffset = serverClockOffset;
+        if (serverClockOffset === 0) {
+          newOffset = payload.serverTime - Date.now();
+        }
+
+        // Check for stale event (optimistic UI rejection)
+        // If server sends a sequence less than what we've already sent,
+        // we ignore their playback state but we can accept participant changes.
+        // For simplicity and safety, we merge the room but keep our command sequence.
+
+        set((state) => {
+          if (state.commandSequence > payload.room.sequence) {
+            // We are ahead. Ignore playback updates from this payload to prevent rubber-banding.
+            return {
+              room: {
+                ...payload.room,
+                playback: state.room
+                  ? state.room.playback
+                  : payload.room.playback,
+                sequence: state.commandSequence,
+              },
+              serverClockOffset: newOffset,
+            };
+          }
+
+          return {
+            room: payload.room,
+            serverClockOffset: newOffset,
+            commandSequence: payload.room.sequence,
+          };
+        });
+      },
+    );
 
     socket.on("participant_joined", (participant: Participant) => {
       set((state) => {
@@ -149,9 +223,16 @@ export const useStore = create<AppState>((set, get) => ({
     set({ room: null, isConnected: false });
   },
   sendCommand: (type: string, payload?: any) => {
-    const { room, isConnected } = get();
+    const { room, isConnected, commandSequence } = get();
     if (room && isConnected) {
-      getSocket().emit("command", { roomId: room.id, type, payload });
+      const nextSequence = commandSequence + 1;
+      set({ commandSequence: nextSequence });
+      getSocket().emit("command", {
+        roomId: room.id,
+        type,
+        payload,
+        sequence: nextSequence,
+      });
     }
   },
 }));

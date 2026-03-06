@@ -10,6 +10,7 @@ import {
   Volume2,
   VolumeX,
   Maximize,
+  AlertCircle,
 } from "lucide-react";
 
 const ReactPlayer = dynamic(() => import("react-player"), {
@@ -29,9 +30,10 @@ export default function Player() {
   const [isBuffering, setIsBuffering] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [drift, setDrift] = useState(0);
-  const lastSeekTimeRef = useRef<{ time: number; timestamp: number } | null>(null);
-  const lastCommandTimeRef = useRef<number>(0);
-  const sentBufferingRef = useRef(false);
+  
+  // To avoid loopbacks, track manually initiated actions vs programmatic state syncs
+  const ignoreNextPlayPauseEvent = useRef(false);
+  const lastStateEmittedRef = useRef<{ status: string, position: number, time: number } | null>(null);
 
   const currentMedia = room?.playlist.find(
     (item) => item.id === room.currentMediaId,
@@ -44,109 +46,95 @@ export default function Player() {
     room?.participants[participantId!]?.role === "moderator" ||
     room?.settings.controlMode === "hybrid";
 
-  const safeSendCommand = useCallback((type: string, payload: any) => {
-    lastCommandTimeRef.current = Date.now();
-    sendCommand(type, payload);
-  }, [sendCommand]);
-
   const getAccurateTime = useCallback(() => {
-    if (
-      lastSeekTimeRef.current &&
-      Date.now() - lastSeekTimeRef.current.timestamp < 500
-    ) {
-      return lastSeekTimeRef.current.time;
-    }
     return playerRef.current?.getCurrentTime() || 0;
   }, []);
 
-  // Sync logic
   const performProgrammaticSeek = (position: number) => {
+    ignoreNextPlayPauseEvent.current = true; // A seek might trigger buffering/play events
     playerRef.current?.seekTo(position, "seconds");
   };
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setError(null);
+    setIsReady(false);
+    setIsBuffering(false);
   }, [room?.currentMediaId]);
 
   useEffect(() => {
     if (!playback || !isReady || seeking) return;
 
     const syncPlayback = () => {
-      // Don't force sync if we just sent a command (wait for server roundtrip)
-      if (Date.now() - lastCommandTimeRef.current < 2000) return;
+      // Don't force sync if we recently emitted a command (trust optimistic UI)
+      if (lastStateEmittedRef.current && Date.now() - lastStateEmittedRef.current.time < 1500) {
+        return;
+      }
 
       const currentServerTime = Date.now() + serverClockOffset;
-      if (playback.status === "playing") {
-        if (isBuffering) {
-          // We are buffering, but server thinks we are playing.
-          // Tell the server to wait for us.
-          if (canControl) {
-            safeSendCommand("buffering", { position: getAccurateTime() });
-          }
-          return;
-        }
-        
-        setPlaying(true);
-        const expectedPosition =
-          playback.basePosition + (currentServerTime - playback.baseTimestamp) / 1000;
-        const currentPosition = getAccurateTime();
+      const currentPosition = getAccurateTime();
 
+      if (playback.status === "playing") {
+        const expectedPosition = playback.basePosition + (currentServerTime - playback.baseTimestamp) / 1000;
         const currentDrift = Math.abs(expectedPosition - currentPosition);
         setDrift(currentDrift);
 
-        if (currentDrift > 2.0) {
+        if (!playing) {
+          ignoreNextPlayPauseEvent.current = true;
+          setPlaying(true);
+        }
+
+        if (currentDrift > 2.0 && !isBuffering) {
           performProgrammaticSeek(expectedPosition);
         }
       } else if (playback.status === "paused") {
-        setPlaying(false);
-        const currentPosition = getAccurateTime();
         const currentDrift = Math.abs(playback.basePosition - currentPosition);
         setDrift(currentDrift);
+
+        if (playing) {
+          ignoreNextPlayPauseEvent.current = true;
+          setPlaying(false);
+        }
+
         if (currentDrift > 1.0) {
           performProgrammaticSeek(playback.basePosition);
         }
       } else if (playback.status === "buffering") {
-        const currentPosition = getAccurateTime();
+        // Someone else buffering. We should pause and sync position.
         const currentDrift = Math.abs(playback.basePosition - currentPosition);
         setDrift(currentDrift);
-        if (!isBuffering) {
+
+        if (playing) {
+          ignoreNextPlayPauseEvent.current = true;
           setPlaying(false);
-          if (currentDrift > 1.0) {
-            performProgrammaticSeek(playback.basePosition);
-          }
-        } else {
-          setPlaying(true);
-          if (currentDrift > 5.0) {
-            performProgrammaticSeek(playback.basePosition);
-          }
+        }
+
+        if (currentDrift > 1.0) {
+          performProgrammaticSeek(playback.basePosition);
         }
       }
     };
 
     syncPlayback();
-    const interval = setInterval(syncPlayback, 2000);
+    const interval = setInterval(syncPlayback, 1000); // Tighter sync loop
     return () => clearInterval(interval);
-  }, [playback, isReady, seeking, isBuffering, getAccurateTime, serverClockOffset, canControl, safeSendCommand]);
+  }, [playback, isReady, seeking, isBuffering, playing, getAccurateTime, serverClockOffset]);
+
+  const emitCommand = (type: string, payload: any) => {
+    lastStateEmittedRef.current = { status: type, position: payload.position, time: Date.now() };
+    sendCommand(type, payload);
+  };
 
   const handlePlay = () => {
     if (!room || !participantId || !canControl) return;
-
     setPlaying(true);
-    if (playback?.status === "playing") return;
-
-    const currentTime = getAccurateTime();
-    safeSendCommand("play", { position: currentTime });
+    emitCommand("play", { position: getAccurateTime() });
   };
 
   const handlePause = () => {
     if (!room || !participantId || !canControl) return;
-
     setPlaying(false);
-    if (playback?.status === "paused") return;
-
-    const currentTime = getAccurateTime();
-    safeSendCommand("pause", { position: currentTime });
+    emitCommand("pause", { position: getAccurateTime() });
   };
 
   const handleSeekMouseDown = () => {
@@ -159,56 +147,34 @@ export default function Player() {
 
   const handleSeekMouseUp = (e: React.MouseEvent<HTMLInputElement>) => {
     setSeeking(false);
-    const newPosition =
-      parseFloat((e.target as HTMLInputElement).value) * duration;
-    
-    lastSeekTimeRef.current = { time: newPosition, timestamp: Date.now() };
+    const newPosition = parseFloat((e.target as HTMLInputElement).value) * duration;
     playerRef.current?.seekTo(newPosition, "seconds");
 
-    if (!room || !participantId || !canControl) return;
-    safeSendCommand("seek", { position: newPosition });
+    if (canControl) {
+      emitCommand("seek", { position: newPosition });
+      if (playing) {
+        emitCommand("play", { position: newPosition });
+      }
+    }
   };
 
   const handleProgress = (state: { played: number; playedSeconds: number }) => {
     if (!seeking) {
       setPlayed(state.played);
     }
-    
-    if (isBuffering) {
-      setIsBuffering(false);
-      if (sentBufferingRef.current && canControl) {
-        sentBufferingRef.current = false;
-        if (playback?.status === "playing" || playback?.status === "buffering") {
-          safeSendCommand("play", {
-            position: getAccurateTime(),
-          });
-        }
-      }
-    }
-  };
-
-  const handleDuration = (dur: number) => {
-    setDuration(dur);
-  };
-
-  const handleEnded = () => {
-    if (room?.settings.autoplayNext && room.playlist.length > 1) {
-      safeSendCommand("next", { currentMediaId: room.currentMediaId });
-    }
   };
 
   const handleNext = () => {
-    safeSendCommand("next", { currentMediaId: room?.currentMediaId });
+    emitCommand("next", { currentMediaId: room?.currentMediaId });
   };
 
   const formatTime = (seconds: number) => {
+    if (!seconds || isNaN(seconds)) return "0:00";
     const date = new Date(seconds * 1000);
     const hh = date.getUTCHours();
     const mm = date.getUTCMinutes();
     const ss = date.getUTCSeconds().toString().padStart(2, "0");
-    if (hh) {
-      return `${hh}:${mm.toString().padStart(2, "0")}:${ss}`;
-    }
+    if (hh) return `${hh}:${mm.toString().padStart(2, "0")}:${ss}`;
     return `${mm}:${ss}`;
   };
 
@@ -217,9 +183,7 @@ export default function Player() {
       <div className="flex-1 flex flex-col items-center justify-center bg-black text-zinc-500">
         <Play className="w-16 h-16 mb-4 opacity-20" />
         <p>No video selected</p>
-        <p className="text-sm mt-2">
-          Add a video to the playlist to start watching
-        </p>
+        <p className="text-sm mt-2">Add a video to the playlist to start watching</p>
       </div>
     );
   }
@@ -235,63 +199,66 @@ export default function Player() {
           playing={playing}
           volume={volume}
           muted={muted}
+          progressInterval={500}
           onReady={() => {
             setIsReady(true);
             setError(null);
           }}
           onError={(e: any) => {
             console.error("Player error:", e);
-            setError("Failed to load media. Please check the URL or try another video.");
+            setError("Failed to load media. Check the URL or provider restrictions.");
             setIsBuffering(false);
-            sentBufferingRef.current = false;
           }}
           onProgress={handleProgress}
-          onDuration={handleDuration}
-          onEnded={handleEnded}
+          onDuration={(dur: number) => setDuration(dur)}
+          onEnded={() => {
+            if (room?.settings.autoplayNext && room.playlist.length > 1 && canControl) {
+              handleNext();
+            }
+          }}
           onBuffer={() => {
             setIsBuffering(true);
-            if (playback?.status !== "buffering" && canControl) {
-              sentBufferingRef.current = true;
-              safeSendCommand("buffering", {
-                position: getAccurateTime(),
-              });
+            if (canControl && playback?.status !== "buffering") {
+              // Only broadcast if we didn't just recently emit a command
+              if (!lastStateEmittedRef.current || Date.now() - lastStateEmittedRef.current.time > 1500) {
+                 emitCommand("buffering", { position: getAccurateTime() });
+              }
             }
           }}
           onBufferEnd={() => {
             setIsBuffering(false);
-            if (sentBufferingRef.current && canControl) {
-              sentBufferingRef.current = false;
-              if (playback?.status === "playing" || playback?.status === "buffering") {
-                safeSendCommand("play", {
-                  position: getAccurateTime(),
-                });
-              }
+            if (canControl && playback?.status === "buffering") {
+              emitCommand("play", { position: getAccurateTime() });
             }
           }}
           onPlay={() => {
             setIsBuffering(false);
-            if (sentBufferingRef.current && canControl) {
-              sentBufferingRef.current = false;
-              if (playback?.status === "playing" || playback?.status === "buffering") {
-                safeSendCommand("play", {
-                  position: getAccurateTime(),
-                });
-              }
+            if (ignoreNextPlayPauseEvent.current) {
+               ignoreNextPlayPauseEvent.current = false;
+               return;
+            }
+            if (canControl && playback?.status !== "playing") {
+              emitCommand("play", { position: getAccurateTime() });
             }
           }}
           onPause={() => {
             setIsBuffering(false);
-            sentBufferingRef.current = false;
+            if (ignoreNextPlayPauseEvent.current) {
+               ignoreNextPlayPauseEvent.current = false;
+               return;
+            }
+            if (canControl && playback?.status !== "paused") {
+              emitCommand("pause", { position: getAccurateTime() });
+            }
           }}
           style={{ position: "absolute", top: 0, left: 0 }}
           config={{
-            youtube: {
-              playerVars: { showinfo: 1, controls: 0 },
-            },
+            youtube: { playerVars: { showinfo: 1, controls: 0 } },
+            vimeo: { playerOptions: { controls: false } }
           }}
         />
 
-        {/* Transparent overlay to catch clicks and prevent iframe interaction */}
+        {/* Interaction overlay */}
         <div 
           className={`absolute inset-0 z-10 ${canControl ? "cursor-pointer" : "cursor-default"}`}
           onClick={() => {
@@ -303,80 +270,72 @@ export default function Player() {
 
         {error && (
           <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/80 backdrop-blur-sm">
-            <div className="text-red-500 mb-2">
-              <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-            </div>
-            <p className="text-white font-medium text-lg">{error}</p>
+            <AlertCircle className="w-12 h-12 text-red-500 mb-2" />
+            <p className="text-white font-medium text-lg px-4 text-center">{error}</p>
           </div>
         )}
 
         {(isBuffering || playback?.status === "buffering") && !error && (
-          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="absolute px-6 py-4 rounded-xl inset-0 z-20 flex flex-col items-center justify-center bg-black/50 backdrop-blur-md transition-opacity">
             <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500 mb-4"></div>
-            <p className="text-white font-medium text-lg tracking-wide">
-              {playback?.status === "buffering" && !isBuffering ? `Waiting for ${playback.updatedBy}...` : "Buffering..."}
+            <p className="text-white font-medium tracking-wide">
+              {playback?.status === "buffering" && !isBuffering 
+                ? `Waiting for ${playback.updatedBy}...` 
+                : "Buffering..."}
             </p>
           </div>
         )}
       </div>
 
       {/* Custom Controls Overlay */}
-      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent p-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-30">
-        {/* Seek Bar */}
+      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-zinc-950 via-zinc-900/80 to-transparent p-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-30">
         <div className="flex items-center space-x-3 mb-2">
-          <span className="text-xs text-zinc-300 font-mono">
+          <span className="text-xs text-zinc-300 font-mono w-10 text-right">
             {formatTime(played * duration)}
           </span>
           <input
             type="range"
             min={0}
-            max={0.999999}
+            max={0.999}
             step="any"
             value={played}
             disabled={!canControl}
             onMouseDown={canControl ? handleSeekMouseDown : undefined}
             onChange={canControl ? handleSeekChange : undefined}
             onMouseUp={canControl ? handleSeekMouseUp : undefined}
-            className={`flex-1 h-1 bg-zinc-600 rounded-full appearance-none [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full ${canControl ? "cursor-pointer [&::-webkit-slider-thumb]:bg-indigo-500" : "cursor-not-allowed [&::-webkit-slider-thumb]:bg-zinc-500"}`}
+            className={`flex-1 h-1.5 bg-zinc-700/50 rounded-full appearance-none [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:rounded-full transition-all ${
+              canControl ? "cursor-pointer hover:[&::-webkit-slider-thumb]:scale-125 [&::-webkit-slider-thumb]:bg-indigo-500" : "cursor-not-allowed [&::-webkit-slider-thumb]:bg-zinc-500"
+            }`}
           />
-          <span className="text-xs text-zinc-300 font-mono">
+          <span className="text-xs text-zinc-300 font-mono w-10">
             {formatTime(duration)}
           </span>
         </div>
 
-        {/* Controls */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-4">
+        <div className="flex items-center justify-between mt-1">
+          <div className="flex items-center space-x-5">
             <button
-              onClick={() => (playing ? handlePause() : handlePlay())}
+              onClick={(e) => { e.stopPropagation(); playing ? handlePause() : handlePlay() }}
               disabled={!canControl}
-              className={`transition-colors ${canControl ? "text-white hover:text-indigo-400" : "text-zinc-600 cursor-not-allowed"}`}
+              className={`transition-all hover:scale-110 ${canControl ? "text-white drop-shadow-[0_0_8px_rgba(99,102,241,0.5)]" : "text-zinc-600 cursor-not-allowed"}`}
             >
-              {playing ? (
-                <Pause className="w-6 h-6 fill-current" />
-              ) : (
-                <Play className="w-6 h-6 fill-current" />
-              )}
+              {playing ? <Pause className="w-6 h-6 fill-current" /> : <Play className="w-6 h-6 fill-current ml-0.5" />}
             </button>
 
             <button
-              onClick={handleNext}
+              onClick={(e) => { e.stopPropagation(); handleNext() }}
               disabled={!canControl}
-              className={`transition-colors ${canControl ? "text-zinc-300 hover:text-white" : "text-zinc-600 cursor-not-allowed"}`}
+              className={`transition-colors hover:scale-110 ${canControl ? "text-zinc-200 hover:text-white" : "text-zinc-600 cursor-not-allowed"}`}
             >
               <SkipForward className="w-5 h-5 fill-current" />
             </button>
 
-            <div className="flex items-center space-x-2 group/volume">
+            <div className="flex items-center space-x-2 group/volume relative">
               <button
-                onClick={() => setMuted(!muted)}
+                onClick={(e) => { e.stopPropagation(); setMuted(!muted) }}
                 className="text-zinc-300 hover:text-white transition-colors"
               >
-                {muted || volume === 0 ? (
-                  <VolumeX className="w-5 h-5" />
-                ) : (
-                  <Volume2 className="w-5 h-5" />
-                )}
+                {muted || volume === 0 ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
               </button>
               <input
                 type="range"
@@ -388,10 +347,40 @@ export default function Player() {
                   setVolume(parseFloat(e.target.value));
                   setMuted(false);
                 }}
-                className="w-0 group-hover/volume:w-20 transition-all duration-300 h-1 bg-zinc-600 rounded-full appearance-none [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-2 [&::-webkit-slider-thumb]:h-2 [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:rounded-full cursor-pointer opacity-0 group-hover/volume:opacity-100"
+                className="w-0 group-hover/volume:w-24 overflow-hidden transition-all duration-300 h-1.5 bg-zinc-600 rounded-full appearance-none [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-2.5 [&::-webkit-slider-thumb]:h-2.5 [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:rounded-full cursor-pointer opacity-0 group-hover/volume:opacity-100"
               />
             </div>
+            
+            <div className="hidden md:flex ml-4 px-2 py-0.5 rounded text-xs font-medium bg-zinc-800 text-zinc-300 capitalize">
+               {currentMedia.provider}
+            </div>
 
+            <div className="text-sm font-medium text-white max-w-[200px] lg:max-w-md truncate ml-2">
+              {currentMedia.title}
+            </div>
+          </div>
+
+          <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-2 text-xs mr-2 bg-zinc-900/80 px-2.5 py-1 rounded-full border border-zinc-800">
+              <div
+                className={`w-2 h-2 rounded-full shadow-sm ${
+                  drift < 0.5
+                    ? "bg-emerald-500 shadow-emerald-500/50"
+                    : drift < 2
+                    ? "bg-yellow-500 shadow-yellow-500/50"
+                    : "bg-red-500 shadow-red-500/50"
+                }`}
+              />
+              <span className="text-zinc-300 font-medium hidden sm:inline-block">
+                {drift < 0.5 ? "Synced" : drift < 2 ? "Syncing" : "Unsynced"}
+              </span>
+            </div>
+            {playback?.updatedBy && (
+              <span className="text-xs text-zinc-400 hidden lg:inline-block opacity-80">
+                {playback.status === "playing" ? "Played" : "Paused"} by{" "}
+                <strong className="text-zinc-200 font-medium">{playback.updatedBy}</strong>
+              </span>
+            )}
             <button
               onClick={() => {
                 const elem = document.querySelector(".react-player-wrapper");
@@ -403,49 +392,7 @@ export default function Player() {
                   }
                 }
               }}
-              className="text-zinc-300 hover:text-white transition-colors ml-2"
-            >
-              <Maximize className="w-5 h-5" />
-            </button>
-
-            <div className="text-sm text-zinc-400 max-w-[200px] truncate ml-4">
-              {currentMedia.title}
-            </div>
-          </div>
-
-          <div className="flex items-center space-x-4">
-            <div className="flex items-center space-x-2 text-xs mr-2">
-              <div
-                className={`w-2 h-2 rounded-full ${
-                  drift < 0.5
-                    ? "bg-emerald-500"
-                    : drift < 2
-                    ? "bg-yellow-500"
-                    : "bg-red-500"
-                }`}
-              />
-              <span className="text-zinc-400 hidden sm:inline-block">
-                {drift < 0.5 ? "Synced" : drift < 2 ? "Syncing..." : "Out of sync"}
-              </span>
-            </div>
-            {playback?.updatedBy && (
-              <span className="text-xs text-zinc-500 hidden md:inline-block">
-                {playback.status === "playing" ? "Played" : "Paused"} by{" "}
-                {playback.updatedBy}
-              </span>
-            )}
-            <button
-              onClick={() => {
-                const playerContainer = document.querySelector(
-                  ".react-player-wrapper",
-                );
-                if (playerContainer && !document.fullscreenElement) {
-                  playerContainer.requestFullscreen();
-                } else if (document.exitFullscreen) {
-                  document.exitFullscreen();
-                }
-              }}
-              className="text-zinc-300 hover:text-white transition-colors"
+              className="text-zinc-300 hover:text-white transition-colors hover:scale-110"
             >
               <Maximize className="w-5 h-5" />
             </button>
