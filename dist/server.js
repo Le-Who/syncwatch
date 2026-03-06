@@ -4,7 +4,6 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const http_1 = require("http");
-const url_1 = require("url");
 const next_1 = __importDefault(require("next"));
 const socket_io_1 = require("socket.io");
 const crypto_1 = require("crypto");
@@ -163,8 +162,22 @@ async function loadRoomFromDB(roomId) {
 }
 app.prepare().then(() => {
     const server = (0, http_1.createServer)((req, res) => {
-        const parsedUrl = (0, url_1.parse)(req.url, true);
-        handle(req, res, parsedUrl);
+        try {
+            // Use WHATWG URL API instead of deprecated url.parse
+            const protocol = req.headers["x-forwarded-proto"] || "http";
+            const host = req.headers.host || "localhost";
+            const parsedUrl = new URL(req.url, `${protocol}://${host}`);
+            // Next.js expects { pathname, query } shape originally from url.parse
+            const query = Object.fromEntries(parsedUrl.searchParams.entries());
+            handle(req, res, {
+                pathname: parsedUrl.pathname,
+                query,
+            });
+        }
+        catch (err) {
+            res.statusCode = 400;
+            res.end("Bad Request");
+        }
     });
     const io = new socket_io_1.Server(server, {
         cors: {
