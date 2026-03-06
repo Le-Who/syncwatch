@@ -31,6 +31,9 @@ export default function Player() {
   const [error, setError] = useState<string | null>(null);
   const [drift, setDrift] = useState(0);
 
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
+
   // To avoid loopbacks, track manually initiated actions vs programmatic state syncs
   const ignoreNextPlayPauseEvent = useRef(false);
   const lastStateEmittedRef = useRef<{
@@ -65,6 +68,21 @@ export default function Player() {
     setIsReady(false);
     setIsBuffering(false);
   }, [room?.currentMediaId]);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setDimensions({
+          width: entry.contentRect.width,
+          height: entry.contentRect.height,
+        });
+      }
+    });
+
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, [currentMedia]);
 
   // In strict server state, we don't emit commands from native events
   const emitCommand = (type: string, payload: any) => {
@@ -195,25 +213,24 @@ export default function Player() {
 
   if (!currentMedia) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center bg-transparent relative overflow-hidden">
-        {/* Dynamic backdrop for empty state */}
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(99,102,241,0.08)_0%,transparent_70%)]" />
+      <div className="flex-1 flex flex-col items-center justify-center bg-[#050505] relative overflow-hidden font-mono">
+        {/* Brutalist Grid */}
+        <div className="absolute inset-0 bg-[linear-gradient(rgba(0,229,255,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(0,229,255,0.05)_1px,transparent_1px)] bg-[size:32px_32px] pointer-events-none" />
 
         <div className="relative z-10 flex flex-col items-center max-w-lg w-full px-6">
-          <div className="w-20 h-20 rounded-3xl bg-white/5 border border-white/10 flex items-center justify-center mb-8 shadow-2xl backdrop-blur-sm">
-            <Play className="w-10 h-10 text-indigo-400 opacity-80 ml-1" />
+          <div className="w-24 h-24 bg-[#050505] border-2 border-[#00E5FF] flex items-center justify-center mb-8 shadow-[8px_8px_0_#FF00FF]">
+            <Play className="w-12 h-12 text-[#00E5FF] ml-2" />
           </div>
-          <h2 className="text-2xl font-bold text-white mb-3 tracking-tight">
-            Ready to watch?
+          <h2 className="text-3xl font-bold text-white mb-2 uppercase tracking-widest drop-shadow-[0_0_10px_rgba(0,229,255,0.5)]">
+            Awaiting Signal
           </h2>
-          <p className="text-zinc-400 text-center mb-8 font-light">
-            Drop a video link below to start the party. Everyone in the room
-            will sync up instantly.
+          <p className="text-[#00E5FF] text-center mb-10 text-sm uppercase tracking-wider opacity-80">
+            System ready. Awaiting media input...
           </p>
 
           {canControl ? (
             <form
-              className="w-full relative group"
+              className="w-full relative"
               onSubmit={(e) => {
                 e.preventDefault();
                 const input = e.currentTarget.elements.namedItem(
@@ -225,27 +242,26 @@ export default function Player() {
                 }
               }}
             >
-              <div className="absolute -inset-1 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-2xl blur opacity-25 group-hover:opacity-40 transition duration-1000 group-hover:duration-200" />
-              <div className="relative flex items-center bg-[#0a0a0a] rounded-xl border border-white/10 p-1.5 shadow-2xl">
+              <div className="flex flex-col sm:flex-row items-stretch bg-[#050505] border-2 border-[#FF00FF] shadow-[4px_4px_0_#00E5FF] focus-within:shadow-[8px_8px_0_#00E5FF] transition-shadow">
                 <input
                   name="urlInput"
                   type="url"
-                  placeholder="Paste YouTube, Vimeo, or MP4 link..."
-                  className="w-full bg-transparent px-4 py-3 text-zinc-200 placeholder-zinc-500 focus:outline-none font-light"
+                  placeholder="Paste video stream URL..."
+                  className="flex-1 bg-transparent px-5 py-4 text-white placeholder-zinc-600 focus:outline-none font-mono text-sm uppercase"
                   required
                 />
                 <button
                   type="submit"
-                  className="px-6 py-3 bg-white hover:bg-zinc-200 text-black font-bold rounded-lg transition-all active:scale-95"
+                  className="px-8 py-4 bg-[#FF00FF] hover:bg-white text-black font-bold uppercase tracking-wider transition-colors border-t-2 border-l-2 sm:border-t-0 sm:border-l-2 border-[#FF00FF] hover:border-white"
                 >
-                  Start
+                  Init
                 </button>
               </div>
             </form>
           ) : (
-            <div className="px-6 py-4 rounded-xl bg-white/5 border border-white/10 text-zinc-400 text-sm font-light flex items-center gap-3 backdrop-blur-md">
-              <AlertCircle className="w-5 h-5 text-amber-500" />
-              <span>Only moderators can add videos to this room.</span>
+            <div className="px-6 py-4 bg-[#050505] border-2 border-[#FF00FF] text-[#FF00FF] text-xs font-mono uppercase tracking-wider flex items-center gap-3 shadow-[4px_4px_0_#00E5FF]">
+              <AlertCircle className="w-5 h-5" />
+              <span>Restricted access. Command privileges required.</span>
             </div>
           )}
         </div>
@@ -254,73 +270,68 @@ export default function Player() {
   }
 
   return (
-    <div className="flex-1 flex flex-col bg-black relative group react-player-wrapper">
-      <div className="flex-1 relative">
-        <ReactPlayer
-          ref={playerRef}
-          url={currentMedia.url}
-          width="100%"
-          height="100%"
-          playing={playing}
-          volume={volume}
-          muted={muted}
-          progressInterval={500}
-          onReady={() => {
-            setIsReady(true);
-            setError(null);
-          }}
-          onError={(e: any) => {
-            console.error("Player error:", e);
-            setError(
-              "Failed to load media. Check the URL or provider restrictions.",
-            );
-            setIsBuffering(false);
-          }}
-          onProgress={handleProgress}
-          onDuration={(dur: number) => setDuration(dur)}
-          onEnded={() => {
-            if (
-              room?.settings.autoplayNext &&
-              room.playlist.length > 1 &&
-              canControl
-            ) {
-              handleNext();
-            }
-          }}
-          onBuffer={() => {
-            setIsBuffering(true);
-            if (canControl && playback?.status !== "buffering") {
-              // Only broadcast if we didn't just recently emit a command
+    <div className="flex-1 flex flex-col bg-[#050505] relative group react-player-wrapper border-y-2 lg:border-y-0 lg:border-x-2 border-[#00E5FF] font-mono">
+      <div className="flex-1 relative" ref={containerRef}>
+        {dimensions.width > 0 && dimensions.height > 0 && (
+          <ReactPlayer
+            ref={playerRef}
+            url={currentMedia.url}
+            width={dimensions.width}
+            height={dimensions.height}
+            playing={playing}
+            volume={volume}
+            muted={muted}
+            progressInterval={500}
+            onReady={() => {
+              setIsReady(true);
+              setError(null);
+            }}
+            onError={(e: any) => {
+              console.error("Player error:", e);
+              setError("SYSTEM FAILURE. SIGNAL LOST.");
+              setIsBuffering(false);
+            }}
+            onProgress={handleProgress}
+            onDuration={(dur: number) => setDuration(dur)}
+            onEnded={() => {
               if (
-                !lastStateEmittedRef.current ||
-                Date.now() - lastStateEmittedRef.current.time > 1500
+                room?.settings.autoplayNext &&
+                room.playlist.length > 1 &&
+                canControl
               ) {
-                emitCommand("buffering", { position: getAccurateTime() });
+                handleNext();
               }
-            }
-          }}
-          onBufferEnd={() => {
-            setIsBuffering(false);
-            if (canControl && playback?.status === "buffering") {
-              emitCommand("play", { position: getAccurateTime() });
-            }
-          }}
-          onPlay={() => {
-            setIsBuffering(false);
-            // Native play events should NOT broadcast state to the room.
-            // Only user intents (handlePlay) broadcast state.
-          }}
-          onPause={() => {
-            setIsBuffering(false);
-            // Native pause events should NOT broadcast state to the room.
-            // Only user intents (handlePause) broadcast state.
-          }}
-          style={{ position: "absolute", top: 0, left: 0 }}
-          config={{
-            youtube: { playerVars: { showinfo: 1, controls: 0 } },
-            vimeo: { playerOptions: { controls: false } },
-          }}
-        />
+            }}
+            onBuffer={() => {
+              setIsBuffering(true);
+              if (canControl && playback?.status !== "buffering") {
+                if (
+                  !lastStateEmittedRef.current ||
+                  Date.now() - lastStateEmittedRef.current.time > 1500
+                ) {
+                  emitCommand("buffering", { position: getAccurateTime() });
+                }
+              }
+            }}
+            onBufferEnd={() => {
+              setIsBuffering(false);
+              if (canControl && playback?.status === "buffering") {
+                emitCommand("play", { position: getAccurateTime() });
+              }
+            }}
+            onPlay={() => setIsBuffering(false)}
+            onPause={() => setIsBuffering(false)}
+            style={{ position: "absolute", top: 0, left: 0 }}
+            config={{
+              youtube: { playerVars: { showinfo: 1, controls: 0 } },
+              vimeo: { playerOptions: { controls: false } },
+            }}
+          />
+        )}
+
+        {/* Brutalist Scanline Overlay (pointer-events-none) */}
+        {/* Adds a slight cyber/CRT effect without blocking clicks */}
+        <div className="absolute inset-0 z-0 pointer-events-none bg-[linear-gradient(rgba(0,0,0,0)_50%,rgba(0,0,0,0.1)_50%)] bg-[length:100%_4px]" />
 
         {/* Interaction overlay */}
         <div
@@ -333,156 +344,199 @@ export default function Player() {
         />
 
         {error && (
-          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/80 backdrop-blur-sm">
-            <AlertCircle className="w-12 h-12 text-red-500 mb-2" />
-            <p className="text-white font-medium text-lg px-4 text-center">
+          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-[#050505]/95 backdrop-blur-sm border-4 border-[#FF0000] shadow-[inset_0_0_50px_#FF0000]">
+            <AlertCircle className="w-16 h-16 text-[#FF0000] mb-4 animate-pulse" />
+            <div className="bg-[#FF0000] text-black px-4 py-1 uppercase font-bold text-sm tracking-[0.2em] mb-2">
+              Critical Error
+            </div>
+            <p className="text-[#FF0000] font-mono text-lg uppercase tracking-wider text-center max-w-md">
               {error}
             </p>
           </div>
         )}
 
         {(isBuffering || playback?.status === "buffering") && !error && (
-          <div className="absolute px-6 py-4 rounded-xl inset-0 z-20 flex flex-col items-center justify-center bg-black/50 backdrop-blur-md transition-opacity">
-            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500 mb-4"></div>
-            <p className="text-white font-medium tracking-wide">
+          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-[#050505]/80 backdrop-blur-sm">
+            <div className="w-16 h-16 border-4 border-[#00E5FF] border-t-transparent border-b-[#FF00FF] animate-spin mb-6" />
+            <div className="bg-[#00E5FF] text-black px-3 py-1 text-xs uppercase font-bold tracking-[0.2em] shadow-[0_0_15px_#00E5FF]">
               {playback?.status === "buffering" && !isBuffering
-                ? `Waiting for ${playback.updatedBy}...`
-                : "Buffering..."}
-            </p>
+                ? `Syncing to ${playback.updatedBy}`
+                : "Buffering Stream"}
+            </div>
           </div>
         )}
       </div>
 
-      {/* Custom Controls Overlay */}
-      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-zinc-950 via-zinc-900/80 to-transparent p-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-30">
-        <div className="flex items-center space-x-3 mb-2">
-          <span className="text-xs text-zinc-300 font-mono w-10 text-right">
-            {formatTime(played * duration)}
-          </span>
-          <input
-            type="range"
-            min={0}
-            max={0.999}
-            step="any"
-            value={played}
-            disabled={!canControl}
-            onMouseDown={canControl ? handleSeekMouseDown : undefined}
-            onChange={canControl ? handleSeekChange : undefined}
-            onMouseUp={canControl ? handleSeekMouseUp : undefined}
-            className={`flex-1 h-1.5 bg-zinc-700/50 rounded-full appearance-none [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:rounded-full transition-all ${
-              canControl
-                ? "cursor-pointer hover:[&::-webkit-slider-thumb]:scale-125 [&::-webkit-slider-thumb]:bg-indigo-500"
-                : "cursor-not-allowed [&::-webkit-slider-thumb]:bg-zinc-500"
-            }`}
-          />
-          <span className="text-xs text-zinc-300 font-mono w-10">
-            {formatTime(duration)}
-          </span>
-        </div>
-
-        <div className="flex items-center justify-between mt-1">
-          <div className="flex items-center space-x-5">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                playing ? handlePause() : handlePlay();
-              }}
-              disabled={!canControl}
-              className={`transition-all hover:scale-110 ${canControl ? "text-white drop-shadow-[0_0_8px_rgba(99,102,241,0.5)]" : "text-zinc-600 cursor-not-allowed"}`}
-            >
-              {playing ? (
-                <Pause className="w-6 h-6 fill-current" />
-              ) : (
-                <Play className="w-6 h-6 fill-current ml-0.5" />
-              )}
-            </button>
-
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                handleNext();
-              }}
-              disabled={!canControl}
-              className={`transition-colors hover:scale-110 ${canControl ? "text-zinc-200 hover:text-white" : "text-zinc-600 cursor-not-allowed"}`}
-            >
-              <SkipForward className="w-5 h-5 fill-current" />
-            </button>
-
-            <div className="flex items-center space-x-2 group/volume relative">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setMuted(!muted);
-                }}
-                className="text-zinc-300 hover:text-white transition-colors"
-              >
-                {muted || volume === 0 ? (
-                  <VolumeX className="w-5 h-5" />
-                ) : (
-                  <Volume2 className="w-5 h-5" />
-                )}
-              </button>
+      {/* Brutalist Custom Controls Panel */}
+      <div className="absolute bottom-0 left-0 right-0 p-4 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-300 z-30 font-mono">
+        <div className="bg-[#050505]/95 border-2 border-[#00E5FF] p-3 shadow-[6px_6px_0_#FF00FF] backdrop-blur-md">
+          {/* Timeline */}
+          <div className="flex items-center space-x-4 mb-3">
+            <span className="text-xs text-[#00E5FF] font-bold w-14 text-right">
+              {formatTime(played * duration)}
+            </span>
+            <div className="flex-1 relative h-3 bg-[#111111] border border-[#333333]">
+              <div
+                className="absolute top-0 left-0 h-full bg-[repeating-linear-gradient(45deg,transparent,transparent_4px,#00E5FF_4px,#00E5FF_8px)] transition-all ease-linear"
+                style={{ width: `${played * 100}%` }}
+              />
               <input
                 type="range"
                 min={0}
-                max={1}
+                max={0.999}
                 step="any"
-                value={muted ? 0 : volume}
-                onChange={(e) => {
-                  setVolume(parseFloat(e.target.value));
-                  setMuted(false);
-                }}
-                className="w-0 group-hover/volume:w-24 overflow-hidden transition-all duration-300 h-1.5 bg-zinc-600 rounded-full appearance-none [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-2.5 [&::-webkit-slider-thumb]:h-2.5 [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:rounded-full cursor-pointer opacity-0 group-hover/volume:opacity-100"
-              />
-            </div>
-
-            <div className="hidden md:flex ml-4 px-2 py-0.5 rounded text-xs font-medium bg-zinc-800 text-zinc-300 capitalize">
-              {currentMedia.provider}
-            </div>
-
-            <div className="text-sm font-medium text-white max-w-[200px] lg:max-w-md truncate ml-2">
-              {currentMedia.title}
-            </div>
-          </div>
-
-          <div className="flex items-center space-x-4">
-            <div className="flex items-center space-x-2 text-xs mr-2 bg-zinc-900/80 px-2.5 py-1 rounded-full border border-zinc-800">
-              <div
-                className={`w-2 h-2 rounded-full shadow-sm ${
-                  drift < 0.5
-                    ? "bg-emerald-500 shadow-emerald-500/50"
-                    : drift < 2
-                      ? "bg-yellow-500 shadow-yellow-500/50"
-                      : "bg-red-500 shadow-red-500/50"
+                value={played}
+                disabled={!canControl}
+                onMouseDown={canControl ? handleSeekMouseDown : undefined}
+                onChange={canControl ? handleSeekChange : undefined}
+                onMouseUp={canControl ? handleSeekMouseUp : undefined}
+                className={`absolute inset-0 w-full h-full opacity-0 ${
+                  canControl ? "cursor-pointer" : "cursor-not-allowed"
                 }`}
               />
-              <span className="text-zinc-300 font-medium hidden sm:inline-block">
-                {drift < 0.5 ? "Synced" : drift < 2 ? "Syncing" : "Unsynced"}
-              </span>
             </div>
-            {playback?.updatedBy && (
-              <span className="text-xs text-zinc-400 hidden lg:inline-block opacity-80">
-                {playback.status === "playing" ? "Played" : "Paused"} by{" "}
-                <strong className="text-zinc-200 font-medium">
-                  {playback.updatedBy}
-                </strong>
-              </span>
-            )}
-            <button
-              onClick={() => {
-                const elem = document.querySelector(".react-player-wrapper");
-                if (elem) {
-                  if (document.fullscreenElement) {
-                    document.exitFullscreen();
-                  } else {
-                    elem.requestFullscreen();
+            <span className="text-xs text-[#00E5FF] font-bold w-14 text-left">
+              {formatTime(duration)}
+            </span>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-6">
+              {/* Play/Pause */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  playing ? handlePause() : handlePlay();
+                }}
+                disabled={!canControl}
+                className={`w-10 h-10 flex items-center justify-center border-2 border-inherit transition-all outline-none focus-visible:ring-2 ring-[#00E5FF] ring-offset-2 ring-offset-[#050505]
+                  ${
+                    canControl
+                      ? "border-[#00E5FF] text-[#00E5FF] hover:bg-[#00E5FF] hover:text-black active:translate-y-px active:shadow-none shadow-[2px_2px_0_#FF00FF]"
+                      : "border-zinc-600 text-zinc-600 cursor-not-allowed shadow-[2px_2px_0_rgba(255,255,255,0.1)]"
+                  }`}
+              >
+                {playing ? (
+                  <Pause className="w-5 h-5 fill-current" />
+                ) : (
+                  <Play className="w-5 h-5 fill-current ml-1" />
+                )}
+              </button>
+
+              {/* Next */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleNext();
+                }}
+                disabled={!canControl}
+                className={`transition-colors hover:scale-110 outline-none focus-visible:ring-2 ring-[#00E5FF] rounded-sm
+                  ${canControl ? "text-[#00E5FF] hover:text-[#FF00FF]" : "text-zinc-600 cursor-not-allowed"}`}
+              >
+                <SkipForward className="w-5 h-5 fill-current" />
+              </button>
+
+              {/* Volume */}
+              <div className="flex items-center space-x-3 group/volume relative">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setMuted(!muted);
+                  }}
+                  className="text-[#00E5FF] hover:text-[#FF00FF] transition-colors outline-none focus-visible:ring-2 ring-[#00E5FF] rounded-sm"
+                >
+                  {muted || volume === 0 ? (
+                    <VolumeX className="w-5 h-5" />
+                  ) : (
+                    <Volume2 className="w-5 h-5" />
+                  )}
+                </button>
+                <div className="w-0 group-hover/volume:w-24 overflow-hidden transition-all duration-300 relative h-2 bg-[#111111] border border-[#333333]">
+                  <div
+                    className="absolute top-0 left-0 h-full bg-[#00E5FF]"
+                    style={{ width: `${(muted ? 0 : volume) * 100}%` }}
+                  />
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step="any"
+                    value={muted ? 0 : volume}
+                    onChange={(e) => {
+                      setVolume(parseFloat(e.target.value));
+                      setMuted(false);
+                    }}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  />
+                </div>
+              </div>
+
+              {/* Meta */}
+              <div className="hidden md:flex ml-4 px-2 py-0.5 bg-[#FF00FF] text-black text-[10px] font-bold uppercase tracking-wider shadow-[2px_2px_0_#00E5FF]">
+                {currentMedia.provider}
+              </div>
+
+              <div className="text-xs font-bold text-white max-w-[150px] lg:max-w-xs xl:max-w-md truncate ml-2 uppercase tracking-wide">
+                {currentMedia.title}
+              </div>
+            </div>
+
+            <div className="flex items-center space-x-4">
+              {/* Sync Status Badge */}
+              <div className="hidden md:flex items-center space-x-2 text-[10px] uppercase font-bold mr-2 bg-black px-3 py-1.5 border border-[#333333] min-w-[120px] justify-center">
+                <div
+                  className={`w-2 h-2 ${
+                    drift < 0.5
+                      ? "bg-[#00E5FF] shadow-[0_0_8px_#00E5FF]"
+                      : drift < 2
+                        ? "bg-[#FFD700] shadow-[0_0_8px_#FFD700]"
+                        : "bg-[#FF0000] shadow-[0_0_8px_#FF0000]"
+                  }`}
+                />
+                <span
+                  className={`hidden sm:inline-block ${
+                    drift < 0.5
+                      ? "text-[#00E5FF]"
+                      : drift < 2
+                        ? "text-[#FFD700]"
+                        : "text-[#FF0000]"
+                  }`}
+                >
+                  {drift < 0.5
+                    ? "Sync: Locked"
+                    : drift < 2
+                      ? "Sync: Locking"
+                      : "Sync: Lost"}
+                </span>
+              </div>
+
+              {playback?.updatedBy && (
+                <span className="text-[10px] text-zinc-500 hidden xl:inline-block uppercase tracking-wider border-l border-[#333333] pl-4">
+                  CMD: {playback.status === "playing" ? "PLAY" : "PAUSE"}{" "}
+                  {"// "}
+                  <strong className="text-[#00E5FF] truncate max-w-[100px] inline-block align-bottom">
+                    {playback.updatedBy}
+                  </strong>
+                </span>
+              )}
+
+              {/* Fullscreen */}
+              <button
+                onClick={() => {
+                  const elem = document.querySelector(".react-player-wrapper");
+                  if (elem) {
+                    if (document.fullscreenElement) {
+                      document.exitFullscreen();
+                    } else {
+                      elem.requestFullscreen();
+                    }
                   }
-                }
-              }}
-              className="text-zinc-300 hover:text-white transition-colors hover:scale-110"
-            >
-              <Maximize className="w-5 h-5" />
-            </button>
+                }}
+                className="text-[#00E5FF] hover:text-[#FF00FF] transition-colors hover:scale-110 p-2 outline-none focus-visible:ring-2 ring-[#00E5FF] rounded-sm"
+              >
+                <Maximize className="w-5 h-5" />
+              </button>
+            </div>
           </div>
         </div>
       </div>
