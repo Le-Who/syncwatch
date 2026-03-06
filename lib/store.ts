@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { getSocket } from "./socket";
+import { toast } from "sonner";
 
 export type PlaybackStatus = "playing" | "paused" | "buffering" | "ended";
 
@@ -162,6 +163,40 @@ export const useStore = create<AppState>((set, get) => ({
         // we ignore their playback state but we can accept participant changes.
         // For simplicity and safety, we merge the room but keep our command sequence.
 
+        const previousRoom = get().room;
+
+        // Check for state changes to trigger toasts
+        if (previousRoom) {
+          // Playback status change
+          if (
+            previousRoom.playback.status !== payload.room.playback.status &&
+            payload.room.playback.updatedBy !== get().nickname &&
+            payload.room.playback.updatedBy !== "system"
+          ) {
+            const action =
+              payload.room.playback.status === "playing"
+                ? "▶️ Started playing via"
+                : payload.room.playback.status === "paused"
+                  ? "⏸️ Paused by"
+                  : payload.room.playback.status === "buffering"
+                    ? "⏳ Buffering for"
+                    : "Playback updated by";
+            toast(`${action} ${payload.room.playback.updatedBy}`);
+          }
+
+          // Video added
+          if (previousRoom.playlist.length < payload.room.playlist.length) {
+            const newVideos = payload.room.playlist.filter(
+              (item) => !previousRoom.playlist.some((p) => p.id === item.id),
+            );
+            newVideos.forEach((v) => {
+              if (v.addedBy !== get().nickname) {
+                toast(`🎵 Video added by ${v.addedBy}`);
+              }
+            });
+          }
+        }
+
         set({
           room: payload.room,
           serverClockOffset: newOffset,
@@ -171,6 +206,7 @@ export const useStore = create<AppState>((set, get) => ({
     );
 
     socket.on("participant_joined", (participant: Participant) => {
+      toast(`👋 ${participant.nickname} joined the room`);
       set((state) => {
         if (!state.room) return state;
         return {
@@ -188,6 +224,11 @@ export const useStore = create<AppState>((set, get) => ({
     socket.on("participant_left", ({ participantId }) => {
       set((state) => {
         if (!state.room) return state;
+        const participant = state.room.participants[participantId];
+        if (participant) {
+          toast(`🚪 ${participant.nickname} left the room`);
+        }
+
         const newParticipants = { ...state.room.participants };
         delete newParticipants[participantId];
         return {

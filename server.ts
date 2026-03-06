@@ -1,5 +1,4 @@
 import { createServer } from "http";
-import { parse } from "url";
 import next from "next";
 import { Server as SocketIOServer } from "socket.io";
 import { randomUUID } from "crypto";
@@ -222,8 +221,22 @@ async function loadRoomFromDB(roomId: string): Promise<RoomState | null> {
 
 app.prepare().then(() => {
   const server = createServer((req, res) => {
-    const parsedUrl = parse(req.url!, true);
-    handle(req, res, parsedUrl);
+    try {
+      // Use WHATWG URL API instead of deprecated url.parse
+      const protocol = req.headers["x-forwarded-proto"] || "http";
+      const host = req.headers.host || "localhost";
+      const parsedUrl = new URL(req.url!, `${protocol}://${host}`);
+
+      // Next.js expects { pathname, query } shape originally from url.parse
+      const query = Object.fromEntries(parsedUrl.searchParams.entries());
+      handle(req, res, {
+        pathname: parsedUrl.pathname,
+        query,
+      } as any);
+    } catch (err) {
+      res.statusCode = 400;
+      res.end("Bad Request");
+    }
   });
 
   const io = new SocketIOServer(server, {

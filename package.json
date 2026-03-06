@@ -4,8 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "next build",
-    "start": "NODE_ENV=production tsx server.ts",
+    "build": "next build && tsc --project tsconfig.server.json",
+    "start": "NODE_ENV=production node dist/server.js",
     "lint": "eslint .",
     "clean": "next clean"
   },
@@ -25,6 +25,7 @@
     "react-player": "^2.16.0",
     "socket.io": "^4.8.3",
     "socket.io-client": "^4.8.3",
+    "sonner": "^2.0.7",
     "tailwind-merge": "^3.3.1",
     "uuid": "^13.0.0",
     "zustand": "^5.0.11"

@@ -195,12 +195,60 @@ export default function Player() {
 
   if (!currentMedia) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center bg-black text-zinc-500">
-        <Play className="w-16 h-16 mb-4 opacity-20" />
-        <p>No video selected</p>
-        <p className="text-sm mt-2">
-          Add a video to the playlist to start watching
-        </p>
+      <div className="flex-1 flex flex-col items-center justify-center bg-transparent relative overflow-hidden">
+        {/* Dynamic backdrop for empty state */}
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(99,102,241,0.08)_0%,transparent_70%)]" />
+
+        <div className="relative z-10 flex flex-col items-center max-w-lg w-full px-6">
+          <div className="w-20 h-20 rounded-3xl bg-white/5 border border-white/10 flex items-center justify-center mb-8 shadow-2xl backdrop-blur-sm">
+            <Play className="w-10 h-10 text-indigo-400 opacity-80 ml-1" />
+          </div>
+          <h2 className="text-2xl font-bold text-white mb-3 tracking-tight">
+            Ready to watch?
+          </h2>
+          <p className="text-zinc-400 text-center mb-8 font-light">
+            Drop a video link below to start the party. Everyone in the room
+            will sync up instantly.
+          </p>
+
+          {canControl ? (
+            <form
+              className="w-full relative group"
+              onSubmit={(e) => {
+                e.preventDefault();
+                const input = e.currentTarget.elements.namedItem(
+                  "urlInput",
+                ) as HTMLInputElement;
+                if (input.value.trim()) {
+                  sendCommand("add_to_playlist", { url: input.value.trim() });
+                  input.value = "";
+                }
+              }}
+            >
+              <div className="absolute -inset-1 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-2xl blur opacity-25 group-hover:opacity-40 transition duration-1000 group-hover:duration-200" />
+              <div className="relative flex items-center bg-[#0a0a0a] rounded-xl border border-white/10 p-1.5 shadow-2xl">
+                <input
+                  name="urlInput"
+                  type="url"
+                  placeholder="Paste YouTube, Vimeo, or MP4 link..."
+                  className="w-full bg-transparent px-4 py-3 text-zinc-200 placeholder-zinc-500 focus:outline-none font-light"
+                  required
+                />
+                <button
+                  type="submit"
+                  className="px-6 py-3 bg-white hover:bg-zinc-200 text-black font-bold rounded-lg transition-all active:scale-95"
+                >
+                  Start
+                </button>
+              </div>
+            </form>
+          ) : (
+            <div className="px-6 py-4 rounded-xl bg-white/5 border border-white/10 text-zinc-400 text-sm font-light flex items-center gap-3 backdrop-blur-md">
+              <AlertCircle className="w-5 h-5 text-amber-500" />
+              <span>Only moderators can add videos to this room.</span>
+            </div>
+          )}
+        </div>
       </div>
     );
   }
