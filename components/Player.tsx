@@ -72,7 +72,7 @@ export default function Player() {
   };
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+     
     setError(null);
     setIsReady(false);
     setIsBuffering(false);
@@ -80,7 +80,7 @@ export default function Player() {
 
   useEffect(() => {
     if (typeof window !== "undefined") {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
+       
       setHostName(window.location.hostname);
     }
   }, []);
@@ -143,6 +143,7 @@ export default function Player() {
     syncPlayback();
     const interval = setInterval(syncPlayback, 1000);
     return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     playback,
     isReady,
@@ -194,6 +195,7 @@ export default function Player() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playing, canControl, handlePlay, handlePause]);
 
   const handleSeekMouseDown = () => {
