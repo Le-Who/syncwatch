@@ -28,7 +28,7 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <body
-        className="bg-theme-bg text-theme-text font-theme antialiased selection:bg-theme-accent/30 transition-colors duration-500"
+        className="bg-theme-bg text-theme-text font-theme selection:bg-theme-accent/30 antialiased transition-colors duration-500"
         suppressHydrationWarning
       >
         {/* Subtle cinematic noise overlay */}

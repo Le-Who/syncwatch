@@ -225,15 +225,15 @@ export default function Playlist() {
   };
 
   return (
-    <div className="flex flex-col h-full bg-transparent">
+    <div className="flex h-full flex-col bg-transparent">
       {canEdit && (
-        <div className="p-4 border-b border-theme-border/30 shrink-0 bg-theme-bg/50 backdrop-blur-md">
+        <div className="border-theme-border/30 bg-theme-bg/50 shrink-0 border-b p-4 backdrop-blur-md">
           <form
             onSubmit={(e) => handleAdd(e)}
             className="flex flex-col space-y-3"
           >
-            <div className="flex flex-col relative space-y-2">
-              <div className="flex space-x-2 relative">
+            <div className="relative flex flex-col space-y-2">
+              <div className="relative flex space-x-2">
                 <input
                   type="text"
                   placeholder="Search YouTube or paste any media URL..."
@@ -242,34 +242,34 @@ export default function Playlist() {
                     setUrl(e.target.value);
                     setError(null);
                   }}
-                  className="flex-1 bg-theme-bg/50 backdrop-blur-sm border-2 border-theme-border/50 rounded-theme px-4 py-2.5 text-sm text-theme-text placeholder-theme-muted focus:outline-none focus:border-theme-accent focus:shadow-[0_0_15px_var(--color-theme-accent)] transition-all font-bold tracking-wide pr-10"
+                  className="bg-theme-bg/50 border-theme-border/50 rounded-theme text-theme-text placeholder-theme-muted focus:border-theme-accent flex-1 border-2 px-4 py-2.5 pr-10 text-sm font-bold tracking-wide backdrop-blur-sm transition-all focus:shadow-[0_0_15px_var(--color-theme-accent)] focus:outline-none"
                   required
                 />
                 {isSearching && (
-                  <div className="absolute right-14 top-1/2 -translate-y-1/2 text-theme-accent">
-                    <Loader2 className="w-4 h-4 animate-spin" />
+                  <div className="text-theme-accent absolute top-1/2 right-14 -translate-y-1/2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
                   </div>
                 )}
                 <button
                   type="submit"
                   disabled={!url.trim() || isAdding}
-                  className="p-2.5 bg-theme-accent text-theme-bg hover:shadow-[var(--theme-shadow-hover)] disabled:opacity-50 disabled:cursor-not-allowed rounded-theme transition-all shadow-[var(--theme-shadow)] active:scale-95 flex items-center justify-center min-w-[44px]"
+                  className="bg-theme-accent text-theme-bg rounded-theme flex min-w-[44px] items-center justify-center p-2.5 shadow-[var(--theme-shadow)] transition-all hover:shadow-[var(--theme-shadow-hover)] active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
                   title="Search or Add to playlist"
                 >
                   {isAdding ? (
-                    <Loader2 className="w-5 h-5 animate-spin" />
+                    <Loader2 className="h-5 w-5 animate-spin" />
                   ) : url.startsWith("http") ? (
-                    <Plus className="w-5 h-5" />
+                    <Plus className="h-5 w-5" />
                   ) : (
-                    <Search className="w-5 h-5" />
+                    <Search className="h-5 w-5" />
                   )}
                 </button>
               </div>
 
               {/* Search Dropdown */}
               {showDropdown && searchResults.length > 0 && (
-                <div className="absolute top-12 left-0 right-12 mt-1 bg-theme-bg/95 backdrop-blur-xl border-2 border-theme-border rounded-theme shadow-xl z-50 overflow-hidden flex flex-col max-h-[300px] overflow-y-auto">
-                  <div className="px-3 py-2 border-b border-theme-border/30 text-[10px] uppercase tracking-widest font-bold text-theme-muted flex items-center justify-between sticky top-0 backdrop-blur-md bg-theme-bg/90">
+                <div className="bg-theme-bg/95 border-theme-border rounded-theme absolute top-12 right-12 left-0 z-50 mt-1 flex max-h-[300px] flex-col overflow-hidden overflow-y-auto border-2 shadow-xl backdrop-blur-xl">
+                  <div className="border-theme-border/30 text-theme-muted bg-theme-bg/90 sticky top-0 flex items-center justify-between border-b px-3 py-2 text-[10px] font-bold tracking-widest uppercase backdrop-blur-md">
                     <span>YouTube Results</span>
                     <button
                       type="button"
@@ -286,18 +286,18 @@ export default function Playlist() {
                       onClick={() =>
                         handleAdd(undefined, v.url, v.title, v.thumbnail)
                       }
-                      className="w-full text-left px-3 py-3 hover:bg-theme-accent/10 flex items-center space-x-3 border-b border-theme-border/10 last:border-0 transition-colors"
+                      className="hover:bg-theme-accent/10 border-theme-border/10 flex w-full items-center space-x-3 border-b px-3 py-3 text-left transition-colors last:border-0"
                     >
                       <img
                         src={v.thumbnail}
                         alt=""
-                        className="w-16 h-10 object-cover rounded-md border border-theme-border/30 shrink-0"
+                        className="border-theme-border/30 h-10 w-16 shrink-0 rounded-md border object-cover"
                       />
                       <div className="flex flex-col overflow-hidden">
-                        <span className="text-sm font-bold truncate text-theme-text">
+                        <span className="text-theme-text truncate text-sm font-bold">
                           {v.title}
                         </span>
-                        <span className="text-xs text-theme-muted truncate">
+                        <span className="text-theme-muted truncate text-xs">
                           {v.author} • {formatTime(v.duration)}
                         </span>
                       </div>
@@ -307,12 +307,12 @@ export default function Playlist() {
               )}
             </div>
             {error && (
-              <div className="flex items-center space-x-2 text-xs text-red-400 bg-red-500/10 border border-red-500/20 px-3 py-2 rounded-lg backdrop-blur-md">
-                <AlertTriangle className="w-4 h-4" />
+              <div className="flex items-center space-x-2 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-400 backdrop-blur-md">
+                <AlertTriangle className="h-4 w-4" />
                 <span>{error}</span>
               </div>
             )}
-            <div className="text-[10px] text-zinc-500 font-light px-1">
+            <div className="px-1 text-[10px] font-light text-zinc-500">
               Ensure direct media links support CORS headers to prevent playback
               issues.
             </div>
@@ -320,11 +320,11 @@ export default function Playlist() {
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto p-3 scrollbar-thin scrollbar-thumb-zinc-700/50 scrollbar-track-transparent">
+      <div className="scrollbar-thin scrollbar-thumb-zinc-700/50 scrollbar-track-transparent flex-1 overflow-y-auto p-3">
         {room.playlist.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-zinc-600 space-y-4">
-            <div className="w-16 h-16 rounded-2xl bg-white/5 flex items-center justify-center border border-white/5">
-              <PlayCircle className="w-8 h-8 text-zinc-600" />
+          <div className="flex h-full flex-col items-center justify-center space-y-4 text-zinc-600">
+            <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-white/5 bg-white/5">
+              <PlayCircle className="h-8 w-8 text-zinc-600" />
             </div>
             <p className="text-sm font-light">Playlist is empty</p>
           </div>
@@ -339,15 +339,15 @@ export default function Playlist() {
               <Reorder.Item
                 key={item.id}
                 value={item}
-                className={`flex items-center p-2.5 rounded-theme border-2 transition-all ${
+                className={`rounded-theme flex items-center border-2 p-2.5 transition-all ${
                   room.currentMediaId === item.id
                     ? "bg-theme-accent/20 border-theme-accent shadow-[var(--theme-shadow)]"
                     : "bg-theme-bg/40 border-theme-border/30 hover:border-theme-accent hover:bg-theme-bg/60"
                 }`}
               >
                 {canEdit && (
-                  <div className="cursor-grab active:cursor-grabbing p-1.5 text-theme-muted hover:text-theme-accent transition-colors shrink-0">
-                    <GripVertical className="w-4 h-4" />
+                  <div className="text-theme-muted hover:text-theme-accent shrink-0 cursor-grab p-1.5 transition-colors active:cursor-grabbing">
+                    <GripVertical className="h-4 w-4" />
                   </div>
                 )}
 
@@ -355,20 +355,20 @@ export default function Playlist() {
                   <img
                     src={item.thumbnail}
                     alt=""
-                    className="w-16 h-10 object-cover rounded shadow-sm shrink-0 border border-theme-border/30 ml-1"
+                    className="border-theme-border/30 ml-1 h-10 w-16 shrink-0 rounded border object-cover shadow-sm"
                   />
                 ) : (
-                  <div className="w-16 h-10 bg-theme-bg/50 rounded flex items-center justify-center shrink-0 border border-theme-border/30 shadow-inner ml-1">
-                    <PlayCircle className="w-5 h-5 text-theme-muted opacity-50" />
+                  <div className="bg-theme-bg/50 border-theme-border/30 ml-1 flex h-10 w-16 shrink-0 items-center justify-center rounded border shadow-inner">
+                    <PlayCircle className="text-theme-muted h-5 w-5 opacity-50" />
                   </div>
                 )}
 
                 <div
-                  className="flex-1 min-w-0 px-3 cursor-pointer group"
+                  className="group min-w-0 flex-1 cursor-pointer px-3"
                   onClick={() => handlePlay(item.id)}
                 >
                   <p
-                    className={`text-sm font-bold truncate mb-1 transition-colors uppercase tracking-wide ${
+                    className={`mb-1 truncate text-sm font-bold tracking-wide uppercase transition-colors ${
                       room.currentMediaId === item.id
                         ? "text-theme-accent drop-shadow-sm"
                         : "text-theme-text group-hover:text-theme-accent"
@@ -389,15 +389,15 @@ export default function Playlist() {
                         elapsed * room.playback.rate;
                     }
                     return (
-                      <p className="text-[11px] text-theme-muted truncate flex flex-wrap items-center space-x-1.5 font-bold tracking-widest uppercase mb-1">
+                      <p className="text-theme-muted mb-1 flex flex-wrap items-center space-x-1.5 truncate text-[11px] font-bold tracking-widest uppercase">
                         <span className="text-theme-text/70">
                           {item.provider}
                         </span>
-                        <span className="opacity-30 border-l-2 border-theme-border/50 h-3 mx-1"></span>
+                        <span className="border-theme-border/50 mx-1 h-3 border-l-2 opacity-30"></span>
                         <span>BY // {item.addedBy}</span>
                         {item.duration > 0 && (
                           <>
-                            <span className="opacity-30 border-l-2 border-theme-border/50 h-3 mx-1"></span>
+                            <span className="border-theme-border/50 mx-1 h-3 border-l-2 opacity-30"></span>
                             <span className="text-theme-accent/80">
                               {formatTime(currentPos)} /{" "}
                               {formatTime(item.duration)}
@@ -431,7 +431,7 @@ export default function Playlist() {
 
                   if (progress > 0) {
                     return (
-                      <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-theme-border/30 rounded-b-theme overflow-hidden">
+                      <div className="bg-theme-border/30 rounded-b-theme absolute right-0 bottom-0 left-0 h-[3px] overflow-hidden">
                         <div
                           className={`h-full transition-all duration-1000 ${
                             room.currentMediaId === item.id
@@ -449,10 +449,10 @@ export default function Playlist() {
                 {canEdit && (
                   <button
                     onClick={() => handleRemove(item.id)}
-                    className="p-2 opacity-50 hover:opacity-100 hover:text-theme-danger hover:bg-theme-danger/10 rounded-theme transition-all z-10"
+                    className="hover:text-theme-danger hover:bg-theme-danger/10 rounded-theme z-10 p-2 opacity-50 transition-all hover:opacity-100"
                     title="Remove"
                   >
-                    <Trash2 className="w-4 h-4" />
+                    <Trash2 className="h-4 w-4" />
                   </button>
                 )}
               </Reorder.Item>

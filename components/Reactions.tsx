@@ -62,11 +62,11 @@ export default function Reactions() {
   return (
     <>
       {/* Particles Layer */}
-      <div className="absolute inset-0 pointer-events-none z-40 overflow-hidden">
+      <div className="pointer-events-none absolute inset-0 z-40 overflow-hidden">
         {particles.map((p) => (
           <div
             key={p.id}
-            className="absolute bottom-0 text-3xl sm:text-4xl animate-float-up drop-shadow-md"
+            className="animate-float-up absolute bottom-0 text-3xl drop-shadow-md sm:text-4xl"
             style={{
               left: `${p.x}%`,
               animationDuration: `${p.duration}s`,
@@ -78,9 +78,9 @@ export default function Reactions() {
       </div>
 
       {/* Reaction Controls */}
-      <div className="absolute right-4 top-1/2 -translate-y-1/2 z-50 flex flex-col items-center">
+      <div className="absolute top-1/2 right-4 z-50 flex -translate-y-1/2 flex-col items-center">
         {isOpen && (
-          <div className="mb-2 bg-theme-bg/80 backdrop-blur-xl border-2 border-theme-border/50 p-2 rounded-theme shadow-lg flex flex-col-reverse gap-2 animate-in fade-in slide-in-from-bottom-2">
+          <div className="bg-theme-bg/80 border-theme-border/50 rounded-theme animate-in fade-in slide-in-from-bottom-2 mb-2 flex flex-col-reverse gap-2 border-2 p-2 shadow-lg backdrop-blur-xl">
             {EMOJIS.map((emoji) => (
               <button
                 key={emoji}
@@ -88,7 +88,7 @@ export default function Reactions() {
                   sendReaction(emoji);
                   setIsOpen(false);
                 }}
-                className="w-10 h-10 flex items-center justify-center text-xl hover:bg-theme-accent/20 rounded-full transition-colors focus:outline-none focus-visible:ring-2 ring-theme-accent hover:scale-125 origin-center"
+                className="hover:bg-theme-accent/20 ring-theme-accent flex h-10 w-10 origin-center items-center justify-center rounded-full text-xl transition-colors hover:scale-125 focus:outline-none focus-visible:ring-2"
               >
                 {emoji}
               </button>
@@ -97,13 +97,13 @@ export default function Reactions() {
         )}
         <button
           onClick={() => setIsOpen(!isOpen)}
-          className={`w-12 h-12 flex items-center justify-center rounded-full text-theme-text transition-all shadow-[var(--theme-shadow)] focus:outline-none focus-visible:ring-2 ring-theme-accent border-2 border-theme-border/50 backdrop-blur-md ${
+          className={`text-theme-text ring-theme-accent border-theme-border/50 flex h-12 w-12 items-center justify-center rounded-full border-2 shadow-[var(--theme-shadow)] backdrop-blur-md transition-all focus:outline-none focus-visible:ring-2 ${
             isOpen
-              ? "bg-theme-accent text-theme-bg shadow-none scale-95 border-theme-accent"
+              ? "bg-theme-accent text-theme-bg border-theme-accent scale-95 shadow-none"
               : "bg-theme-bg/80 hover:bg-theme-accent/20 hover:border-theme-accent"
           }`}
         >
-          <Smile className="w-6 h-6" />
+          <Smile className="h-6 w-6" />
         </button>
       </div>
     </>

@@ -12,10 +12,10 @@ export function ThemeToggle() {
       onClick={toggleTheme}
       whileHover={{ scale: 1.1 }}
       whileTap={{ scale: 0.9 }}
-      className="fixed bottom-6 right-6 z-50 p-3 rounded-full theme-panel cursor-pointer flex items-center justify-center overflow-hidden group"
+      className="theme-panel group fixed right-6 bottom-6 z-50 flex cursor-pointer items-center justify-center overflow-hidden rounded-full p-3"
       aria-label="Toggle Theme"
     >
-      <div className="relative w-6 h-6 flex items-center justify-center">
+      <div className="relative flex h-6 w-6 items-center justify-center">
         <motion.div
           initial={false}
           animate={{
@@ -26,7 +26,7 @@ export function ThemeToggle() {
           transition={{ duration: 0.3 }}
           className="absolute text-pink-400"
         >
-          <Sparkles className="w-6 h-6" />
+          <Sparkles className="h-6 w-6" />
         </motion.div>
 
         <motion.div
@@ -39,7 +39,7 @@ export function ThemeToggle() {
           transition={{ duration: 0.3 }}
           className="absolute text-[#00E5FF]"
         >
-          <Moon className="w-6 h-6" />
+          <Moon className="h-6 w-6" />
         </motion.div>
       </div>
 

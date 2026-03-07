@@ -257,22 +257,22 @@ export default function Player() {
 
   if (!currentMedia) {
     return (
-      <div className="w-full h-full flex flex-col items-center justify-center bg-transparent relative overflow-hidden font-theme p-4 flex-1">
-        <div className="relative z-10 flex flex-col items-center max-w-lg w-full theme-panel p-8">
-          <div className="w-24 h-24 bg-theme-bg/50 border-2 border-theme-accent flex items-center justify-center mb-8 rounded-full shadow-[var(--theme-shadow)] group-hover:shadow-[var(--theme-shadow-hover)] transition-all">
-            <Play className="w-12 h-12 text-theme-accent ml-2" />
+      <div className="font-theme relative flex h-full w-full flex-1 flex-col items-center justify-center overflow-hidden bg-transparent p-4">
+        <div className="theme-panel relative z-10 flex w-full max-w-lg flex-col items-center p-8">
+          <div className="bg-theme-bg/50 border-theme-accent mb-8 flex h-24 w-24 items-center justify-center rounded-full border-2 shadow-[var(--theme-shadow)] transition-all group-hover:shadow-[var(--theme-shadow-hover)]">
+            <Play className="text-theme-accent ml-2 h-12 w-12" />
           </div>
-          <h2 className="text-3xl font-bold text-theme-text mb-2 uppercase tracking-widest drop-shadow-sm text-center">
+          <h2 className="text-theme-text mb-2 text-center text-3xl font-bold tracking-widest uppercase drop-shadow-sm">
             Awaiting Signal
           </h2>
-          <p className="text-theme-muted text-center mb-10 text-sm uppercase tracking-wider opacity-80">
+          <p className="text-theme-muted mb-10 text-center text-sm tracking-wider uppercase opacity-80">
             System ready. Awaiting media input...
           </p>
 
           {canEditPlaylist ||
           Object.keys(room?.participants || {}).length <= 1 ? (
             <form
-              className="w-full relative"
+              className="relative w-full"
               onSubmit={async (e) => {
                 e.preventDefault();
                 const input = e.currentTarget.elements.namedItem(
@@ -332,25 +332,25 @@ export default function Player() {
                 if (btn) btn.disabled = false;
               }}
             >
-              <div className="flex flex-col sm:flex-row items-stretch bg-theme-bg/50 border-2 border-theme-border/50 rounded-theme shadow-[var(--theme-shadow)] focus-within:shadow-[var(--theme-shadow-hover)] focus-within:border-theme-accent transition-all overflow-hidden relative">
+              <div className="bg-theme-bg/50 border-theme-border/50 rounded-theme focus-within:border-theme-accent relative flex flex-col items-stretch overflow-hidden border-2 shadow-[var(--theme-shadow)] transition-all focus-within:shadow-[var(--theme-shadow-hover)] sm:flex-row">
                 <input
                   name="urlInput"
                   type="url"
                   placeholder="Paste video stream URL..."
-                  className="flex-1 bg-transparent px-5 py-4 text-theme-text placeholder-theme-muted focus:outline-none font-theme text-sm"
+                  className="text-theme-text placeholder-theme-muted font-theme flex-1 bg-transparent px-5 py-4 text-sm focus:outline-none"
                   required
                 />
                 <button
                   type="submit"
-                  className="px-8 py-4 bg-theme-accent hover:filter hover:brightness-110 text-theme-bg font-bold uppercase tracking-wider transition-all sm:border-l-2 border-theme-border/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="bg-theme-accent text-theme-bg border-theme-border/30 px-8 py-4 font-bold tracking-wider uppercase transition-all hover:brightness-110 hover:filter disabled:cursor-not-allowed disabled:opacity-50 sm:border-l-2"
                 >
                   Init
                 </button>
               </div>
             </form>
           ) : (
-            <div className="px-6 py-4 bg-theme-bg/50 border-2 border-theme-danger text-theme-danger text-xs font-theme uppercase tracking-wider flex items-center gap-3 rounded-theme shadow-[var(--theme-shadow)]">
-              <AlertCircle className="w-5 h-5" />
+            <div className="bg-theme-bg/50 border-theme-danger text-theme-danger font-theme rounded-theme flex items-center gap-3 border-2 px-6 py-4 text-xs tracking-wider uppercase shadow-[var(--theme-shadow)]">
+              <AlertCircle className="h-5 w-5" />
               <span>Restricted access. Command privileges required.</span>
             </div>
           )}
@@ -381,29 +381,29 @@ export default function Player() {
   return (
     <div
       ref={containerRef}
-      className="w-full h-full flex flex-col bg-theme-bg relative group react-player-wrapper border-y-2 lg:border-y-0 lg:border-x-2 border-theme-border/50 font-theme flex-1"
+      className="bg-theme-bg group react-player-wrapper border-theme-border/50 font-theme relative flex h-full w-full flex-1 flex-col border-y-2 lg:border-x-2 lg:border-y-0"
     >
       {nativeInteraction && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[60] animate-in slide-in-from-top-4 fade-in">
+        <div className="animate-in slide-in-from-top-4 fade-in absolute top-4 left-1/2 z-[60] -translate-x-1/2">
           <button
             onClick={() => setNativeInteraction(false)}
-            className="bg-theme-danger/90 hover:bg-theme-danger text-theme-bg px-6 py-2 rounded-full font-bold uppercase tracking-widest shadow-[0_0_20px_var(--color-theme-danger)] transition-all flex items-center gap-2"
+            className="bg-theme-danger/90 hover:bg-theme-danger text-theme-bg flex items-center gap-2 rounded-full px-6 py-2 font-bold tracking-widest uppercase shadow-[0_0_20px_var(--color-theme-danger)] transition-all"
           >
-            <ExternalLink className="w-5 h-5" />
+            <ExternalLink className="h-5 w-5" />
             Exit Native Controls
           </button>
         </div>
       )}
 
       <div
-        className="w-full h-full relative flex-1"
+        className="relative h-full w-full flex-1"
         style={{ containerType: "size" } as React.CSSProperties}
         onClick={() => {
           if (qualityMenuOpen) setQualityMenuOpen(false);
         }}
       >
         <div
-          className="absolute top-0 left-0 transition-transform duration-700 origin-top-left"
+          className="absolute top-0 left-0 origin-top-left transition-transform duration-700"
           style={
             currentMedia.provider === "youtube" && forceHighRes
               ? {
@@ -530,9 +530,9 @@ export default function Player() {
 
         {/* Up Next Overlay Layer */}
         {showUpNext && (
-          <div className="absolute bottom-24 right-4 z-40 bg-theme-bg/95 backdrop-blur-md border border-theme-border/50 rounded-theme p-4 shadow-[0_10px_40px_rgba(0,0,0,0.5)] flex items-center space-x-4 animate-in fade-in slide-in-from-right-8 pointer-events-auto">
-            <div className="relative flex items-center justify-center w-12 h-12">
-              <svg className="w-full h-full transform -rotate-90">
+          <div className="bg-theme-bg/95 border-theme-border/50 rounded-theme animate-in fade-in slide-in-from-right-8 pointer-events-auto absolute right-4 bottom-24 z-40 flex items-center space-x-4 border p-4 shadow-[0_10px_40px_rgba(0,0,0,0.5)] backdrop-blur-md">
+            <div className="relative flex h-12 w-12 items-center justify-center">
+              <svg className="h-full w-full -rotate-90 transform">
                 <circle
                   cx="24"
                   cy="24"
@@ -554,15 +554,15 @@ export default function Player() {
                   strokeDashoffset={125 - (125 * (5 - timeRemaining)) / 5}
                 />
               </svg>
-              <span className="absolute text-sm font-bold text-theme-text">
+              <span className="text-theme-text absolute text-sm font-bold">
                 {Math.ceil(timeRemaining)}
               </span>
             </div>
-            <div className="flex flex-col max-w-[200px] truncate pr-4">
-              <span className="text-[10px] uppercase font-bold tracking-widest text-theme-muted">
+            <div className="flex max-w-[200px] flex-col truncate pr-4">
+              <span className="text-theme-muted text-[10px] font-bold tracking-widest uppercase">
                 Up Next
               </span>
-              <span className="text-sm font-bold truncate text-theme-text">
+              <span className="text-theme-text truncate text-sm font-bold">
                 {nextItem?.title}
               </span>
             </div>
@@ -571,7 +571,7 @@ export default function Player() {
                 e.stopPropagation();
                 handleNext();
               }}
-              className="text-theme-bg bg-theme-accent hover:filter hover:brightness-110 px-3 py-1.5 rounded-theme text-xs font-bold uppercase tracking-widest transition-all"
+              className="text-theme-bg bg-theme-accent rounded-theme px-3 py-1.5 text-xs font-bold tracking-widest uppercase transition-all hover:brightness-110 hover:filter"
             >
               Skip
             </button>
@@ -580,7 +580,7 @@ export default function Player() {
 
         {/* Thematic Scanline Overlay - Hidden for Twitch to prevent iframe visibility occlusion blocks */}
         {currentMedia.provider?.toLowerCase() !== "twitch" && (
-          <div className="absolute inset-0 z-0 pointer-events-none mix-blend-overlay opacity-30 bg-[linear-gradient(rgba(0,0,0,0)_50%,rgba(0,0,0,0.1)_50%)] bg-[length:100%_4px]" />
+          <div className="pointer-events-none absolute inset-0 z-0 bg-[linear-gradient(rgba(0,0,0,0)_50%,rgba(0,0,0,0.1)_50%)] bg-[length:100%_4px] opacity-30 mix-blend-overlay" />
         )}
 
         {/* Interaction overlay - Hidden for Twitch because Twitch requires native controls for volume/quality and blocks occluded autoplay */}
@@ -601,12 +601,12 @@ export default function Player() {
           )}
 
         {error && (
-          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-theme-bg/95 backdrop-blur-sm border-4 border-theme-danger shadow-[inset_0_0_50px_var(--color-theme-danger)]">
-            <AlertCircle className="w-16 h-16 text-theme-danger mb-4 animate-pulse" />
-            <div className="bg-theme-danger text-theme-bg px-4 py-1 uppercase font-bold text-sm tracking-[0.2em] mb-2 rounded-full">
+          <div className="bg-theme-bg/95 border-theme-danger absolute inset-0 z-20 flex flex-col items-center justify-center border-4 shadow-[inset_0_0_50px_var(--color-theme-danger)] backdrop-blur-sm">
+            <AlertCircle className="text-theme-danger mb-4 h-16 w-16 animate-pulse" />
+            <div className="bg-theme-danger text-theme-bg mb-2 rounded-full px-4 py-1 text-sm font-bold tracking-[0.2em] uppercase">
               Critical Error
             </div>
-            <p className="text-theme-danger font-theme text-lg uppercase tracking-wider text-center max-w-md">
+            <p className="text-theme-danger font-theme max-w-md text-center text-lg tracking-wider uppercase">
               {error}
             </p>
           </div>
@@ -616,9 +616,9 @@ export default function Player() {
         {(isBuffering || playback?.status === "buffering") &&
           playing &&
           !error && (
-            <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-theme-bg/80 backdrop-blur-sm">
-              <div className="w-16 h-16 border-4 border-theme-accent border-t-transparent border-b-theme-danger rounded-full animate-spin mb-6" />
-              <div className="bg-theme-accent text-theme-bg px-4 py-1 text-xs uppercase font-bold tracking-[0.2em] shadow-[var(--theme-shadow)] rounded-full">
+            <div className="bg-theme-bg/80 absolute inset-0 z-20 flex flex-col items-center justify-center backdrop-blur-sm">
+              <div className="border-theme-accent border-b-theme-danger mb-6 h-16 w-16 animate-spin rounded-full border-4 border-t-transparent" />
+              <div className="bg-theme-accent text-theme-bg rounded-full px-4 py-1 text-xs font-bold tracking-[0.2em] uppercase shadow-[var(--theme-shadow)]">
                 {playback?.status === "buffering" && !isBuffering
                   ? `Syncing to ${playback.updatedBy}`
                   : "Buffering Stream"}
@@ -628,9 +628,9 @@ export default function Player() {
 
         {/* PAUSED Overlay */}
         {!playing && !isBuffering && isReady && !error && (
-          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/40 backdrop-blur-[2px] pointer-events-none transition-opacity duration-300">
-            <div className="w-24 h-24 bg-theme-bg/80 backdrop-blur-md rounded-full flex items-center justify-center border-4 border-theme-accent text-theme-accent shadow-[0_0_30px_var(--color-theme-accent)]">
-              <Play className="w-12 h-12 ml-2" />
+          <div className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/40 backdrop-blur-[2px] transition-opacity duration-300">
+            <div className="bg-theme-bg/80 border-theme-accent text-theme-accent flex h-24 w-24 items-center justify-center rounded-full border-4 shadow-[0_0_30px_var(--color-theme-accent)] backdrop-blur-md">
+              <Play className="ml-2 h-12 w-12" />
             </div>
           </div>
         )}
@@ -638,15 +638,15 @@ export default function Player() {
 
       {/* Custom Controls Panel */}
       {!nativeInteraction && (
-        <div className="absolute bottom-0 left-0 right-0 p-4 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-300 z-[60] font-theme">
-          <div className="bg-theme-bg/80 border-2 border-theme-border/50 p-3 shadow-lg backdrop-blur-md rounded-theme">
+        <div className="font-theme absolute right-0 bottom-0 left-0 z-[60] p-4 opacity-0 transition-opacity duration-300 group-hover:opacity-100 focus-within:opacity-100">
+          <div className="bg-theme-bg/80 border-theme-border/50 rounded-theme border-2 p-3 shadow-lg backdrop-blur-md">
             {/* Timeline */}
-            <div className="flex items-center space-x-4 mb-3">
-              <span className="text-xs text-theme-accent font-bold w-14 text-right">
+            <div className="mb-3 flex items-center space-x-4">
+              <span className="text-theme-accent w-14 text-right text-xs font-bold">
                 {formatTime(played * duration)}
               </span>
               <div
-                className="flex-1 relative h-4 bg-theme-bg/80 border border-theme-border/50 rounded-full overflow-hidden cursor-pointer group/timeline shadow-inner"
+                className="bg-theme-bg/80 border-theme-border/50 group/timeline relative h-4 flex-1 cursor-pointer overflow-hidden rounded-full border shadow-inner"
                 onPointerDown={(e) => {
                   if (
                     !canControl ||
@@ -693,13 +693,13 @@ export default function Player() {
                 }}
               >
                 <motion.div
-                  className="absolute top-0 left-0 h-full bg-gradient-to-r from-theme-accent/80 to-theme-accent shadow-[0_0_12px_var(--color-theme-accent)] rounded-r-full"
+                  className="from-theme-accent/80 to-theme-accent absolute top-0 left-0 h-full rounded-r-full bg-gradient-to-r shadow-[0_0_12px_var(--color-theme-accent)]"
                   style={{ width: `${played * 100}%` }}
                   layout
                   transition={{ type: "tween", ease: "linear", duration: 0.1 }}
                 />
               </div>
-              <span className="text-xs text-theme-accent font-bold w-14 text-left">
+              <span className="text-theme-accent w-14 text-left text-xs font-bold">
                 {formatTime(duration)}
               </span>
             </div>
@@ -713,17 +713,16 @@ export default function Player() {
                     playing ? handlePause() : handlePlay();
                   }}
                   disabled={!canControl}
-                  className={`w-10 h-10 flex items-center justify-center border-2 border-inherit transition-all outline-none focus-visible:ring-2 ring-theme-accent rounded-theme
-                  ${
+                  className={`ring-theme-accent rounded-theme flex h-10 w-10 items-center justify-center border-2 border-inherit transition-all outline-none focus-visible:ring-2 ${
                     canControl
-                      ? "border-theme-accent text-theme-accent hover:bg-theme-accent hover:text-theme-bg active:translate-y-0.5 active:shadow-none shadow-[var(--theme-shadow)]"
+                      ? "border-theme-accent text-theme-accent hover:bg-theme-accent hover:text-theme-bg shadow-[var(--theme-shadow)] active:translate-y-0.5 active:shadow-none"
                       : "border-theme-border text-theme-muted cursor-not-allowed"
                   }`}
                 >
                   {playing ? (
-                    <Pause className="w-5 h-5 fill-current" />
+                    <Pause className="h-5 w-5 fill-current" />
                   ) : (
-                    <Play className="w-5 h-5 fill-current ml-1" />
+                    <Play className="ml-1 h-5 w-5 fill-current" />
                   )}
                 </button>
 
@@ -734,21 +733,20 @@ export default function Player() {
                     handleNext();
                   }}
                   disabled={!canControl}
-                  className={`transition-all hover:scale-110 outline-none focus-visible:ring-2 ring-theme-accent rounded-full
-                  ${canControl ? "text-theme-accent hover:text-theme-danger" : "text-theme-muted cursor-not-allowed"}`}
+                  className={`ring-theme-accent rounded-full transition-all outline-none hover:scale-110 focus-visible:ring-2 ${canControl ? "text-theme-accent hover:text-theme-danger" : "text-theme-muted cursor-not-allowed"}`}
                 >
-                  <SkipForward className="w-5 h-5 fill-current" />
+                  <SkipForward className="h-5 w-5 fill-current" />
                 </button>
 
                 {/* Playback Speed */}
-                <div className="flex items-center space-x-2 relative group/speed">
-                  <button className="text-theme-accent hover:text-theme-danger text-[10px] font-bold uppercase tracking-widest outline-none focus-visible:ring-2 ring-theme-accent rounded-sm px-1.5 py-1 border border-theme-accent/30 transition-colors">
+                <div className="group/speed relative flex items-center space-x-2">
+                  <button className="text-theme-accent hover:text-theme-danger ring-theme-accent border-theme-accent/30 rounded-sm border px-1.5 py-1 text-[10px] font-bold tracking-widest uppercase transition-colors outline-none focus-visible:ring-2">
                     {playback?.rate || 1}x
                   </button>
                   {/* Add a transparent bridge area using pb-2 on the outer container so hovering the gap keeps it open */}
-                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 pb-2 hidden group-hover/speed:flex flex-col z-50">
-                    <div className="bg-theme-bg/95 border-2 border-theme-border/50 rounded-theme shadow-xl backdrop-blur-md overflow-hidden flex flex-col">
-                      <div className="text-[9px] text-theme-muted font-bold text-center py-1.5 border-b border-theme-border/30 tracking-widest uppercase bg-theme-bg/50">
+                  <div className="absolute bottom-full left-1/2 z-50 hidden -translate-x-1/2 flex-col pb-2 group-hover/speed:flex">
+                    <div className="bg-theme-bg/95 border-theme-border/50 rounded-theme flex flex-col overflow-hidden border-2 shadow-xl backdrop-blur-md">
+                      <div className="text-theme-muted border-theme-border/30 bg-theme-bg/50 border-b py-1.5 text-center text-[9px] font-bold tracking-widest uppercase">
                         SPEED
                       </div>
                       {[0.5, 1, 1.25, 1.5, 2].map((r) => (
@@ -761,7 +759,7 @@ export default function Player() {
                             }
                           }}
                           disabled={!canControl}
-                          className={`px-4 py-2.5 text-xs font-bold transition-all border-b border-theme-border/10 last:border-0 hover:bg-theme-accent/20 ${
+                          className={`border-theme-border/10 hover:bg-theme-accent/20 border-b px-4 py-2.5 text-xs font-bold transition-all last:border-0 ${
                             !canControl ? "cursor-not-allowed opacity-50" : ""
                           } ${
                             playback?.rate === r
@@ -777,23 +775,23 @@ export default function Player() {
                 </div>
 
                 {/* Volume */}
-                <div className="flex items-center space-x-3 group/volume relative">
+                <div className="group/volume relative flex items-center space-x-3">
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
                       setMuted(!muted);
                     }}
-                    className="text-theme-accent hover:text-theme-danger transition-colors outline-none focus-visible:ring-2 ring-theme-accent rounded-full"
+                    className="text-theme-accent hover:text-theme-danger ring-theme-accent rounded-full transition-colors outline-none focus-visible:ring-2"
                   >
                     {muted || volume === 0 ? (
-                      <VolumeX className="w-5 h-5" />
+                      <VolumeX className="h-5 w-5" />
                     ) : (
-                      <Volume2 className="w-5 h-5" />
+                      <Volume2 className="h-5 w-5" />
                     )}
                   </button>
-                  <div className="w-0 group-hover/volume:w-24 overflow-hidden transition-all duration-300 relative h-2 bg-theme-bg border border-theme-border/30 rounded-theme">
+                  <div className="bg-theme-bg border-theme-border/30 rounded-theme relative h-2 w-0 overflow-hidden border transition-all duration-300 group-hover/volume:w-24">
                     <div
-                      className="absolute top-0 left-0 h-full bg-theme-accent rounded-theme"
+                      className="bg-theme-accent rounded-theme absolute top-0 left-0 h-full"
                       style={{ width: `${(muted ? 0 : volume) * 100}%` }}
                     />
                     <input
@@ -807,48 +805,48 @@ export default function Player() {
                           setMuted(false);
                         }
                       }}
-                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                      className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
                     />
                   </div>
                 </div>
 
                 {/* Meta */}
-                <div className="hidden md:flex ml-4 px-3 py-0.5 bg-theme-accent text-theme-bg text-[10px] font-bold uppercase tracking-wider rounded-full shadow-sm">
+                <div className="bg-theme-accent text-theme-bg ml-4 hidden rounded-full px-3 py-0.5 text-[10px] font-bold tracking-wider uppercase shadow-sm md:flex">
                   {currentMedia.provider}
                 </div>
 
-                <div className="text-xs font-bold text-theme-text max-w-[150px] lg:max-w-xs xl:max-w-md truncate ml-2 uppercase tracking-wide drop-shadow-sm">
+                <div className="text-theme-text ml-2 max-w-[150px] truncate text-xs font-bold tracking-wide uppercase drop-shadow-sm lg:max-w-xs xl:max-w-md">
                   {currentMedia.title}
                 </div>
               </div>
 
               <div className="flex items-center space-x-4">
                 {/* Quality Settings */}
-                <div className="flex items-center space-x-2 relative group/quality">
+                <div className="group/quality relative flex items-center space-x-2">
                   <button
-                    className={`text-theme-accent hover:text-theme-danger outline-none focus-visible:ring-2 ring-theme-accent rounded-full p-2 transition-transform duration-500 relative ${qualityMenuOpen ? "rotate-90 text-theme-danger" : ""}`}
+                    className={`text-theme-accent hover:text-theme-danger ring-theme-accent relative rounded-full p-2 transition-transform duration-500 outline-none focus-visible:ring-2 ${qualityMenuOpen ? "text-theme-danger rotate-90" : ""}`}
                     onClick={(e) => {
                       e.stopPropagation();
                       setQualityMenuOpen(!qualityMenuOpen);
                     }}
                   >
-                    <Settings className="w-5 h-5" />
+                    <Settings className="h-5 w-5" />
                     {forceHighRes && currentMedia.provider === "youtube" && (
-                      <div className="absolute top-1 right-1 w-2 h-2 rounded-full bg-theme-accent animate-pulse shadow-[0_0_8px_var(--color-theme-accent)]" />
+                      <div className="bg-theme-accent absolute top-1 right-1 h-2 w-2 animate-pulse rounded-full shadow-[0_0_8px_var(--color-theme-accent)]" />
                     )}
                   </button>
 
                   {/* Quality Menu Dialog */}
                   {qualityMenuOpen && (
-                    <div className="absolute bottom-full right-0 mb-4 pb-2 z-50 flex flex-col items-end">
-                      <div className="bg-theme-bg/95 backdrop-blur-xl border border-theme-border/50 rounded-theme shadow-[0_0_40px_rgba(0,0,0,0.5)] overflow-hidden flex flex-col min-w-[220px] animate-in slide-in-from-bottom-2 fade-in">
-                        <div className="text-[10px] text-theme-muted font-bold px-4 py-2 border-b border-theme-border/30 tracking-widest uppercase bg-theme-bg/50">
+                    <div className="absolute right-0 bottom-full z-50 mb-4 flex flex-col items-end pb-2">
+                      <div className="bg-theme-bg/95 border-theme-border/50 rounded-theme animate-in slide-in-from-bottom-2 fade-in flex min-w-[220px] flex-col overflow-hidden border shadow-[0_0_40px_rgba(0,0,0,0.5)] backdrop-blur-xl">
+                        <div className="text-theme-muted border-theme-border/30 bg-theme-bg/50 border-b px-4 py-2 text-[10px] font-bold tracking-widest uppercase">
                           Video Quality
                         </div>
 
                         {currentMedia.provider === "youtube" && (
                           <div className="flex flex-col">
-                            <div className="px-4 py-2 text-[9px] uppercase tracking-widest text-theme-muted border-b border-theme-border/10">
+                            <div className="text-theme-muted border-theme-border/10 border-b px-4 py-2 text-[9px] tracking-widest uppercase">
                               YouTube Override
                             </div>
                             <button
@@ -862,11 +860,11 @@ export default function Player() {
                                     ?.setPlaybackQuality("hd1080");
                                 } catch (err) {}
                               }}
-                              className={`px-4 py-3 text-xs font-bold transition-all text-left flex items-center justify-between border-b border-theme-border/10 hover:bg-theme-accent/20 ${forceHighRes ? "text-theme-accent bg-theme-accent/10 shadow-[inset_2px_0_0_var(--color-theme-accent)]" : "text-theme-text"}`}
+                              className={`border-theme-border/10 hover:bg-theme-accent/20 flex items-center justify-between border-b px-4 py-3 text-left text-xs font-bold transition-all ${forceHighRes ? "text-theme-accent bg-theme-accent/10 shadow-[inset_2px_0_0_var(--color-theme-accent)]" : "text-theme-text"}`}
                             >
                               Ultra (Force 4K)
                               {forceHighRes && (
-                                <div className="w-2 h-2 rounded-full bg-theme-accent shadow-[0_0_5px_currentColor]"></div>
+                                <div className="bg-theme-accent h-2 w-2 rounded-full shadow-[0_0_5px_currentColor]"></div>
                               )}
                             </button>
                           </div>
@@ -874,7 +872,7 @@ export default function Player() {
 
                         {hlsLevels.length > 0 && (
                           <div className="flex flex-col">
-                            <div className="px-4 py-2 text-[9px] uppercase tracking-widest text-theme-muted border-b border-theme-border/10">
+                            <div className="text-theme-muted border-theme-border/10 border-b px-4 py-2 text-[9px] tracking-widest uppercase">
                               Stream Manifest Levels
                             </div>
                             <button
@@ -888,7 +886,7 @@ export default function Player() {
                                 } catch (err) {}
                                 setQualityMenuOpen(false);
                               }}
-                              className={`px-4 py-3 text-xs font-bold transition-all text-left border-b border-theme-border/10 hover:bg-theme-accent/20 ${currentHlsLevel === -1 ? "text-theme-accent bg-theme-accent/10 shadow-[inset_2px_0_0_var(--color-theme-accent)]" : "text-theme-text"}`}
+                              className={`border-theme-border/10 hover:bg-theme-accent/20 border-b px-4 py-3 text-left text-xs font-bold transition-all ${currentHlsLevel === -1 ? "text-theme-accent bg-theme-accent/10 shadow-[inset_2px_0_0_var(--color-theme-accent)]" : "text-theme-text"}`}
                             >
                               Auto (Adaptive)
                             </button>
@@ -907,7 +905,7 @@ export default function Player() {
                                   } catch (err) {}
                                   setQualityMenuOpen(false);
                                 }}
-                                className={`px-4 py-3 text-xs font-bold transition-all text-left border-b border-theme-border/10 last:border-b-0 hover:bg-theme-accent/20 ${currentHlsLevel === idx ? "text-theme-accent bg-theme-accent/10 shadow-[inset_2px_0_0_var(--color-theme-accent)]" : "text-theme-text"}`}
+                                className={`border-theme-border/10 hover:bg-theme-accent/20 border-b px-4 py-3 text-left text-xs font-bold transition-all last:border-b-0 ${currentHlsLevel === idx ? "text-theme-accent bg-theme-accent/10 shadow-[inset_2px_0_0_var(--color-theme-accent)]" : "text-theme-text"}`}
                               >
                                 {level.height}p Rate
                               </button>
@@ -915,16 +913,16 @@ export default function Player() {
                           </div>
                         )}
 
-                        <div className="mt-1 bg-theme-bg/90">
+                        <div className="bg-theme-bg/90 mt-1">
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
                               setNativeInteraction(true);
                               setQualityMenuOpen(false);
                             }}
-                            className="w-full px-4 py-4 text-xs font-bold transition-all text-left flex items-center gap-3 text-theme-danger hover:bg-theme-danger/20 hover:text-red-400 border-t border-theme-border/30"
+                            className="text-theme-danger hover:bg-theme-danger/20 border-theme-border/30 flex w-full items-center gap-3 border-t px-4 py-4 text-left text-xs font-bold transition-all hover:text-red-400"
                           >
-                            <ExternalLink className="w-5 h-5" />
+                            <ExternalLink className="h-5 w-5" />
                             Unlock Native Controls
                           </button>
                         </div>
@@ -935,9 +933,9 @@ export default function Player() {
 
                 {/* Sync Status Badge */}
                 {drift >= 0.5 && (
-                  <div className="hidden md:flex items-center space-x-2 text-[10px] uppercase font-bold mr-2 bg-theme-bg/80 px-3 py-1.5 border border-theme-border/50 min-w-[120px] justify-center rounded-theme shadow-sm animate-in fade-in">
+                  <div className="bg-theme-bg/80 border-theme-border/50 rounded-theme animate-in fade-in mr-2 hidden min-w-[120px] items-center justify-center space-x-2 border px-3 py-1.5 text-[10px] font-bold uppercase shadow-sm md:flex">
                     <div
-                      className={`w-2 h-2 rounded-full ${
+                      className={`h-2 w-2 rounded-full ${
                         drift < 2
                           ? "bg-theme-danger shadow-[0_0_8px_var(--color-theme-danger)]"
                           : "bg-red-500 shadow-[0_0_8px_rgb(239,68,68)]"
@@ -954,10 +952,10 @@ export default function Player() {
                 )}
 
                 {playback?.updatedBy && (
-                  <span className="text-[10px] text-theme-muted hidden xl:inline-block uppercase tracking-wider border-l border-theme-border/30 pl-4">
+                  <span className="text-theme-muted border-theme-border/30 hidden border-l pl-4 text-[10px] tracking-wider uppercase xl:inline-block">
                     CMD: {playback.status === "playing" ? "PLAY" : "PAUSE"}
                     {" // "}
-                    <strong className="text-theme-accent truncate max-w-[100px] inline-block align-bottom">
+                    <strong className="text-theme-accent inline-block max-w-[100px] truncate align-bottom">
                       {playback.updatedBy}
                     </strong>
                   </span>
@@ -966,14 +964,14 @@ export default function Player() {
                 {/* Theater Mode */}
                 <button
                   onClick={toggleTheaterMode}
-                  className={`transition-colors hover:scale-110 p-2 outline-none focus-visible:ring-2 ring-theme-accent rounded-full ${
+                  className={`ring-theme-accent rounded-full p-2 transition-colors outline-none hover:scale-110 focus-visible:ring-2 ${
                     theaterMode
                       ? "text-theme-danger"
                       : "text-theme-accent hover:text-theme-danger"
                   }`}
                   title="Theater Mode"
                 >
-                  <MonitorPlay className="w-5 h-5" />
+                  <MonitorPlay className="h-5 w-5" />
                 </button>
 
                 {/* Fullscreen */}
@@ -987,9 +985,9 @@ export default function Player() {
                       }
                     }
                   }}
-                  className="text-theme-accent hover:text-theme-danger transition-colors hover:scale-110 p-2 outline-none focus-visible:ring-2 ring-theme-accent rounded-full"
+                  className="text-theme-accent hover:text-theme-danger ring-theme-accent rounded-full p-2 transition-colors outline-none hover:scale-110 focus-visible:ring-2"
                 >
-                  <Maximize className="w-5 h-5" />
+                  <Maximize className="h-5 w-5" />
                 </button>
               </div>
             </div>
