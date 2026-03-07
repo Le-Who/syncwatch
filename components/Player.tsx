@@ -422,7 +422,7 @@ export default function Player() {
           {mounted && (
             <ReactPlayer
               ref={playerRef}
-              url={currentMedia.url}
+              src={currentMedia.url}
               width="100%"
               height="100%"
               playing={playing}
