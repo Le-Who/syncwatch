@@ -1,0 +1,25 @@
+# Testing
+test-results/
+playwright-report/
+playwright/.cache/
+blob-report/
+e2e/
+
+# Source Map files (if any are generated in production)
+*.map
+
+# IDE & Caches
+.vscode/
+.idea/
+.eslintcache
+.prettiercache
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Git and Docker (unnecessary in the built Heroku slug)
+.git/
+.gitignore
+Dockerfile
+.dockerignore
