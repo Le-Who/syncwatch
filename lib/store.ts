@@ -22,6 +22,7 @@ export interface PlaylistItem {
   addedBy: string;
   startPosition?: number;
   lastPosition?: number;
+  thumbnail?: string;
 }
 
 export interface Participant {
