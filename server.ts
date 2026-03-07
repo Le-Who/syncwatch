@@ -48,6 +48,7 @@ interface PlaylistItem {
   title: string;
   duration: number;
   addedBy: string;
+  startPosition?: number;
 }
 
 interface Participant {
@@ -382,6 +383,29 @@ app.prepare().then(() => {
           stateChanged = true;
           break;
 
+        case "update_rate":
+          if (!canControlPlayback) break;
+          if (typeof payload.rate !== "number") break;
+          // Only allow reasonable playback rates (e.g. 0.25 to 4.0)
+          if (payload.rate > 0 && payload.rate <= 4.0) {
+            // Need to update basePosition to current virtual position before changing rate
+            // so we don't jump backward/forward unexpectedly
+            if (room.playback.status === "playing") {
+              const now = Date.now();
+              const elapsedSeconds = (now - room.playback.baseTimestamp) / 1000;
+              const currentVirtualPosition =
+                room.playback.basePosition +
+                elapsedSeconds * room.playback.rate;
+              room.playback.basePosition = currentVirtualPosition;
+              room.playback.baseTimestamp = now;
+            }
+            room.playback.rate = payload.rate;
+            room.playback.updatedBy = participant.nickname;
+            stateChanged = true;
+            persistRoomState(room);
+          }
+          break;
+
         case "buffering":
           if (!canControlPlayback) break;
           if (typeof payload.position !== "number") break;
@@ -410,11 +434,12 @@ app.prepare().then(() => {
             title: payload.title || "Unknown Video",
             duration: payload.duration || 0,
             addedBy: participant.nickname,
+            startPosition: payload.startPosition || 0,
           };
           room.playlist.push(newItem);
           if (!room.currentMediaId) {
             room.currentMediaId = newItem.id;
-            room.playback.basePosition = 0;
+            room.playback.basePosition = newItem.startPosition || 0;
             room.playback.baseTimestamp = Date.now();
             room.playback.status = "paused";
           }
@@ -431,7 +456,10 @@ app.prepare().then(() => {
             room.currentMediaId =
               room.playlist.length > 0 ? room.playlist[0].id : null;
             room.playback.status = "paused";
-            room.playback.basePosition = 0;
+            room.playback.basePosition = room.currentMediaId
+              ? room.playlist.find((i) => i.id === room.currentMediaId)
+                  ?.startPosition || 0
+              : 0;
             room.playback.baseTimestamp = Date.now();
           }
           stateChanged = true;
@@ -457,8 +485,11 @@ app.prepare().then(() => {
         case "set_media":
           if (!canControlPlayback && !canEditPlaylist) break;
           room.currentMediaId = payload.itemId;
+          const targetItemForSet = room.playlist.find(
+            (i) => i.id === payload.itemId,
+          );
           room.playback.status = "paused";
-          room.playback.basePosition = 0;
+          room.playback.basePosition = targetItemForSet?.startPosition || 0;
           room.playback.baseTimestamp = Date.now();
           room.playback.updatedBy = participant.nickname;
           stateChanged = true;
@@ -473,17 +504,19 @@ app.prepare().then(() => {
             (i) => i.id === room.currentMediaId,
           );
           if (currentIndex !== -1 && currentIndex < room.playlist.length - 1) {
-            room.currentMediaId = room.playlist[currentIndex + 1].id;
+            const nextItem = room.playlist[currentIndex + 1];
+            room.currentMediaId = nextItem.id;
             room.playback.status = "playing"; // Auto-play next
-            room.playback.basePosition = 0;
+            room.playback.basePosition = nextItem.startPosition || 0;
             room.playback.baseTimestamp = Date.now();
             room.playback.updatedBy = participant.nickname;
             stateChanged = true;
             persistRoomState(room);
           } else if (room.settings.looping && room.playlist.length > 0) {
-            room.currentMediaId = room.playlist[0].id;
+            const loopItem = room.playlist[0];
+            room.currentMediaId = loopItem.id;
             room.playback.status = "playing";
-            room.playback.basePosition = 0;
+            room.playback.basePosition = loopItem.startPosition || 0;
             room.playback.baseTimestamp = Date.now();
             room.playback.updatedBy = participant.nickname;
             stateChanged = true;

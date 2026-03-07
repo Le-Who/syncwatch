@@ -50,6 +50,33 @@ export default function Playlist() {
     return { provider: "Unsupported", isValid: false };
   };
 
+  const parseTimeFromUrl = (videoUrl: string): number => {
+    try {
+      const parsedUrl = new URL(videoUrl);
+      const timeParam =
+        parsedUrl.searchParams.get("t") || parsedUrl.searchParams.get("start");
+
+      if (!timeParam) return 0;
+
+      if (!isNaN(Number(timeParam))) {
+        return Number(timeParam);
+      }
+
+      let totalSeconds = 0;
+      const hoursMatch = timeParam.match(/(\d+)h/i);
+      const minutesMatch = timeParam.match(/(\d+)m/i);
+      const secondsMatch = timeParam.match(/(\d+)s/i);
+
+      if (hoursMatch) totalSeconds += parseInt(hoursMatch[1], 10) * 3600;
+      if (minutesMatch) totalSeconds += parseInt(minutesMatch[1], 10) * 60;
+      if (secondsMatch) totalSeconds += parseInt(secondsMatch[1], 10);
+
+      return totalSeconds;
+    } catch {
+      return 0;
+    }
+  };
+
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!url.trim() || !canEdit) return;
@@ -57,7 +84,8 @@ export default function Playlist() {
     setError(null);
     setIsAdding(true);
 
-    const check = getProviderAndTitle(url.trim());
+    const cleanUrl = url.trim();
+    const check = getProviderAndTitle(cleanUrl);
 
     if (!check.isValid) {
       setError("This URL is not supported by the player.");
@@ -65,10 +93,13 @@ export default function Playlist() {
       return;
     }
 
+    const startPosition = parseTimeFromUrl(cleanUrl);
+
     sendCommand("add_item", {
-      url: url.trim(),
+      url: cleanUrl,
       provider: check.provider,
       title: `${check.provider} Video`, // Ideally fetched via oEmbed or server-side metadata in prod
+      startPosition,
     });
 
     setUrl("");

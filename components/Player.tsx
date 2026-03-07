@@ -117,7 +117,7 @@ export default function Player() {
       if (playback.status === "playing") {
         const expectedPosition =
           playback.basePosition +
-          (currentServerTime - playback.baseTimestamp) / 1000;
+          ((currentServerTime - playback.baseTimestamp) / 1000) * playback.rate;
         const currentDrift = Math.abs(expectedPosition - currentPosition);
         setDrift(currentDrift);
 
@@ -181,6 +181,33 @@ export default function Player() {
     setIsBuffering(true);
     emitCommand("pause", { position: getAccurateTime() });
   };
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if currently typing in an input
+      const target = e.target as HTMLElement;
+      if (
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.isContentEditable
+      ) {
+        return;
+      }
+
+      if (e.code === "Space") {
+        e.preventDefault();
+        if (canControl) {
+          playing ? handlePause() : handlePlay();
+        }
+      } else if (e.code === "KeyM") {
+        e.preventDefault();
+        setMuted((m) => !m);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [playing, canControl, handlePlay, handlePause]);
 
   const handleSeekMouseDown = () => {
     setSeeking(true);
@@ -306,6 +333,7 @@ export default function Player() {
             playing={playing}
             volume={volume}
             muted={muted}
+            playbackRate={playback?.rate || 1}
             progressInterval={500}
             onReady={() => {
               setIsReady(true);
@@ -488,6 +516,39 @@ export default function Player() {
               >
                 <SkipForward className="w-5 h-5 fill-current" />
               </button>
+
+              {/* Playback Speed */}
+              <div className="flex items-center space-x-2 relative group/speed">
+                <button className="text-theme-accent hover:text-theme-danger text-[10px] font-bold uppercase tracking-widest outline-none focus-visible:ring-2 ring-theme-accent rounded-sm px-1.5 py-1 border border-theme-accent/30 transition-colors">
+                  {playback?.rate || 1}x
+                </button>
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover/speed:flex flex-col bg-theme-bg/95 border-2 border-theme-border/50 rounded-theme shadow-xl backdrop-blur-md overflow-hidden z-50">
+                  <div className="text-[9px] text-theme-muted font-bold text-center py-1.5 border-b border-theme-border/30 tracking-widest uppercase bg-theme-bg/50">
+                    SPEED
+                  </div>
+                  {[0.5, 1, 1.25, 1.5, 2].map((r) => (
+                    <button
+                      key={r}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (canControl) {
+                          emitCommand("update_rate", { rate: r });
+                        }
+                      }}
+                      disabled={!canControl}
+                      className={`px-4 py-2.5 text-xs font-bold transition-all border-b border-theme-border/10 last:border-0 hover:bg-theme-accent/20 ${
+                        !canControl ? "cursor-not-allowed opacity-50" : ""
+                      } ${
+                        playback?.rate === r
+                          ? "text-theme-accent bg-theme-accent/10 shadow-[inset_2px_0_0_var(--color-theme-accent)]"
+                          : "text-theme-text"
+                      }`}
+                    >
+                      {r}x
+                    </button>
+                  ))}
+                </div>
+              </div>
 
               {/* Volume */}
               <div className="flex items-center space-x-3 group/volume relative">

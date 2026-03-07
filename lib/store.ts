@@ -19,6 +19,7 @@ export interface PlaylistItem {
   title: string;
   duration: number;
   addedBy: string;
+  startPosition?: number;
 }
 
 export interface Participant {
