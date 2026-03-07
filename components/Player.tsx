@@ -35,8 +35,7 @@ export default function Player() {
   const [drift, setDrift] = useState(0);
   const [hostName, setHostName] = useState<string>("localhost");
 
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
+  // Removed ResizeObserver dimensions
 
   // To avoid loopbacks, track manually initiated actions vs programmatic state syncs
   const ignoreNextPlayPauseEvent = useRef(false);
@@ -85,20 +84,7 @@ export default function Player() {
     }
   }, []);
 
-  useEffect(() => {
-    if (!containerRef.current) return;
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        setDimensions({
-          width: entry.contentRect.width,
-          height: entry.contentRect.height,
-        });
-      }
-    });
-
-    observer.observe(containerRef.current);
-    return () => observer.disconnect();
-  }, [currentMedia]);
+  // Removed ResizeObserver effect
 
   // In strict server state, we don't emit commands from native events
   const emitCommand = (type: string, payload: any) => {
@@ -116,6 +102,8 @@ export default function Player() {
     const syncPlayback = () => {
       const currentServerTime = Date.now() + serverClockOffset;
       const currentPosition = getAccurateTime();
+
+      if (currentMedia?.provider?.toLowerCase() === "twitch") return; // Twitch Live/VODs break on frequent programmatic seeks
 
       if (playback.status === "playing") {
         const expectedPosition =
@@ -171,17 +159,17 @@ export default function Player() {
 
   const handlePlay = () => {
     if (!room || !participantId || !canControl) return;
-    // We do NOT setPlaying(true) locally anymore. We wait for the server.
-    // Instead we trigger visual buffering if playing state hasn't applied yet.
-    setIsBuffering(true);
-    emitCommand("play", { position: getAccurateTime() });
+    setPlaying(true);
+    let pos = getAccurateTime();
+    if (pos === 0 && playback && playback.basePosition > 2) {
+      pos = playback.basePosition;
+    }
+    emitCommand("play", { position: pos });
   };
 
   const handlePause = () => {
     if (!room || !participantId || !canControl) return;
-    // We do NOT setPlaying(false) locally anymore. We wait for the server.
-    // Visual indicator:
-    setIsBuffering(true);
+    setPlaying(false);
     emitCommand("pause", { position: getAccurateTime() });
   };
 
@@ -278,32 +266,65 @@ export default function Player() {
           Object.keys(room?.participants || {}).length <= 1 ? (
             <form
               className="w-full relative"
-              onSubmit={(e) => {
+              onSubmit={async (e) => {
                 e.preventDefault();
                 const input = e.currentTarget.elements.namedItem(
                   "urlInput",
                 ) as HTMLInputElement;
                 const url = input.value.trim();
+                const btn = e.currentTarget.querySelector("button");
+                if (btn) btn.disabled = true;
+
                 if (url) {
                   let provider = "unknown";
-                  if (url.includes("youtube.com") || url.includes("youtu.be"))
+                  let title = "Direct Media";
+                  let duration = 0;
+                  let thumbnail = undefined;
+
+                  if (url.includes("youtube.com") || url.includes("youtu.be")) {
                     provider = "youtube";
-                  else if (url.includes("twitch.tv")) provider = "twitch";
-                  else if (url.includes("vimeo.com")) provider = "vimeo";
-                  else if (url.includes("soundcloud.com"))
-                    provider = "soundcloud";
+                    try {
+                      const res = await fetch(
+                        `/api/youtube/search?q=${encodeURIComponent(url)}`,
+                      );
+                      if (res.ok) {
+                        const data = await res.json();
+                        if (data.videos && data.videos.length > 0) {
+                          title = data.videos[0].title;
+                          duration = data.videos[0].duration;
+                          thumbnail = data.videos[0].thumbnail;
+                        }
+                      }
+                    } catch (err) {}
+                  } else {
+                    if (url.includes("twitch.tv")) provider = "twitch";
+                    else if (url.includes("vimeo.com")) provider = "vimeo";
+                    else if (url.includes("soundcloud.com"))
+                      provider = "soundcloud";
+                    try {
+                      const res = await fetch(
+                        `/api/metadata?url=${encodeURIComponent(url)}`,
+                      );
+                      if (res.ok) {
+                        const data = await res.json();
+                        if (data.title) title = data.title;
+                      }
+                    } catch (err) {}
+                  }
 
                   sendCommand("add_item", {
                     url,
                     provider,
-                    title: `Added from Awaiting Signal`,
-                    duration: 0,
+                    title,
+                    duration,
+                    thumbnail,
                   });
                   input.value = "";
                 }
+                if (btn) btn.disabled = false;
               }}
             >
-              <div className="flex flex-col sm:flex-row items-stretch bg-theme-bg/50 border-2 border-theme-border/50 rounded-theme shadow-[var(--theme-shadow)] focus-within:shadow-[var(--theme-shadow-hover)] focus-within:border-theme-accent transition-all overflow-hidden">
+              <div className="flex flex-col sm:flex-row items-stretch bg-theme-bg/50 border-2 border-theme-border/50 rounded-theme shadow-[var(--theme-shadow)] focus-within:shadow-[var(--theme-shadow-hover)] focus-within:border-theme-accent transition-all overflow-hidden relative">
                 <input
                   name="urlInput"
                   type="url"
@@ -313,7 +334,7 @@ export default function Player() {
                 />
                 <button
                   type="submit"
-                  className="px-8 py-4 bg-theme-accent hover:filter hover:brightness-110 text-theme-bg font-bold uppercase tracking-wider transition-all sm:border-l-2 border-theme-border/30"
+                  className="px-8 py-4 bg-theme-accent hover:filter hover:brightness-110 text-theme-bg font-bold uppercase tracking-wider transition-all sm:border-l-2 border-theme-border/30 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Init
                 </button>
@@ -351,97 +372,104 @@ export default function Player() {
 
   return (
     <div className="w-full h-full flex flex-col bg-theme-bg relative group react-player-wrapper border-y-2 lg:border-y-0 lg:border-x-2 border-theme-border/50 font-theme flex-1">
-      <div className="w-full h-full relative flex-1" ref={containerRef}>
-        {dimensions.width > 0 && dimensions.height > 0 && (
-          <ReactPlayer
-            ref={playerRef}
-            url={currentMedia.url}
-            width={dimensions.width}
-            height={dimensions.height}
-            playing={playing}
-            volume={volume}
-            muted={muted}
-            playbackRate={playback?.rate || 1}
-            progressInterval={500}
-            onReady={() => {
-              setIsReady(true);
-              setError(null);
-            }}
-            onError={(e: any) => {
-              console.error("Player error:", e);
-              setError("SYSTEM FAILURE. SIGNAL LOST.");
-              setIsBuffering(false);
-            }}
-            onProgress={handleProgress}
-            onDuration={(dur: number) => {
-              setDuration(dur);
-              if (canControl && room && room.currentMediaId) {
-                emitCommand("update_duration", {
-                  itemId: room.currentMediaId,
-                  duration: dur,
-                });
-              }
-            }}
-            onEnded={() => {
+      <div className="w-full h-full relative flex-1">
+        <ReactPlayer
+          ref={playerRef}
+          url={currentMedia.url}
+          width="100%"
+          height="100%"
+          playing={playing}
+          volume={volume}
+          muted={muted}
+          playbackRate={playback?.rate || 1}
+          progressInterval={500}
+          onReady={() => {
+            setIsReady(true);
+            setError(null);
+          }}
+          onError={(e: any) => {
+            console.error("Player error:", e);
+            setError("SYSTEM FAILURE. SIGNAL LOST.");
+            setIsBuffering(false);
+          }}
+          onProgress={handleProgress}
+          onDuration={(dur: number) => {
+            setDuration(dur);
+            if (canControl && room && room.currentMediaId) {
+              emitCommand("update_duration", {
+                itemId: room.currentMediaId,
+                duration: dur,
+              });
+            }
+          }}
+          onEnded={() => {
+            if (
+              room?.settings.autoplayNext &&
+              room.playlist.length > 1 &&
+              canControl
+            ) {
+              handleNext();
+            }
+          }}
+          onBuffer={() => {
+            setIsBuffering(true);
+            if (canControl && playback?.status !== "buffering") {
               if (
-                room?.settings.autoplayNext &&
-                room.playlist.length > 1 &&
-                canControl
+                !lastStateEmittedRef.current ||
+                Date.now() - lastStateEmittedRef.current.time > 1500
               ) {
-                handleNext();
+                emitCommand("buffering", { position: getAccurateTime() });
               }
-            }}
-            onBuffer={() => {
-              setIsBuffering(true);
-              if (canControl && playback?.status !== "buffering") {
-                if (
-                  !lastStateEmittedRef.current ||
-                  Date.now() - lastStateEmittedRef.current.time > 1500
-                ) {
-                  emitCommand("buffering", { position: getAccurateTime() });
-                }
+            }
+          }}
+          onBufferEnd={() => {
+            setIsBuffering(false);
+            if (canControl && playback?.status === "buffering") {
+              emitCommand("play", { position: getAccurateTime() });
+            }
+          }}
+          onPlay={() => {
+            setIsBuffering(false);
+            setPlaying(true);
+            if (ignoreNextPlayPauseEvent.current) {
+              ignoreNextPlayPauseEvent.current = false;
+              return;
+            }
+            if (canControl && playback?.status !== "playing") {
+              let pos = getAccurateTime();
+              if (pos === 0 && playback && playback.basePosition > 2) {
+                pos = playback.basePosition;
               }
-            }}
-            onBufferEnd={() => {
-              setIsBuffering(false);
-              if (canControl && playback?.status === "buffering") {
-                emitCommand("play", { position: getAccurateTime() });
-              }
-            }}
-            onPlay={() => {
-              setIsBuffering(false);
-              setPlaying(true);
-              if (ignoreNextPlayPauseEvent.current) {
-                ignoreNextPlayPauseEvent.current = false;
-                return;
-              }
-              if (canControl && playback?.status !== "playing") {
-                emitCommand("play", { position: getAccurateTime() });
-              }
-            }}
-            onPause={() => {
-              setIsBuffering(false);
-              setPlaying(false);
-              if (ignoreNextPlayPauseEvent.current) {
-                ignoreNextPlayPauseEvent.current = false;
-                return;
-              }
-              if (canControl && playback?.status === "playing" && !seeking) {
-                emitCommand("pause", { position: getAccurateTime() });
-              }
-            }}
-            style={{ position: "absolute", top: 0, left: 0 }}
-            config={{
-              youtube: { playerVars: { showinfo: 1, controls: 0 } },
-              vimeo: { playerOptions: { controls: false } },
-              twitch: {
-                options: {
-                  parent: [hostName],
-                },
+              emitCommand("play", { position: pos });
+            }
+          }}
+          onPause={() => {
+            setIsBuffering(false);
+            setPlaying(false);
+            if (ignoreNextPlayPauseEvent.current) {
+              ignoreNextPlayPauseEvent.current = false;
+              return;
+            }
+            if (canControl && playback?.status === "playing" && !seeking) {
+              emitCommand("pause", { position: getAccurateTime() });
+            }
+          }}
+          style={{ position: "absolute", top: 0, left: 0 }}
+          config={{
+            youtube: { playerVars: { showinfo: 1, controls: 0 } },
+            vimeo: { playerOptions: { controls: false } },
+            twitch: {
+              options: {
+                parent: [
+                  hostName,
+                  "localhost",
+                  "127.0.0.1",
+                  "syncwatch.example.com",
+                ],
               },
-            }}
-          />
-        )}
+            },
+          }}
+        />
 
         {/* Up Next Overlay Layer */}
         {showUpNext && (
@@ -532,6 +560,15 @@ export default function Player() {
             </div>
           </div>
         )}
+
+        {/* PAUSED Overlay */}
+        {!playing && !isBuffering && isReady && !error && (
+          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/40 backdrop-blur-[2px] pointer-events-none transition-opacity duration-300">
+            <div className="w-24 h-24 bg-theme-bg/80 backdrop-blur-md rounded-full flex items-center justify-center border-4 border-theme-accent text-theme-accent shadow-[0_0_30px_var(--color-theme-accent)]">
+              <Play className="w-12 h-12 ml-2" />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Custom Controls Panel */}
@@ -553,12 +590,33 @@ export default function Player() {
                 max={0.999}
                 step="any"
                 value={played}
-                disabled={!canControl}
-                onMouseDown={canControl ? handleSeekMouseDown : undefined}
-                onChange={canControl ? handleSeekChange : undefined}
-                onMouseUp={canControl ? handleSeekMouseUp : undefined}
+                disabled={
+                  !canControl ||
+                  currentMedia?.provider?.toLowerCase() === "twitch"
+                }
+                onMouseDown={
+                  canControl &&
+                  currentMedia?.provider?.toLowerCase() !== "twitch"
+                    ? handleSeekMouseDown
+                    : undefined
+                }
+                onChange={
+                  canControl &&
+                  currentMedia?.provider?.toLowerCase() !== "twitch"
+                    ? handleSeekChange
+                    : undefined
+                }
+                onMouseUp={
+                  canControl &&
+                  currentMedia?.provider?.toLowerCase() !== "twitch"
+                    ? handleSeekMouseUp
+                    : undefined
+                }
                 className={`absolute inset-0 w-full h-full opacity-0 ${
-                  canControl ? "cursor-pointer" : "cursor-not-allowed"
+                  canControl &&
+                  currentMedia?.provider?.toLowerCase() !== "twitch"
+                    ? "cursor-pointer"
+                    : "cursor-not-allowed"
                 }`}
               />
             </div>
@@ -686,32 +744,24 @@ export default function Player() {
 
             <div className="flex items-center space-x-4">
               {/* Sync Status Badge */}
-              <div className="hidden md:flex items-center space-x-2 text-[10px] uppercase font-bold mr-2 bg-theme-bg/80 px-3 py-1.5 border border-theme-border/50 min-w-[120px] justify-center rounded-theme shadow-sm">
-                <div
-                  className={`w-2 h-2 rounded-full ${
-                    drift < 0.5
-                      ? "bg-theme-accent shadow-[0_0_8px_var(--color-theme-accent)]"
-                      : drift < 2
+              {drift >= 0.5 && (
+                <div className="hidden md:flex items-center space-x-2 text-[10px] uppercase font-bold mr-2 bg-theme-bg/80 px-3 py-1.5 border border-theme-border/50 min-w-[120px] justify-center rounded-theme shadow-sm animate-in fade-in">
+                  <div
+                    className={`w-2 h-2 rounded-full ${
+                      drift < 2
                         ? "bg-theme-danger shadow-[0_0_8px_var(--color-theme-danger)]"
                         : "bg-red-500 shadow-[0_0_8px_rgb(239,68,68)]"
-                  }`}
-                />
-                <span
-                  className={`hidden sm:inline-block ${
-                    drift < 0.5
-                      ? "text-theme-accent"
-                      : drift < 2
-                        ? "text-theme-danger"
-                        : "text-red-500"
-                  }`}
-                >
-                  {drift < 0.5
-                    ? "Sync: Locked"
-                    : drift < 2
-                      ? "Sync: Locking"
-                      : "Sync: Lost"}
-                </span>
-              </div>
+                    }`}
+                  />
+                  <span
+                    className={`hidden sm:inline-block ${
+                      drift < 2 ? "text-theme-danger" : "text-red-500"
+                    }`}
+                  >
+                    {drift < 2 ? "Sync: Locking" : "Sync: Lost"}
+                  </span>
+                </div>
+              )}
 
               {playback?.updatedBy && (
                 <span className="text-[10px] text-theme-muted hidden xl:inline-block uppercase tracking-wider border-l border-theme-border/30 pl-4">

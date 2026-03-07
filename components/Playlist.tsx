@@ -337,8 +337,20 @@ export default function Playlist() {
                 }`}
               >
                 {canEdit && (
-                  <div className="cursor-grab active:cursor-grabbing p-1.5 text-theme-muted hover:text-theme-accent transition-colors">
+                  <div className="cursor-grab active:cursor-grabbing p-1.5 text-theme-muted hover:text-theme-accent transition-colors shrink-0">
                     <GripVertical className="w-4 h-4" />
+                  </div>
+                )}
+
+                {item.thumbnail ? (
+                  <img
+                    src={item.thumbnail}
+                    alt=""
+                    className="w-16 h-10 object-cover rounded shadow-sm shrink-0 border border-theme-border/30 ml-1"
+                  />
+                ) : (
+                  <div className="w-16 h-10 bg-theme-bg/50 rounded flex items-center justify-center shrink-0 border border-theme-border/30 shadow-inner ml-1">
+                    <PlayCircle className="w-5 h-5 text-theme-muted opacity-50" />
                   </div>
                 )}
 
@@ -355,11 +367,37 @@ export default function Playlist() {
                   >
                     {item.title}
                   </p>
-                  <p className="text-[11px] text-theme-muted truncate flex items-center space-x-1.5 font-bold tracking-widest uppercase mb-1">
-                    <span className="text-theme-text/70">{item.provider}</span>
-                    <span className="opacity-30 border-l-2 border-theme-border/50 h-3 mx-1"></span>
-                    <span>ADDED BY // {item.addedBy}</span>
-                  </p>
+
+                  {(() => {
+                    let currentPos = item.lastPosition || 0;
+                    if (room.currentMediaId === item.id) {
+                      const elapsed =
+                        room.playback.status === "playing"
+                          ? (Date.now() - room.playback.baseTimestamp) / 1000
+                          : 0;
+                      currentPos =
+                        room.playback.basePosition +
+                        elapsed * room.playback.rate;
+                    }
+                    return (
+                      <p className="text-[11px] text-theme-muted truncate flex flex-wrap items-center space-x-1.5 font-bold tracking-widest uppercase mb-1">
+                        <span className="text-theme-text/70">
+                          {item.provider}
+                        </span>
+                        <span className="opacity-30 border-l-2 border-theme-border/50 h-3 mx-1"></span>
+                        <span>BY // {item.addedBy}</span>
+                        {item.duration > 0 && (
+                          <>
+                            <span className="opacity-30 border-l-2 border-theme-border/50 h-3 mx-1"></span>
+                            <span className="text-theme-accent/80">
+                              {formatTime(currentPos)} /{" "}
+                              {formatTime(item.duration)}
+                            </span>
+                          </>
+                        )}
+                      </p>
+                    );
+                  })()}
                 </div>
 
                 {/* Progress Bar inside card */}

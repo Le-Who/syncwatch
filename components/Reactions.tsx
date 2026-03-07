@@ -8,6 +8,7 @@ interface EmojiParticle {
   id: string;
   emoji: string;
   x: number;
+  duration: number;
 }
 
 const EMOJIS = ["🔥", "😂", "💖", "👀", "🤯", "💯"];
@@ -24,6 +25,7 @@ export default function Reactions() {
         id: crypto.randomUUID(),
         emoji: payload.emoji,
         x: Math.random() * 80 + 10, // 10% to 90%
+        duration: 2.5 + Math.random() * 1.5,
       };
 
       setParticles((prev) => [...prev, newParticle]);
@@ -49,6 +51,7 @@ export default function Reactions() {
       id: crypto.randomUUID(),
       emoji,
       x: Math.random() * 80 + 10,
+      duration: 2.5 + Math.random() * 1.5,
     };
     setParticles((prev) => [...prev, newParticle]);
     setTimeout(() => {
@@ -66,7 +69,7 @@ export default function Reactions() {
             className="absolute bottom-0 text-3xl sm:text-4xl animate-float-up drop-shadow-md"
             style={{
               left: `${p.x}%`,
-              animationDuration: `${2.5 + Math.random() * 1.5}s`,
+              animationDuration: `${p.duration}s`,
             }}
           >
             {p.emoji}
@@ -75,7 +78,7 @@ export default function Reactions() {
       </div>
 
       {/* Reaction Controls */}
-      <div className="absolute right-4 bottom-24 lg:bottom-16 z-50 flex flex-col items-center">
+      <div className="absolute right-4 top-1/2 -translate-y-1/2 z-50 flex flex-col items-center">
         {isOpen && (
           <div className="mb-2 bg-theme-bg/80 backdrop-blur-xl border-2 border-theme-border/50 p-2 rounded-theme shadow-lg flex flex-col-reverse gap-2 animate-in fade-in slide-in-from-bottom-2">
             {EMOJIS.map((emoji) => (

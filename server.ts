@@ -50,6 +50,7 @@ interface PlaylistItem {
   addedBy: string;
   startPosition?: number;
   lastPosition?: number;
+  thumbnail?: string;
 }
 
 interface Participant {
@@ -457,6 +458,7 @@ app.prepare().then(() => {
             duration: payload.duration || 0,
             addedBy: participant.nickname,
             startPosition: payload.startPosition || 0,
+            thumbnail: payload.thumbnail,
           };
           room.playlist.push(newItem);
           if (!room.currentMediaId) {
@@ -498,6 +500,7 @@ app.prepare().then(() => {
               addedBy: participant.nickname,
               startPosition: item.startPosition || 0,
               lastPosition: 0,
+              thumbnail: item.thumbnail,
             };
 
             room.playlist.push(newBulkItem);
