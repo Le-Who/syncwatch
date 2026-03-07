@@ -21,17 +21,17 @@
 @layer base {
   :root {
     /* Cotton Candy Glassmorphism (Default) */
-    --theme-bg: #fff5f8;
-    --theme-card: rgba(255, 255, 255, 0.4);
-    --theme-border: rgba(255, 255, 255, 0.6);
-    --theme-text: #4a2e35;
-    --theme-muted: #8b6b74;
-    --theme-accent: #ffb6c1;
-    --theme-danger: #ff8fa3;
+    --theme-bg: #fff0f5;
+    --theme-card: rgba(255, 255, 255, 0.55);
+    --theme-border: rgba(244, 63, 117, 0.25);
+    --theme-text: #3d1c26;
+    --theme-muted: #8b5d6e;
+    --theme-accent: #f43f75;
+    --theme-danger: #e11d48;
 
     --theme-radius: 2rem;
-    --theme-shadow: 0 16px 40px rgba(255, 182, 193, 0.15);
-    --theme-shadow-hover: 0 24px 48px rgba(255, 182, 193, 0.3);
+    --theme-shadow: 0 16px 40px rgba(244, 63, 117, 0.15);
+    --theme-shadow-hover: 0 24px 48px rgba(244, 63, 117, 0.3);
     --theme-font: var(--font-outfit), ui-sans-serif, system-ui;
   }
 
