@@ -6,8 +6,9 @@ SyncWatch is a latency-tolerant, real-time, server-authoritative watch-party app
 
 - **Frontend**: Next.js (App Router), ReactPlayer, Tailwind, Zustand (State Management).
 - **Backend**: Custom `server.ts` running Next.js alongside Socket.io.
+- **Dynamic Theme Engine**: CSS variables natively power seamless client-side toggling between the soft, luminous "Cotton Candy Glassmorphism" and the high-contrast "Cyber-Industrial Brutalist" interface.
 - **Synchronization Model**: Server-authoritative with optimistic UI. Uses custom NTP-style packet handshakes on connect to calculate precise network latency, correcting local player timestamps appropriately. Stale event rejection blocks out-of-order websocket commands.
-- **Persistence**: Database state is synchronized with **Supabase**. Playback snapshots are safely upserted to survive server restarts or inactive hibernation.
+- **Persistence & Performance**: Database state is synchronized with **Supabase**. Playback snapshots are safely upserted to survive server restarts or inactive hibernation. All database syncs perform highly optimized 2-second debouncing per-room to prevent rate limits and DB starvation. Unbounded memory arrays are guarded by strict cap limits (500 items/room) to eliminate OOM vulnerabilities.
 
 ## Database Setup (Supabase)
 

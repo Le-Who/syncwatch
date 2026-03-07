@@ -72,6 +72,7 @@ export default function Player() {
 
   useEffect(() => {
     if (typeof window !== "undefined") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setHostName(window.location.hostname);
     }
   }, []);
@@ -220,7 +221,7 @@ export default function Player() {
 
   if (!currentMedia) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center bg-transparent relative overflow-hidden font-theme p-4">
+      <div className="w-full h-full flex flex-col items-center justify-center bg-transparent relative overflow-hidden font-theme p-4 flex-1">
         <div className="relative z-10 flex flex-col items-center max-w-lg w-full theme-panel p-8">
           <div className="w-24 h-24 bg-theme-bg/50 border-2 border-theme-accent flex items-center justify-center mb-8 rounded-full shadow-[var(--theme-shadow)] group-hover:shadow-[var(--theme-shadow-hover)] transition-all">
             <Play className="w-12 h-12 text-theme-accent ml-2" />
@@ -251,7 +252,7 @@ export default function Player() {
                   name="urlInput"
                   type="url"
                   placeholder="Paste video stream URL..."
-                  className="flex-1 bg-transparent px-5 py-4 text-theme-text placeholder-theme-muted focus:outline-none font-theme text-sm uppercase"
+                  className="flex-1 bg-transparent px-5 py-4 text-theme-text placeholder-theme-muted focus:outline-none font-theme text-sm"
                   required
                 />
                 <button
@@ -274,8 +275,8 @@ export default function Player() {
   }
 
   return (
-    <div className="flex-1 flex flex-col bg-theme-bg relative group react-player-wrapper border-y-2 lg:border-y-0 lg:border-x-2 border-theme-border/50 font-theme">
-      <div className="flex-1 relative" ref={containerRef}>
+    <div className="w-full h-full flex flex-col bg-theme-bg relative group react-player-wrapper border-y-2 lg:border-y-0 lg:border-x-2 border-theme-border/50 font-theme flex-1">
+      <div className="w-full h-full relative flex-1" ref={containerRef}>
         {dimensions.width > 0 && dimensions.height > 0 && (
           <ReactPlayer
             ref={playerRef}

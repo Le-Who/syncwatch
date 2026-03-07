@@ -105,61 +105,78 @@ function createEmptyRoom(id: string, name: string): RoomState {
 }
 
 // Database sync helpers
+// Debounce persistence globally per room to prevent database spam
+const persistenceTimers = new Map<string, NodeJS.Timeout>();
+
 async function persistRoomState(room: RoomState) {
   if (!supabase) return;
-  try {
-    // Upsert Room
-    await supabase.from("rooms").upsert({
-      id: room.id,
-      name: room.name,
-      settings: room.settings,
-      owner_id:
-        Object.values(room.participants).find((p) => p.role === "owner")?.id ||
-        room.id,
-    });
 
-    // Sync playlist
-    const { data: existingItems } = await supabase
-      .from("playlist_items")
-      .select("id")
-      .eq("room_id", room.id);
-    const existingIds = existingItems?.map((i) => i.id) || [];
-    const currentIds = room.playlist.map((i) => i.id);
-    const toDelete = existingIds.filter((id) => !currentIds.includes(id));
-
-    if (toDelete.length > 0) {
-      await supabase.from("playlist_items").delete().in("id", toDelete);
-    }
-
-    if (room.playlist.length > 0) {
-      const itemsToUpsert = room.playlist.map((item, index) => ({
-        id: item.id,
-        room_id: room.id,
-        url: item.url,
-        provider: item.provider,
-        title: item.title,
-        duration: item.duration,
-        added_by: item.addedBy,
-        position: index,
-      }));
-      await supabase.from("playlist_items").upsert(itemsToUpsert);
-    }
-
-    // Sync playback snapshot
-    await supabase.from("playback_snapshots").upsert({
-      room_id: room.id,
-      media_item_id: room.currentMediaId,
-      status: room.playback.status,
-      base_position: room.playback.basePosition,
-      base_timestamp: room.playback.baseTimestamp,
-      rate: room.playback.rate,
-      version: room.version,
-      updated_by: room.playback.updatedBy,
-      updated_at: new Date().toISOString(),
-    });
-  } catch (err) {
-    console.error(`Failed to persist room ${room.id}`, err);
+  // Clear any existing timer to debounce
+  const existingTimer = persistenceTimers.get(room.id);
+  if (existingTimer) {
+    clearTimeout(existingTimer);
   }
+
+  // Schedule new persistence
+  const timer = setTimeout(async () => {
+    try {
+      // Upsert Room
+      await supabase.from("rooms").upsert({
+        id: room.id,
+        name: room.name,
+        settings: room.settings,
+        owner_id:
+          Object.values(room.participants).find((p) => p.role === "owner")
+            ?.id || room.id,
+      });
+
+      // Sync playlist
+      const { data: existingItems } = await supabase
+        .from("playlist_items")
+        .select("id")
+        .eq("room_id", room.id);
+      const existingIds = existingItems?.map((i) => i.id) || [];
+      const currentIds = room.playlist.map((i) => i.id);
+      const toDelete = existingIds.filter((id) => !currentIds.includes(id));
+
+      if (toDelete.length > 0) {
+        await supabase.from("playlist_items").delete().in("id", toDelete);
+      }
+
+      if (room.playlist.length > 0) {
+        const itemsToUpsert = room.playlist.map((item, index) => ({
+          id: item.id,
+          room_id: room.id,
+          url: item.url,
+          provider: item.provider,
+          title: item.title,
+          duration: item.duration,
+          added_by: item.addedBy,
+          position: index,
+        }));
+        await supabase.from("playlist_items").upsert(itemsToUpsert);
+      }
+
+      // Sync playback snapshot
+      await supabase.from("playback_snapshots").upsert({
+        room_id: room.id,
+        media_item_id: room.currentMediaId,
+        status: room.playback.status,
+        base_position: room.playback.basePosition,
+        base_timestamp: room.playback.baseTimestamp,
+        rate: room.playback.rate,
+        version: room.version,
+        updated_by: room.playback.updatedBy,
+        updated_at: new Date().toISOString(),
+      });
+    } catch (err) {
+      console.error(`Failed to persist room ${room.id}`, err);
+    } finally {
+      persistenceTimers.delete(room.id);
+    }
+  }, 2000); // Debounce by 2 seconds
+
+  persistenceTimers.set(room.id, timer);
 }
 
 async function loadRoomFromDB(roomId: string): Promise<RoomState | null> {
@@ -381,6 +398,13 @@ app.prepare().then(() => {
 
         case "add_item":
           if (!canEditPlaylist) break;
+          // Guard against unbounded memory exhaustion (OOM attack vector)
+          if (room.playlist.length >= 500) {
+            socket.emit("error", {
+              message: "Playlist maximum limit reached (500 items)",
+            });
+            break;
+          }
           const newItem: PlaylistItem = {
             id: randomUUID(),
             url: payload.url,
@@ -397,7 +421,7 @@ app.prepare().then(() => {
             room.playback.status = "paused";
           }
           stateChanged = true;
-          persistRoomState(room); // Could debounce in production
+          persistRoomState(room); // Debounced automatically
           break;
 
         case "remove_item":
