@@ -155,7 +155,7 @@ export default function Player() {
           setPlaying(false);
         }
 
-        if (currentDrift > 1.0) {
+        if (currentDrift > 1.0 && !isBuffering) {
           performProgrammaticSeek(playback.basePosition);
         }
       }
@@ -470,9 +470,11 @@ export default function Player() {
                   e?.duration ||
                   1;
                 handleProgress({ played: ct / dur, playedSeconds: ct });
-                if (isBuffering) setIsBuffering(false);
+                // We intentionally do NOT clear isBuffering here, because rapid
+                // timeupdate events during preload can falsely clear the lock.
               }}
               onSeeked={(e: any) => {
+                if (isBuffering) setIsBuffering(false);
                 const ct =
                   playerRef.current?.currentTime ||
                   e?.target?.currentTime ||
