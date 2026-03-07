@@ -1,8 +1,8 @@
-import { createServer } from "http";
+import { createServer, Server as NetServer } from "http";
 import next from "next";
 import { Server as SocketIOServer } from "socket.io";
 import { randomUUID } from "crypto";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
 // Load environment variables manually for the custom server
 import { loadEnvConfig } from "@next/env";
@@ -14,20 +14,29 @@ const app = next({ dev });
 const handle = app.getRequestHandler();
 
 // Supabase Setup
-const supabaseUrl =
-  process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || "";
-const supabaseKey =
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+const SUPABASE_SERVICE_ROLE_KEY =
   process.env.SUPABASE_SERVICE_ROLE_KEY ||
-  process.env.SUPABASE_ANON_KEY ||
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+  process.env.SUPABASE_SERVICE_KEY ||
   "";
-const supabase =
-  supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
 
-if (!supabase) {
-  console.warn(
-    "⚠️ Supabase credentials missing (NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY). Running in memory-only mode.",
+let supabase: SupabaseClient | null = null;
+
+if (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
+  supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+    auth: {
+      persistSession: false,
+    },
+  });
+  console.log(
+    "✅ Supabase initialized with Service Role (Persistence Enabled)",
   );
+} else {
+  console.warn("\n=======================================================");
+  console.warn("⚠️ WARNING: Running in Ephemeral Memory Mode.");
+  console.warn("⚠️ SUPABASE_SERVICE_ROLE_KEY is missing.");
+  console.warn("⚠️ Data will NOT persist to the database.");
+  console.warn("=======================================================\n");
 }
 
 // Types
@@ -130,8 +139,10 @@ function createEmptyRoom(id: string, name: string): RoomState {
 // Debounce persistence globally per room to prevent database spam
 const persistenceTimers = new Map<string, NodeJS.Timeout>();
 
-async function persistRoomState(room: RoomState) {
-  if (!supabase) return;
+// Debounced save
+const persistRoomState = async (room: RoomState) => {
+  // Changed to async function, removed debounce wrapper as it's not defined
+  if (!supabase) return; // Immediately stop if we are in Ephemeral Memory Mode
 
   // Clear any existing timer to debounce
   const existingTimer = persistenceTimers.get(room.id);
@@ -157,7 +168,7 @@ async function persistRoomState(room: RoomState) {
         .from("playlist_items")
         .select("id")
         .eq("room_id", room.id);
-      const existingIds = existingItems?.map((i) => i.id) || [];
+      const existingIds = existingItems?.map((i: { id: string }) => i.id) || [];
       const currentIds = room.playlist.map((i) => i.id);
       const toDelete = existingIds.filter((id) => !currentIds.includes(id));
 
@@ -176,6 +187,7 @@ async function persistRoomState(room: RoomState) {
           added_by: item.addedBy,
           position: index,
           last_position: item.lastPosition || 0,
+          thumbnail: item.thumbnail,
         }));
         await supabase.from("playlist_items").upsert(itemsToUpsert);
       }
@@ -200,7 +212,7 @@ async function persistRoomState(room: RoomState) {
   }, 2000); // Debounce by 2 seconds
 
   persistenceTimers.set(room.id, timer);
-}
+};
 
 async function loadRoomFromDB(roomId: string): Promise<RoomState | null> {
   if (!supabase) return null;
@@ -230,7 +242,7 @@ async function loadRoomFromDB(roomId: string): Promise<RoomState | null> {
         : roomData.settings;
 
     if (playlistData) {
-      room.playlist = playlistData.map((item) => ({
+      room.playlist = playlistData.map((item: any) => ({
         id: item.id,
         url: item.url,
         provider: item.provider,
@@ -238,6 +250,7 @@ async function loadRoomFromDB(roomId: string): Promise<RoomState | null> {
         duration: item.duration,
         addedBy: item.added_by,
         lastPosition: item.last_position || 0,
+        thumbnail: item.thumbnail,
       }));
     }
 
@@ -373,7 +386,12 @@ app.prepare().then(() => {
       switch (type) {
         case "play":
           if (!canControlPlayback) break;
-          if (typeof payload.position !== "number") break;
+          if (
+            typeof payload.position !== "number" ||
+            !Number.isFinite(payload.position) ||
+            payload.position < 0
+          )
+            break;
           // Validations: verify position is reasonable
           if (
             room.playback.status !== "playing" ||
@@ -389,7 +407,12 @@ app.prepare().then(() => {
 
         case "pause":
           if (!canControlPlayback) break;
-          if (typeof payload.position !== "number") break;
+          if (
+            typeof payload.position !== "number" ||
+            !Number.isFinite(payload.position) ||
+            payload.position < 0
+          )
+            break;
           // ALLOW escaping from stuck buffering state
           if (room.playback.status !== "paused") {
             room.playback.status = "paused";
@@ -402,7 +425,12 @@ app.prepare().then(() => {
 
         case "seek":
           if (!canControlPlayback) break;
-          if (typeof payload.position !== "number") break;
+          if (
+            typeof payload.position !== "number" ||
+            !Number.isFinite(payload.position) ||
+            payload.position < 0
+          )
+            break;
           room.playback.basePosition = payload.position;
           room.playback.baseTimestamp = Date.now();
           room.playback.updatedBy = participant.nickname;
@@ -411,9 +439,13 @@ app.prepare().then(() => {
 
         case "update_rate":
           if (!canControlPlayback) break;
-          if (typeof payload.rate !== "number") break;
+          if (
+            typeof payload.rate !== "number" ||
+            !Number.isFinite(payload.rate)
+          )
+            break;
           // Only allow reasonable playback rates (e.g. 0.25 to 4.0)
-          if (payload.rate > 0 && payload.rate <= 4.0) {
+          if (payload.rate >= 0.25 && payload.rate <= 4.0) {
             // Need to update basePosition to current virtual position before changing rate
             // so we don't jump backward/forward unexpectedly
             if (room.playback.status === "playing") {
@@ -434,7 +466,12 @@ app.prepare().then(() => {
 
         case "buffering":
           if (!canControlPlayback) break;
-          if (typeof payload.position !== "number") break;
+          if (
+            typeof payload.position !== "number" ||
+            !Number.isFinite(payload.position) ||
+            payload.position < 0
+          )
+            break;
           if (room.playback.status === "playing") {
             room.playback.status = "buffering";
             room.playback.basePosition = payload.position;
@@ -480,22 +517,49 @@ app.prepare().then(() => {
           if (!canEditPlaylist) break;
           if (!Array.isArray((payload as any).items)) break;
 
-          let addedCount = 0;
-          for (const item of (payload as any).items) {
-            if (room.playlist.length >= 500) {
-              if (addedCount > 0) {
-                socket.emit("error", {
-                  message: "Partial add: Playlist limit reached (500 items)",
-                });
-              } else {
-                socket.emit("error", {
-                  message: "Playlist maximum limit reached (500 items)",
-                });
-              }
-              break;
-            }
-            if (typeof item.url !== "string" || !item.url.trim()) continue;
+          const availableSlots = 500 - room.playlist.length;
+          if (availableSlots <= 0) {
+            socket.emit("error", {
+              message: "Playlist maximum limit reached (500 items)",
+            });
+            break;
+          }
 
+          // 1. Slice to available capacity explicitly to avoid iterating over 500+ items that will just fail
+          const itemsToProcess = (payload as any).items.slice(
+            0,
+            availableSlots,
+          );
+
+          // 2. Deduplicate URLs within the payload
+          const uniqueUrls = new Set<string>();
+          const dedupedItemsToProcess = [];
+
+          for (const item of itemsToProcess) {
+            if (typeof item.url !== "string" || !item.url.trim()) continue;
+            // Also dedupe against existing playlist quickly
+            const alreadyExists = room.playlist.some(
+              (pi) => pi.url === item.url,
+            );
+            if (!uniqueUrls.has(item.url) && !alreadyExists) {
+              uniqueUrls.add(item.url);
+              dedupedItemsToProcess.push(item);
+            }
+          }
+
+          if (dedupedItemsToProcess.length === 0) {
+            if (itemsToProcess.length > 0) {
+              socket.emit("error", {
+                message: "All provided items are already in the playlist.",
+              });
+            }
+            break;
+          }
+
+          let addedCount = 0;
+          let firstAddedId = null;
+
+          for (const item of dedupedItemsToProcess) {
             const newBulkItem: PlaylistItem = {
               id: randomUUID(),
               url: item.url,
@@ -511,6 +575,8 @@ app.prepare().then(() => {
             room.playlist.push(newBulkItem);
             addedCount++;
 
+            if (!firstAddedId) firstAddedId = newBulkItem.id;
+
             if (!room.currentMediaId) {
               room.currentMediaId = newBulkItem.id;
               room.playback.basePosition = newBulkItem.startPosition || 0;
@@ -519,6 +585,16 @@ app.prepare().then(() => {
                 room.playback.status === "playing" ? "playing" : "paused";
             }
           }
+
+          if (
+            addedCount < itemsToProcess.length &&
+            availableSlots < (payload as any).items.length
+          ) {
+            socket.emit("error", {
+              message: `Partial add: Added ${addedCount} items. Playlist limit reached (500 items).`,
+            });
+          }
+
           if (addedCount > 0) {
             stateChanged = true;
             persistRoomState(room);

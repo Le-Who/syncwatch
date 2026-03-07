@@ -13,7 +13,10 @@ import {
   Maximize,
   MonitorPlay,
   AlertCircle,
+  Settings,
+  ExternalLink,
 } from "lucide-react";
+import fscreen from "fscreen";
 
 const ReactPlayer = dynamic(() => import("react-player"), {
   ssr: false,
@@ -24,6 +27,7 @@ export default function Player() {
   const { volume, muted, theaterMode, setVolume, setMuted, toggleTheaterMode } =
     useSettingsStore();
   const playerRef = useRef<any>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [playing, setPlaying] = useState(false);
   const [played, setPlayed] = useState(0);
   const [playedSeconds, setPlayedSeconds] = useState(0);
@@ -34,6 +38,12 @@ export default function Player() {
   const [error, setError] = useState<string | null>(null);
   const [drift, setDrift] = useState(0);
   const [hostName, setHostName] = useState<string>("localhost");
+
+  const [qualityMenuOpen, setQualityMenuOpen] = useState(false);
+  const [forceHighRes, setForceHighRes] = useState(false);
+  const [nativeInteraction, setNativeInteraction] = useState(false);
+  const [hlsLevels, setHlsLevels] = useState<{ height: number }[]>([]);
+  const [currentHlsLevel, setCurrentHlsLevel] = useState<number>(-1);
 
   // Removed ResizeObserver dimensions
 
@@ -363,92 +373,151 @@ export default function Player() {
     timeRemaining > 0;
 
   return (
-    <div className="w-full h-full flex flex-col bg-theme-bg relative group react-player-wrapper border-y-2 lg:border-y-0 lg:border-x-2 border-theme-border/50 font-theme flex-1">
-      <div className="w-full h-full relative flex-1">
-        <ReactPlayer
-          ref={playerRef}
-          url={currentMedia.url}
-          width="100%"
-          height="100%"
-          playing={playing}
-          volume={volume}
-          muted={muted}
-          playbackRate={playback?.rate || 1}
-          progressInterval={500}
-          onReady={() => {
-            setIsReady(true);
-            setError(null);
-          }}
-          onError={(e: any) => {
-            console.error("Player error:", e);
-            setError("SYSTEM FAILURE. SIGNAL LOST.");
-            setIsBuffering(false);
-          }}
-          onProgress={handleProgress}
-          onDuration={(dur: number) => {
-            setDuration(dur);
-            if (canControl && room && room.currentMediaId) {
-              emitCommand("update_duration", {
-                itemId: room.currentMediaId,
-                duration: dur,
-              });
-            }
-          }}
-          onEnded={() => {
-            if (canControl) {
-              emitCommand("video_ended", {
-                currentMediaId: room?.currentMediaId,
-              });
-            }
-          }}
-          onBuffer={() => {
-            setIsBuffering(true);
-          }}
-          onBufferEnd={() => {
-            setIsBuffering(false);
-          }}
-          onPlay={() => {
-            setIsBuffering(false);
-            setPlaying(true);
-            if (ignoreNextPlayPauseEvent.current) {
-              ignoreNextPlayPauseEvent.current = false;
-              return;
-            }
-            if (canControl && playback?.status !== "playing") {
-              let pos = getAccurateTime();
-              if (pos === 0 && playback && playback.basePosition > 2) {
-                pos = playback.basePosition;
+    <div
+      ref={containerRef}
+      className="w-full h-full flex flex-col bg-theme-bg relative group react-player-wrapper border-y-2 lg:border-y-0 lg:border-x-2 border-theme-border/50 font-theme flex-1"
+    >
+      {nativeInteraction && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[60] animate-in slide-in-from-top-4 fade-in">
+          <button
+            onClick={() => setNativeInteraction(false)}
+            className="bg-theme-danger/90 hover:bg-theme-danger text-theme-bg px-6 py-2 rounded-full font-bold uppercase tracking-widest shadow-[0_0_20px_var(--color-theme-danger)] transition-all flex items-center gap-2"
+          >
+            <ExternalLink className="w-5 h-5" />
+            Exit Native Controls
+          </button>
+        </div>
+      )}
+
+      <div
+        className="w-full h-full relative flex-1"
+        style={{ containerType: "size" } as React.CSSProperties}
+        onClick={() => {
+          if (qualityMenuOpen) setQualityMenuOpen(false);
+        }}
+      >
+        <div
+          className="absolute top-0 left-0 transition-transform duration-700 origin-top-left"
+          style={
+            currentMedia.provider === "youtube" && forceHighRes
+              ? {
+                  width: 3840,
+                  height: 2160,
+                  transform: `scaleX(calc(100cqw / 3840)) scaleY(calc(100cqh / 2160))`,
+                }
+              : { width: "100%", height: "100%", transform: "none" }
+          }
+        >
+          <ReactPlayer
+            ref={playerRef}
+            url={currentMedia.url}
+            width="100%"
+            height="100%"
+            playing={playing}
+            volume={volume}
+            muted={muted}
+            playbackRate={playback?.rate || 1}
+            progressInterval={500}
+            onReady={() => {
+              setIsReady(true);
+              setError(null);
+
+              // Extract HLS Levels if it's a direct stream
+              if (
+                currentMedia.provider !== "youtube" &&
+                currentMedia.provider !== "twitch" &&
+                currentMedia.provider !== "vimeo"
+              ) {
+                try {
+                  const internal = playerRef.current?.getInternalPlayer("hls");
+                  if (internal && internal.levels) {
+                    setHlsLevels(internal.levels);
+                    setCurrentHlsLevel(internal.currentLevel);
+                  }
+                } catch (e) {
+                  console.log("Not an HLS stream or levels unavailable.");
+                }
               }
-              emitCommand("play", { position: pos });
-            }
-          }}
-          onPause={() => {
-            setIsBuffering(false);
-            setPlaying(false);
-            if (ignoreNextPlayPauseEvent.current) {
-              ignoreNextPlayPauseEvent.current = false;
-              return;
-            }
-            if (canControl && playback?.status === "playing" && !seeking) {
-              emitCommand("pause", { position: getAccurateTime() });
-            }
-          }}
-          style={{ position: "absolute", top: 0, left: 0 }}
-          config={{
-            youtube: { playerVars: { showinfo: 1, controls: 0 } },
-            vimeo: { playerOptions: { controls: false } },
-            twitch: {
-              options: {
-                parent: [
-                  hostName,
-                  "localhost",
-                  "127.0.0.1",
-                  "syncwatch.example.com",
-                ],
+            }}
+            onError={(e: any) => {
+              console.error("Player error:", e);
+              setError("SYSTEM FAILURE. SIGNAL LOST.");
+              setIsBuffering(false);
+            }}
+            onProgress={handleProgress}
+            onSeek={(seconds: number) => {
+              if (nativeInteraction && canControl) {
+                emitCommand("seek", { position: seconds });
+                if (playing) {
+                  emitCommand("play", { position: seconds });
+                }
+              }
+            }}
+            onDuration={(dur: number) => {
+              setDuration(dur);
+              if (canControl && room && room.currentMediaId) {
+                emitCommand("update_duration", {
+                  itemId: room.currentMediaId,
+                  duration: dur,
+                });
+              }
+            }}
+            onEnded={() => {
+              if (canControl) {
+                emitCommand("video_ended", {
+                  currentMediaId: room?.currentMediaId,
+                });
+              }
+            }}
+            onBuffer={() => {
+              setIsBuffering(true);
+            }}
+            onBufferEnd={() => {
+              setIsBuffering(false);
+            }}
+            onPlay={() => {
+              setIsBuffering(false);
+              setPlaying(true);
+              if (ignoreNextPlayPauseEvent.current) {
+                ignoreNextPlayPauseEvent.current = false;
+                return;
+              }
+              if (canControl && playback?.status !== "playing") {
+                let pos = getAccurateTime();
+                if (pos === 0 && playback && playback.basePosition > 2) {
+                  pos = playback.basePosition;
+                }
+                emitCommand("play", { position: pos });
+              }
+            }}
+            onPause={() => {
+              setIsBuffering(false);
+              setPlaying(false);
+              if (ignoreNextPlayPauseEvent.current) {
+                ignoreNextPlayPauseEvent.current = false;
+                return;
+              }
+              if (canControl && playback?.status === "playing" && !seeking) {
+                emitCommand("pause", { position: getAccurateTime() });
+              }
+            }}
+            style={{ position: "absolute", top: 0, left: 0 }}
+            config={{
+              youtube: { playerVars: { showinfo: 1, controls: 0 } },
+              vimeo: { playerOptions: { controls: false } },
+              twitch: {
+                options: {
+                  parent: [
+                    hostName,
+                    "localhost",
+                    "127.0.0.1",
+                    "syncwatch.example.com",
+                  ],
+                },
               },
-            },
-          }}
-        />
+            }}
+          />
+        </div>
 
         {/* Up Next Overlay Layer */}
         {showUpNext && (
@@ -506,16 +575,21 @@ export default function Player() {
         )}
 
         {/* Interaction overlay - Hidden for Twitch because Twitch requires native controls for volume/quality and blocks occluded autoplay */}
-        {currentMedia.provider?.toLowerCase() !== "twitch" && (
-          <div
-            className={`absolute inset-0 z-10 ${canControl ? "cursor-pointer" : "cursor-default"}`}
-            onClick={() => {
-              if (canControl) {
-                playing ? handlePause() : handlePlay();
-              }
-            }}
-          />
-        )}
+        {currentMedia.provider?.toLowerCase() !== "twitch" &&
+          !nativeInteraction && (
+            <div
+              className={`absolute inset-0 z-10 ${canControl ? "cursor-pointer" : "cursor-default"}`}
+              onClick={() => {
+                if (qualityMenuOpen) {
+                  setQualityMenuOpen(false);
+                  return;
+                }
+                if (canControl) {
+                  playing ? handlePause() : handlePlay();
+                }
+              }}
+            />
+          )}
 
         {error && (
           <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-theme-bg/95 backdrop-blur-sm border-4 border-theme-danger shadow-[inset_0_0_50px_var(--color-theme-danger)]">
@@ -554,241 +628,352 @@ export default function Player() {
       </div>
 
       {/* Custom Controls Panel */}
-      <div className="absolute bottom-0 left-0 right-0 p-4 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-300 z-30 font-theme">
-        <div className="bg-theme-bg/80 border-2 border-theme-border/50 p-3 shadow-lg backdrop-blur-md rounded-theme">
-          {/* Timeline */}
-          <div className="flex items-center space-x-4 mb-3">
-            <span className="text-xs text-theme-accent font-bold w-14 text-right">
-              {formatTime(played * duration)}
-            </span>
-            <div className="flex-1 relative h-3 bg-theme-bg border border-theme-border/30 rounded-theme overflow-hidden">
-              <div
-                className="absolute top-0 left-0 h-full bg-theme-accent transition-all ease-linear"
-                style={{ width: `${played * 100}%` }}
-              />
-              <input
-                type="range"
-                min={0}
-                max={0.999}
-                step="any"
-                value={played}
-                disabled={
-                  !canControl ||
-                  currentMedia?.provider?.toLowerCase() === "twitch"
-                }
-                onMouseDown={
-                  canControl &&
-                  currentMedia?.provider?.toLowerCase() !== "twitch"
-                    ? handleSeekMouseDown
-                    : undefined
-                }
-                onChange={
-                  canControl &&
-                  currentMedia?.provider?.toLowerCase() !== "twitch"
-                    ? handleSeekChange
-                    : undefined
-                }
-                onMouseUp={
-                  canControl &&
-                  currentMedia?.provider?.toLowerCase() !== "twitch"
-                    ? handleSeekMouseUp
-                    : undefined
-                }
-                className={`absolute inset-0 w-full h-full opacity-0 ${
-                  canControl &&
-                  currentMedia?.provider?.toLowerCase() !== "twitch"
-                    ? "cursor-pointer"
-                    : "cursor-not-allowed"
-                }`}
-              />
+      {!nativeInteraction && (
+        <div className="absolute bottom-0 left-0 right-0 p-4 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-300 z-[60] font-theme">
+          <div className="bg-theme-bg/80 border-2 border-theme-border/50 p-3 shadow-lg backdrop-blur-md rounded-theme">
+            {/* Timeline */}
+            <div className="flex items-center space-x-4 mb-3">
+              <span className="text-xs text-theme-accent font-bold w-14 text-right">
+                {formatTime(played * duration)}
+              </span>
+              <div className="flex-1 relative h-3 bg-theme-bg border border-theme-border/30 rounded-theme overflow-hidden">
+                <div
+                  className="absolute top-0 left-0 h-full bg-theme-accent transition-all ease-linear"
+                  style={{ width: `${played * 100}%` }}
+                />
+                <input
+                  type="range"
+                  min={0}
+                  max={0.999}
+                  step="any"
+                  value={played}
+                  disabled={
+                    !canControl ||
+                    currentMedia?.provider?.toLowerCase() === "twitch"
+                  }
+                  onMouseDown={
+                    canControl &&
+                    currentMedia?.provider?.toLowerCase() !== "twitch"
+                      ? handleSeekMouseDown
+                      : undefined
+                  }
+                  onChange={
+                    canControl &&
+                    currentMedia?.provider?.toLowerCase() !== "twitch"
+                      ? handleSeekChange
+                      : undefined
+                  }
+                  onMouseUp={
+                    canControl &&
+                    currentMedia?.provider?.toLowerCase() !== "twitch"
+                      ? handleSeekMouseUp
+                      : undefined
+                  }
+                  className={`absolute inset-0 w-full h-full opacity-0 ${
+                    canControl &&
+                    currentMedia?.provider?.toLowerCase() !== "twitch"
+                      ? "cursor-pointer"
+                      : "cursor-not-allowed"
+                  }`}
+                />
+              </div>
+              <span className="text-xs text-theme-accent font-bold w-14 text-left">
+                {formatTime(duration)}
+              </span>
             </div>
-            <span className="text-xs text-theme-accent font-bold w-14 text-left">
-              {formatTime(duration)}
-            </span>
-          </div>
 
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-6">
-              {/* Play/Pause */}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  playing ? handlePause() : handlePlay();
-                }}
-                disabled={!canControl}
-                className={`w-10 h-10 flex items-center justify-center border-2 border-inherit transition-all outline-none focus-visible:ring-2 ring-theme-accent rounded-theme
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-6">
+                {/* Play/Pause */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    playing ? handlePause() : handlePlay();
+                  }}
+                  disabled={!canControl}
+                  className={`w-10 h-10 flex items-center justify-center border-2 border-inherit transition-all outline-none focus-visible:ring-2 ring-theme-accent rounded-theme
                   ${
                     canControl
                       ? "border-theme-accent text-theme-accent hover:bg-theme-accent hover:text-theme-bg active:translate-y-0.5 active:shadow-none shadow-[var(--theme-shadow)]"
                       : "border-theme-border text-theme-muted cursor-not-allowed"
                   }`}
-              >
-                {playing ? (
-                  <Pause className="w-5 h-5 fill-current" />
-                ) : (
-                  <Play className="w-5 h-5 fill-current ml-1" />
-                )}
-              </button>
-
-              {/* Next */}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleNext();
-                }}
-                disabled={!canControl}
-                className={`transition-all hover:scale-110 outline-none focus-visible:ring-2 ring-theme-accent rounded-full
-                  ${canControl ? "text-theme-accent hover:text-theme-danger" : "text-theme-muted cursor-not-allowed"}`}
-              >
-                <SkipForward className="w-5 h-5 fill-current" />
-              </button>
-
-              {/* Playback Speed */}
-              <div className="flex items-center space-x-2 relative group/speed">
-                <button className="text-theme-accent hover:text-theme-danger text-[10px] font-bold uppercase tracking-widest outline-none focus-visible:ring-2 ring-theme-accent rounded-sm px-1.5 py-1 border border-theme-accent/30 transition-colors">
-                  {playback?.rate || 1}x
+                >
+                  {playing ? (
+                    <Pause className="w-5 h-5 fill-current" />
+                  ) : (
+                    <Play className="w-5 h-5 fill-current ml-1" />
+                  )}
                 </button>
-                {/* Add a transparent bridge area using pb-2 on the outer container so hovering the gap keeps it open */}
-                <div className="absolute bottom-full left-1/2 -translate-x-1/2 pb-2 hidden group-hover/speed:flex flex-col z-50">
-                  <div className="bg-theme-bg/95 border-2 border-theme-border/50 rounded-theme shadow-xl backdrop-blur-md overflow-hidden flex flex-col">
-                    <div className="text-[9px] text-theme-muted font-bold text-center py-1.5 border-b border-theme-border/30 tracking-widest uppercase bg-theme-bg/50">
-                      SPEED
-                    </div>
-                    {[0.5, 1, 1.25, 1.5, 2].map((r) => (
-                      <button
-                        key={r}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (canControl) {
-                            emitCommand("update_rate", { rate: r });
-                          }
-                        }}
-                        disabled={!canControl}
-                        className={`px-4 py-2.5 text-xs font-bold transition-all border-b border-theme-border/10 last:border-0 hover:bg-theme-accent/20 ${
-                          !canControl ? "cursor-not-allowed opacity-50" : ""
-                        } ${
-                          playback?.rate === r
-                            ? "text-theme-accent bg-theme-accent/10 shadow-[inset_2px_0_0_var(--color-theme-accent)]"
-                            : "text-theme-text"
-                        }`}
-                      >
-                        {r}x
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
 
-              {/* Volume */}
-              <div className="flex items-center space-x-3 group/volume relative">
+                {/* Next */}
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    setMuted(!muted);
+                    handleNext();
                   }}
-                  className="text-theme-accent hover:text-theme-danger transition-colors outline-none focus-visible:ring-2 ring-theme-accent rounded-full"
+                  disabled={!canControl}
+                  className={`transition-all hover:scale-110 outline-none focus-visible:ring-2 ring-theme-accent rounded-full
+                  ${canControl ? "text-theme-accent hover:text-theme-danger" : "text-theme-muted cursor-not-allowed"}`}
                 >
-                  {muted || volume === 0 ? (
-                    <VolumeX className="w-5 h-5" />
-                  ) : (
-                    <Volume2 className="w-5 h-5" />
-                  )}
+                  <SkipForward className="w-5 h-5 fill-current" />
                 </button>
-                <div className="w-0 group-hover/volume:w-24 overflow-hidden transition-all duration-300 relative h-2 bg-theme-bg border border-theme-border/30 rounded-theme">
-                  <div
-                    className="absolute top-0 left-0 h-full bg-theme-accent rounded-theme"
-                    style={{ width: `${(muted ? 0 : volume) * 100}%` }}
-                  />
-                  <input
-                    type="range"
-                    min={0}
-                    max={1}
-                    step="any"
-                    onChange={(e) => {
-                      setVolume(parseFloat(e.target.value));
-                      if (muted && parseFloat(e.target.value) > 0) {
-                        setMuted(false);
-                      }
+
+                {/* Playback Speed */}
+                <div className="flex items-center space-x-2 relative group/speed">
+                  <button className="text-theme-accent hover:text-theme-danger text-[10px] font-bold uppercase tracking-widest outline-none focus-visible:ring-2 ring-theme-accent rounded-sm px-1.5 py-1 border border-theme-accent/30 transition-colors">
+                    {playback?.rate || 1}x
+                  </button>
+                  {/* Add a transparent bridge area using pb-2 on the outer container so hovering the gap keeps it open */}
+                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 pb-2 hidden group-hover/speed:flex flex-col z-50">
+                    <div className="bg-theme-bg/95 border-2 border-theme-border/50 rounded-theme shadow-xl backdrop-blur-md overflow-hidden flex flex-col">
+                      <div className="text-[9px] text-theme-muted font-bold text-center py-1.5 border-b border-theme-border/30 tracking-widest uppercase bg-theme-bg/50">
+                        SPEED
+                      </div>
+                      {[0.5, 1, 1.25, 1.5, 2].map((r) => (
+                        <button
+                          key={r}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (canControl) {
+                              emitCommand("update_rate", { rate: r });
+                            }
+                          }}
+                          disabled={!canControl}
+                          className={`px-4 py-2.5 text-xs font-bold transition-all border-b border-theme-border/10 last:border-0 hover:bg-theme-accent/20 ${
+                            !canControl ? "cursor-not-allowed opacity-50" : ""
+                          } ${
+                            playback?.rate === r
+                              ? "text-theme-accent bg-theme-accent/10 shadow-[inset_2px_0_0_var(--color-theme-accent)]"
+                              : "text-theme-text"
+                          }`}
+                        >
+                          {r}x
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Volume */}
+                <div className="flex items-center space-x-3 group/volume relative">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setMuted(!muted);
                     }}
-                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                  />
-                </div>
-              </div>
-
-              {/* Meta */}
-              <div className="hidden md:flex ml-4 px-3 py-0.5 bg-theme-accent text-theme-bg text-[10px] font-bold uppercase tracking-wider rounded-full shadow-sm">
-                {currentMedia.provider}
-              </div>
-
-              <div className="text-xs font-bold text-theme-text max-w-[150px] lg:max-w-xs xl:max-w-md truncate ml-2 uppercase tracking-wide drop-shadow-sm">
-                {currentMedia.title}
-              </div>
-            </div>
-
-            <div className="flex items-center space-x-4">
-              {/* Sync Status Badge */}
-              {drift >= 0.5 && (
-                <div className="hidden md:flex items-center space-x-2 text-[10px] uppercase font-bold mr-2 bg-theme-bg/80 px-3 py-1.5 border border-theme-border/50 min-w-[120px] justify-center rounded-theme shadow-sm animate-in fade-in">
-                  <div
-                    className={`w-2 h-2 rounded-full ${
-                      drift < 2
-                        ? "bg-theme-danger shadow-[0_0_8px_var(--color-theme-danger)]"
-                        : "bg-red-500 shadow-[0_0_8px_rgb(239,68,68)]"
-                    }`}
-                  />
-                  <span
-                    className={`hidden sm:inline-block ${
-                      drift < 2 ? "text-theme-danger" : "text-red-500"
-                    }`}
+                    className="text-theme-accent hover:text-theme-danger transition-colors outline-none focus-visible:ring-2 ring-theme-accent rounded-full"
                   >
-                    {drift < 2 ? "Sync: Locking" : "Sync: Lost"}
-                  </span>
+                    {muted || volume === 0 ? (
+                      <VolumeX className="w-5 h-5" />
+                    ) : (
+                      <Volume2 className="w-5 h-5" />
+                    )}
+                  </button>
+                  <div className="w-0 group-hover/volume:w-24 overflow-hidden transition-all duration-300 relative h-2 bg-theme-bg border border-theme-border/30 rounded-theme">
+                    <div
+                      className="absolute top-0 left-0 h-full bg-theme-accent rounded-theme"
+                      style={{ width: `${(muted ? 0 : volume) * 100}%` }}
+                    />
+                    <input
+                      type="range"
+                      min={0}
+                      max={1}
+                      step="any"
+                      onChange={(e) => {
+                        setVolume(parseFloat(e.target.value));
+                        if (muted && parseFloat(e.target.value) > 0) {
+                          setMuted(false);
+                        }
+                      }}
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                    />
+                  </div>
                 </div>
-              )}
 
-              {playback?.updatedBy && (
-                <span className="text-[10px] text-theme-muted hidden xl:inline-block uppercase tracking-wider border-l border-theme-border/30 pl-4">
-                  CMD: {playback.status === "playing" ? "PLAY" : "PAUSE"}
-                  {" // "}
-                  <strong className="text-theme-accent truncate max-w-[100px] inline-block align-bottom">
-                    {playback.updatedBy}
-                  </strong>
-                </span>
-              )}
+                {/* Meta */}
+                <div className="hidden md:flex ml-4 px-3 py-0.5 bg-theme-accent text-theme-bg text-[10px] font-bold uppercase tracking-wider rounded-full shadow-sm">
+                  {currentMedia.provider}
+                </div>
 
-              {/* Theater Mode */}
-              <button
-                onClick={toggleTheaterMode}
-                className={`transition-colors hover:scale-110 p-2 outline-none focus-visible:ring-2 ring-theme-accent rounded-full ${
-                  theaterMode
-                    ? "text-theme-danger"
-                    : "text-theme-accent hover:text-theme-danger"
-                }`}
-                title="Theater Mode"
-              >
-                <MonitorPlay className="w-5 h-5" />
-              </button>
+                <div className="text-xs font-bold text-theme-text max-w-[150px] lg:max-w-xs xl:max-w-md truncate ml-2 uppercase tracking-wide drop-shadow-sm">
+                  {currentMedia.title}
+                </div>
+              </div>
 
-              {/* Fullscreen */}
-              <button
-                onClick={() => {
-                  const elem = document.querySelector(".react-player-wrapper");
-                  if (elem) {
-                    if (document.fullscreenElement) {
-                      document.exitFullscreen();
-                    } else {
-                      elem.requestFullscreen();
+              <div className="flex items-center space-x-4">
+                {/* Quality Settings */}
+                <div className="flex items-center space-x-2 relative group/quality">
+                  <button
+                    className={`text-theme-accent hover:text-theme-danger outline-none focus-visible:ring-2 ring-theme-accent rounded-full p-2 transition-transform duration-500 relative ${qualityMenuOpen ? "rotate-90 text-theme-danger" : ""}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setQualityMenuOpen(!qualityMenuOpen);
+                    }}
+                  >
+                    <Settings className="w-5 h-5" />
+                    {forceHighRes && currentMedia.provider === "youtube" && (
+                      <div className="absolute top-1 right-1 w-2 h-2 rounded-full bg-theme-accent animate-pulse shadow-[0_0_8px_var(--color-theme-accent)]" />
+                    )}
+                  </button>
+
+                  {/* Quality Menu Dialog */}
+                  {qualityMenuOpen && (
+                    <div className="absolute bottom-full right-0 mb-4 pb-2 z-50 flex flex-col items-end">
+                      <div className="bg-theme-bg/95 backdrop-blur-xl border border-theme-border/50 rounded-theme shadow-[0_0_40px_rgba(0,0,0,0.5)] overflow-hidden flex flex-col min-w-[220px] animate-in slide-in-from-bottom-2 fade-in">
+                        <div className="text-[10px] text-theme-muted font-bold px-4 py-2 border-b border-theme-border/30 tracking-widest uppercase bg-theme-bg/50">
+                          Video Quality
+                        </div>
+
+                        {currentMedia.provider === "youtube" && (
+                          <div className="flex flex-col">
+                            <div className="px-4 py-2 text-[9px] uppercase tracking-widest text-theme-muted border-b border-theme-border/10">
+                              YouTube Override
+                            </div>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setForceHighRes(!forceHighRes);
+                                setQualityMenuOpen(false);
+                                try {
+                                  playerRef.current
+                                    ?.getInternalPlayer()
+                                    ?.setPlaybackQuality("hd1080");
+                                } catch (err) {}
+                              }}
+                              className={`px-4 py-3 text-xs font-bold transition-all text-left flex items-center justify-between border-b border-theme-border/10 hover:bg-theme-accent/20 ${forceHighRes ? "text-theme-accent bg-theme-accent/10 shadow-[inset_2px_0_0_var(--color-theme-accent)]" : "text-theme-text"}`}
+                            >
+                              Ultra (Force 4K)
+                              {forceHighRes && (
+                                <div className="w-2 h-2 rounded-full bg-theme-accent shadow-[0_0_5px_currentColor]"></div>
+                              )}
+                            </button>
+                          </div>
+                        )}
+
+                        {hlsLevels.length > 0 && (
+                          <div className="flex flex-col">
+                            <div className="px-4 py-2 text-[9px] uppercase tracking-widest text-theme-muted border-b border-theme-border/10">
+                              Stream Manifest Levels
+                            </div>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setCurrentHlsLevel(-1);
+                                try {
+                                  const internal =
+                                    playerRef.current?.getInternalPlayer("hls");
+                                  if (internal) internal.currentLevel = -1;
+                                } catch (err) {}
+                                setQualityMenuOpen(false);
+                              }}
+                              className={`px-4 py-3 text-xs font-bold transition-all text-left border-b border-theme-border/10 hover:bg-theme-accent/20 ${currentHlsLevel === -1 ? "text-theme-accent bg-theme-accent/10 shadow-[inset_2px_0_0_var(--color-theme-accent)]" : "text-theme-text"}`}
+                            >
+                              Auto (Adaptive)
+                            </button>
+                            {hlsLevels.map((level, idx) => (
+                              <button
+                                key={idx}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setCurrentHlsLevel(idx);
+                                  try {
+                                    const internal =
+                                      playerRef.current?.getInternalPlayer(
+                                        "hls",
+                                      );
+                                    if (internal) internal.currentLevel = idx;
+                                  } catch (err) {}
+                                  setQualityMenuOpen(false);
+                                }}
+                                className={`px-4 py-3 text-xs font-bold transition-all text-left border-b border-theme-border/10 last:border-b-0 hover:bg-theme-accent/20 ${currentHlsLevel === idx ? "text-theme-accent bg-theme-accent/10 shadow-[inset_2px_0_0_var(--color-theme-accent)]" : "text-theme-text"}`}
+                              >
+                                {level.height}p Rate
+                              </button>
+                            ))}
+                          </div>
+                        )}
+
+                        <div className="mt-1 bg-theme-bg/90">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setNativeInteraction(true);
+                              setQualityMenuOpen(false);
+                            }}
+                            className="w-full px-4 py-4 text-xs font-bold transition-all text-left flex items-center gap-3 text-theme-danger hover:bg-theme-danger/20 hover:text-red-400 border-t border-theme-border/30"
+                          >
+                            <ExternalLink className="w-5 h-5" />
+                            Unlock Native Controls
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Sync Status Badge */}
+                {drift >= 0.5 && (
+                  <div className="hidden md:flex items-center space-x-2 text-[10px] uppercase font-bold mr-2 bg-theme-bg/80 px-3 py-1.5 border border-theme-border/50 min-w-[120px] justify-center rounded-theme shadow-sm animate-in fade-in">
+                    <div
+                      className={`w-2 h-2 rounded-full ${
+                        drift < 2
+                          ? "bg-theme-danger shadow-[0_0_8px_var(--color-theme-danger)]"
+                          : "bg-red-500 shadow-[0_0_8px_rgb(239,68,68)]"
+                      }`}
+                    />
+                    <span
+                      className={`hidden sm:inline-block ${
+                        drift < 2 ? "text-theme-danger" : "text-red-500"
+                      }`}
+                    >
+                      {drift < 2 ? "Sync: Locking" : "Sync: Lost"}
+                    </span>
+                  </div>
+                )}
+
+                {playback?.updatedBy && (
+                  <span className="text-[10px] text-theme-muted hidden xl:inline-block uppercase tracking-wider border-l border-theme-border/30 pl-4">
+                    CMD: {playback.status === "playing" ? "PLAY" : "PAUSE"}
+                    {" // "}
+                    <strong className="text-theme-accent truncate max-w-[100px] inline-block align-bottom">
+                      {playback.updatedBy}
+                    </strong>
+                  </span>
+                )}
+
+                {/* Theater Mode */}
+                <button
+                  onClick={toggleTheaterMode}
+                  className={`transition-colors hover:scale-110 p-2 outline-none focus-visible:ring-2 ring-theme-accent rounded-full ${
+                    theaterMode
+                      ? "text-theme-danger"
+                      : "text-theme-accent hover:text-theme-danger"
+                  }`}
+                  title="Theater Mode"
+                >
+                  <MonitorPlay className="w-5 h-5" />
+                </button>
+
+                {/* Fullscreen */}
+                <button
+                  onClick={() => {
+                    if (fscreen.fullscreenEnabled && containerRef.current) {
+                      if (fscreen.fullscreenElement) {
+                        fscreen.exitFullscreen();
+                      } else {
+                        fscreen.requestFullscreen(containerRef.current);
+                      }
                     }
-                  }
-                }}
-                className="text-theme-accent hover:text-theme-danger transition-colors hover:scale-110 p-2 outline-none focus-visible:ring-2 ring-theme-accent rounded-full"
-              >
-                <Maximize className="w-5 h-5" />
-              </button>
+                  }}
+                  className="text-theme-accent hover:text-theme-danger transition-colors hover:scale-110 p-2 outline-none focus-visible:ring-2 ring-theme-accent rounded-full"
+                >
+                  <Maximize className="w-5 h-5" />
+                </button>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
