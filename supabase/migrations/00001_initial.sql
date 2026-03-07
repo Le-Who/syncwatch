@@ -1,7 +1,9 @@
 -- Supabase Schema for SyncWatch
 
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
 -- Rooms table
-CREATE TABLE rooms (
+CREATE TABLE IF NOT EXISTS rooms (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   name TEXT NOT NULL,
   code TEXT,
@@ -11,7 +13,7 @@ CREATE TABLE rooms (
 );
 
 -- Room Members table
-CREATE TABLE room_members (
+CREATE TABLE IF NOT EXISTS room_members (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   room_id UUID REFERENCES rooms(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,
@@ -23,7 +25,7 @@ CREATE TABLE room_members (
 );
 
 -- Playlist Items table
-CREATE TABLE playlist_items (
+CREATE TABLE IF NOT EXISTS playlist_items (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   room_id UUID REFERENCES rooms(id) ON DELETE CASCADE,
   url TEXT NOT NULL,
@@ -36,7 +38,7 @@ CREATE TABLE playlist_items (
 );
 
 -- Playback Snapshots table (for persistence if server restarts)
-CREATE TABLE playback_snapshots (
+CREATE TABLE IF NOT EXISTS playback_snapshots (
   room_id UUID PRIMARY KEY REFERENCES rooms(id) ON DELETE CASCADE,
   media_item_id UUID REFERENCES playlist_items(id) ON DELETE SET NULL,
   status TEXT NOT NULL CHECK (status IN ('playing', 'paused', 'buffering', 'ended')),
@@ -49,7 +51,7 @@ CREATE TABLE playback_snapshots (
 );
 
 -- Activity Log table
-CREATE TABLE activity_log (
+CREATE TABLE IF NOT EXISTS activity_log (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   room_id UUID REFERENCES rooms(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,
@@ -59,9 +61,9 @@ CREATE TABLE activity_log (
 );
 
 -- Indexes
-CREATE INDEX idx_room_members_room_id ON room_members(room_id);
-CREATE INDEX idx_playlist_items_room_id ON playlist_items(room_id);
-CREATE INDEX idx_activity_log_room_id ON activity_log(room_id);
+CREATE INDEX IF NOT EXISTS idx_room_members_room_id ON room_members(room_id);
+CREATE INDEX IF NOT EXISTS idx_playlist_items_room_id ON playlist_items(room_id);
+CREATE INDEX IF NOT EXISTS idx_activity_log_room_id ON activity_log(room_id);
 
 -- Note: The application currently uses an in-memory server-authoritative model 
 -- for real-time synchronization to minimize latency and database writes. 
