@@ -2,9 +2,59 @@
 
 @theme {
   --font-sans: var(--font-outfit), ui-sans-serif, system-ui, sans-serif;
+
+  /* Dynamic Theme Tokens */
+  --color-theme-bg: var(--theme-bg);
+  --color-theme-card: var(--theme-card);
+  --color-theme-border: var(--theme-border);
+  --color-theme-text: var(--theme-text);
+  --color-theme-muted: var(--theme-muted);
+  --color-theme-accent: var(--theme-accent);
+  --color-theme-danger: var(--theme-danger);
+
+  --radius-theme: var(--theme-radius);
+  --shadow-theme: var(--theme-shadow);
+  --shadow-theme-hover: var(--theme-shadow-hover);
+  --font-theme: var(--theme-font);
 }
 
-/* Custom scrollbar for deep dark themes */
+@layer base {
+  :root {
+    /* Cotton Candy Glassmorphism (Default) */
+    --theme-bg: #fff5f8;
+    --theme-card: rgba(255, 255, 255, 0.4);
+    --theme-border: rgba(255, 255, 255, 0.6);
+    --theme-text: #4a2e35;
+    --theme-muted: #8b6b74;
+    --theme-accent: #ffb6c1;
+    --theme-danger: #ff8fa3;
+
+    --theme-radius: 2rem;
+    --theme-shadow: 0 16px 40px rgba(255, 182, 193, 0.15);
+    --theme-shadow-hover: 0 24px 48px rgba(255, 182, 193, 0.3);
+    --theme-font: var(--font-outfit), ui-sans-serif, system-ui;
+  }
+
+  [data-theme="cyber"] {
+    /* Cyber-Industrial Brutalist */
+    --theme-bg: #050505;
+    --theme-card: #111111;
+    --theme-border: #00e5ff;
+    --theme-text: #ffffff;
+    --theme-muted: rgba(0, 229, 255, 0.8);
+    --theme-accent: #ff00ff;
+    --theme-danger: #ff003c;
+
+    --theme-radius: 0px;
+    --theme-shadow: 8px 8px 0 #ff00ff;
+    --theme-shadow-hover: 12px 12px 0 #00e5ff;
+    --theme-font:
+      ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+      "Courier New", monospace;
+  }
+}
+
+/* Custom scrollbar for themes */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -15,10 +65,89 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 4px;
+  background: var(--theme-border, rgba(255, 255, 255, 0.1));
+  border-radius: var(--theme-radius, 4px);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--theme-accent, rgba(255, 255, 255, 0.2));
+}
+
+/* Global Background Patterns */
+.theme-pattern {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  transition: all 0.5s ease;
+}
+
+:root .theme-pattern {
+  /* Cotton Candy: Ethereal Silk Mesh */
+  background:
+    radial-gradient(
+      circle at 10% 20%,
+      rgba(255, 209, 220, 0.4) 0%,
+      transparent 40%
+    ),
+    radial-gradient(
+      circle at 80% 80%,
+      rgba(230, 230, 250, 0.4) 0%,
+      transparent 40%
+    ),
+    radial-gradient(
+      circle at 50% 50%,
+      rgba(255, 218, 185, 0.2) 0%,
+      transparent 60%
+    );
+  background-size: 100% 100%;
+  animation: breathe 10s ease-in-out infinite alternate;
+}
+
+[data-theme="cyber"] .theme-pattern {
+  /* Cyber: Industrial Scanline/Grid */
+  background:
+    linear-gradient(rgba(0, 229, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 229, 255, 0.03) 1px, transparent 1px);
+  background-size: 32px 32px;
+  animation: none;
+}
+
+/* Glass/Brutalist Structural Logic */
+.theme-panel {
+  background: var(--theme-card);
+  border: 2px solid var(--theme-border);
+  border-radius: var(--theme-radius);
+  box-shadow: var(--theme-shadow);
+  color: var(--theme-text);
+  transition:
+    background 0.3s,
+    border 0.3s,
+    box-shadow 0.3s,
+    border-radius 0.3s,
+    color 0.3s;
+}
+
+:root .theme-panel {
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  /* Inner light reflection for glass */
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.5),
+    var(--theme-shadow);
+}
+
+[data-theme="cyber"] .theme-panel {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+@keyframes breathe {
+  0% {
+    transform: scale(1);
+    filter: hue-rotate(0deg);
+  }
+  100% {
+    transform: scale(1.05);
+    filter: hue-rotate(15deg);
+  }
 }

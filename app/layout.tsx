@@ -14,6 +14,8 @@ export const metadata: Metadata = {
   description: "Watch videos together with friends in perfect sync.",
 };
 
+import { ThemeProvider } from "@/components/ThemeProvider";
+import { ThemeToggle } from "@/components/ThemeToggle";
 export default function RootLayout({
   children,
 }: {
@@ -26,7 +28,7 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <body
-        className="bg-[#050505] text-zinc-50 font-sans antialiased selection:bg-indigo-500/30"
+        className="bg-theme-bg text-theme-text font-theme antialiased selection:bg-theme-accent/30 transition-colors duration-500"
         suppressHydrationWarning
       >
         {/* Subtle cinematic noise overlay */}
@@ -37,13 +39,18 @@ export default function RootLayout({
               'url("data:image/svg+xml,%3Csvg viewBox=%220 0 200 200%22 xmlns=%22http://www.w3.org/2000/svg%22%3E%3Cfilter id=%22noiseFilter%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%220.65%22 numOctaves=%223%22 stitchTiles=%22stitch%22/%3E%3C/filter%3E%3Crect width=%22100%25%22 height=%22100%25%22 filter=%22url(%23noiseFilter)%22/%3E%3C/svg%3E")',
           }}
         ></div>
-        {children}
+
+        <div className="theme-pattern"></div>
+        <ThemeProvider>
+          {children}
+          <ThemeToggle />
+        </ThemeProvider>
         <Toaster
           theme="dark"
           position="bottom-left"
           toastOptions={{
             className:
-              "bg-[#111111] border-zinc-800 text-zinc-100 font-sans backdrop-blur-xl",
+              "bg-theme-card border-[var(--color-theme-border)] text-theme-text font-theme backdrop-blur-xl",
           }}
         />
       </body>

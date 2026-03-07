@@ -220,18 +220,15 @@ export default function Player() {
 
   if (!currentMedia) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center bg-[#050505] relative overflow-hidden font-mono">
-        {/* Brutalist Grid */}
-        <div className="absolute inset-0 bg-[linear-gradient(rgba(0,229,255,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(0,229,255,0.05)_1px,transparent_1px)] bg-[size:32px_32px] pointer-events-none" />
-
-        <div className="relative z-10 flex flex-col items-center max-w-lg w-full px-6">
-          <div className="w-24 h-24 bg-[#050505] border-2 border-[#00E5FF] flex items-center justify-center mb-8 shadow-[8px_8px_0_#FF00FF]">
-            <Play className="w-12 h-12 text-[#00E5FF] ml-2" />
+      <div className="flex-1 flex flex-col items-center justify-center bg-transparent relative overflow-hidden font-theme p-4">
+        <div className="relative z-10 flex flex-col items-center max-w-lg w-full theme-panel p-8">
+          <div className="w-24 h-24 bg-theme-bg/50 border-2 border-theme-accent flex items-center justify-center mb-8 rounded-full shadow-[var(--theme-shadow)] group-hover:shadow-[var(--theme-shadow-hover)] transition-all">
+            <Play className="w-12 h-12 text-theme-accent ml-2" />
           </div>
-          <h2 className="text-3xl font-bold text-white mb-2 uppercase tracking-widest drop-shadow-[0_0_10px_rgba(0,229,255,0.5)]">
+          <h2 className="text-3xl font-bold text-theme-text mb-2 uppercase tracking-widest drop-shadow-sm text-center">
             Awaiting Signal
           </h2>
-          <p className="text-[#00E5FF] text-center mb-10 text-sm uppercase tracking-wider opacity-80">
+          <p className="text-theme-muted text-center mb-10 text-sm uppercase tracking-wider opacity-80">
             System ready. Awaiting media input...
           </p>
 
@@ -249,24 +246,24 @@ export default function Player() {
                 }
               }}
             >
-              <div className="flex flex-col sm:flex-row items-stretch bg-[#050505] border-2 border-[#FF00FF] shadow-[4px_4px_0_#00E5FF] focus-within:shadow-[8px_8px_0_#00E5FF] transition-shadow">
+              <div className="flex flex-col sm:flex-row items-stretch bg-theme-bg/50 border-2 border-theme-border/50 rounded-theme shadow-[var(--theme-shadow)] focus-within:shadow-[var(--theme-shadow-hover)] focus-within:border-theme-accent transition-all overflow-hidden">
                 <input
                   name="urlInput"
                   type="url"
                   placeholder="Paste video stream URL..."
-                  className="flex-1 bg-transparent px-5 py-4 text-white placeholder-zinc-600 focus:outline-none font-mono text-sm uppercase"
+                  className="flex-1 bg-transparent px-5 py-4 text-theme-text placeholder-theme-muted focus:outline-none font-theme text-sm uppercase"
                   required
                 />
                 <button
                   type="submit"
-                  className="px-8 py-4 bg-[#FF00FF] hover:bg-white text-black font-bold uppercase tracking-wider transition-colors border-t-2 border-l-2 sm:border-t-0 sm:border-l-2 border-[#FF00FF] hover:border-white"
+                  className="px-8 py-4 bg-theme-accent hover:filter hover:brightness-110 text-theme-bg font-bold uppercase tracking-wider transition-all sm:border-l-2 border-theme-border/30"
                 >
                   Init
                 </button>
               </div>
             </form>
           ) : (
-            <div className="px-6 py-4 bg-[#050505] border-2 border-[#FF00FF] text-[#FF00FF] text-xs font-mono uppercase tracking-wider flex items-center gap-3 shadow-[4px_4px_0_#00E5FF]">
+            <div className="px-6 py-4 bg-theme-bg/50 border-2 border-theme-danger text-theme-danger text-xs font-theme uppercase tracking-wider flex items-center gap-3 rounded-theme shadow-[var(--theme-shadow)]">
               <AlertCircle className="w-5 h-5" />
               <span>Restricted access. Command privileges required.</span>
             </div>
@@ -277,7 +274,7 @@ export default function Player() {
   }
 
   return (
-    <div className="flex-1 flex flex-col bg-[#050505] relative group react-player-wrapper border-y-2 lg:border-y-0 lg:border-x-2 border-[#00E5FF] font-mono">
+    <div className="flex-1 flex flex-col bg-theme-bg relative group react-player-wrapper border-y-2 lg:border-y-0 lg:border-x-2 border-theme-border/50 font-theme">
       <div className="flex-1 relative" ref={containerRef}>
         {dimensions.width > 0 && dimensions.height > 0 && (
           <ReactPlayer
@@ -341,9 +338,8 @@ export default function Player() {
           />
         )}
 
-        {/* Brutalist Scanline Overlay (pointer-events-none) */}
-        {/* Adds a slight cyber/CRT effect without blocking clicks */}
-        <div className="absolute inset-0 z-0 pointer-events-none bg-[linear-gradient(rgba(0,0,0,0)_50%,rgba(0,0,0,0.1)_50%)] bg-[length:100%_4px]" />
+        {/* Thematic Scanline Overlay */}
+        <div className="absolute inset-0 z-0 pointer-events-none mix-blend-overlay opacity-30 bg-[linear-gradient(rgba(0,0,0,0)_50%,rgba(0,0,0,0.1)_50%)] bg-[length:100%_4px]" />
 
         {/* Interaction overlay */}
         <div
@@ -356,21 +352,21 @@ export default function Player() {
         />
 
         {error && (
-          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-[#050505]/95 backdrop-blur-sm border-4 border-[#FF0000] shadow-[inset_0_0_50px_#FF0000]">
-            <AlertCircle className="w-16 h-16 text-[#FF0000] mb-4 animate-pulse" />
-            <div className="bg-[#FF0000] text-black px-4 py-1 uppercase font-bold text-sm tracking-[0.2em] mb-2">
+          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-theme-bg/95 backdrop-blur-sm border-4 border-theme-danger shadow-[inset_0_0_50px_var(--color-theme-danger)]">
+            <AlertCircle className="w-16 h-16 text-theme-danger mb-4 animate-pulse" />
+            <div className="bg-theme-danger text-theme-bg px-4 py-1 uppercase font-bold text-sm tracking-[0.2em] mb-2 rounded-full">
               Critical Error
             </div>
-            <p className="text-[#FF0000] font-mono text-lg uppercase tracking-wider text-center max-w-md">
+            <p className="text-theme-danger font-theme text-lg uppercase tracking-wider text-center max-w-md">
               {error}
             </p>
           </div>
         )}
 
         {(isBuffering || playback?.status === "buffering") && !error && (
-          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-[#050505]/80 backdrop-blur-sm">
-            <div className="w-16 h-16 border-4 border-[#00E5FF] border-t-transparent border-b-[#FF00FF] animate-spin mb-6" />
-            <div className="bg-[#00E5FF] text-black px-3 py-1 text-xs uppercase font-bold tracking-[0.2em] shadow-[0_0_15px_#00E5FF]">
+          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-theme-bg/80 backdrop-blur-sm">
+            <div className="w-16 h-16 border-4 border-theme-accent border-t-transparent border-b-theme-danger rounded-full animate-spin mb-6" />
+            <div className="bg-theme-accent text-theme-bg px-4 py-1 text-xs uppercase font-bold tracking-[0.2em] shadow-[var(--theme-shadow)] rounded-full">
               {playback?.status === "buffering" && !isBuffering
                 ? `Syncing to ${playback.updatedBy}`
                 : "Buffering Stream"}
@@ -379,17 +375,17 @@ export default function Player() {
         )}
       </div>
 
-      {/* Brutalist Custom Controls Panel */}
-      <div className="absolute bottom-0 left-0 right-0 p-4 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-300 z-30 font-mono">
-        <div className="bg-[#050505]/95 border-2 border-[#00E5FF] p-3 shadow-[6px_6px_0_#FF00FF] backdrop-blur-md">
+      {/* Custom Controls Panel */}
+      <div className="absolute bottom-0 left-0 right-0 p-4 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-300 z-30 font-theme">
+        <div className="bg-theme-bg/80 border-2 border-theme-border/50 p-3 shadow-lg backdrop-blur-md rounded-theme">
           {/* Timeline */}
           <div className="flex items-center space-x-4 mb-3">
-            <span className="text-xs text-[#00E5FF] font-bold w-14 text-right">
+            <span className="text-xs text-theme-accent font-bold w-14 text-right">
               {formatTime(played * duration)}
             </span>
-            <div className="flex-1 relative h-3 bg-[#111111] border border-[#333333]">
+            <div className="flex-1 relative h-3 bg-theme-bg border border-theme-border/30 rounded-theme overflow-hidden">
               <div
-                className="absolute top-0 left-0 h-full bg-[repeating-linear-gradient(45deg,transparent,transparent_4px,#00E5FF_4px,#00E5FF_8px)] transition-all ease-linear"
+                className="absolute top-0 left-0 h-full bg-theme-accent transition-all ease-linear"
                 style={{ width: `${played * 100}%` }}
               />
               <input
@@ -407,7 +403,7 @@ export default function Player() {
                 }`}
               />
             </div>
-            <span className="text-xs text-[#00E5FF] font-bold w-14 text-left">
+            <span className="text-xs text-theme-accent font-bold w-14 text-left">
               {formatTime(duration)}
             </span>
           </div>
@@ -421,11 +417,11 @@ export default function Player() {
                   playing ? handlePause() : handlePlay();
                 }}
                 disabled={!canControl}
-                className={`w-10 h-10 flex items-center justify-center border-2 border-inherit transition-all outline-none focus-visible:ring-2 ring-[#00E5FF] ring-offset-2 ring-offset-[#050505]
+                className={`w-10 h-10 flex items-center justify-center border-2 border-inherit transition-all outline-none focus-visible:ring-2 ring-theme-accent rounded-theme
                   ${
                     canControl
-                      ? "border-[#00E5FF] text-[#00E5FF] hover:bg-[#00E5FF] hover:text-black active:translate-y-px active:shadow-none shadow-[2px_2px_0_#FF00FF]"
-                      : "border-zinc-600 text-zinc-600 cursor-not-allowed shadow-[2px_2px_0_rgba(255,255,255,0.1)]"
+                      ? "border-theme-accent text-theme-accent hover:bg-theme-accent hover:text-theme-bg active:translate-y-0.5 active:shadow-none shadow-[var(--theme-shadow)]"
+                      : "border-theme-border text-theme-muted cursor-not-allowed"
                   }`}
               >
                 {playing ? (
@@ -442,8 +438,8 @@ export default function Player() {
                   handleNext();
                 }}
                 disabled={!canControl}
-                className={`transition-colors hover:scale-110 outline-none focus-visible:ring-2 ring-[#00E5FF] rounded-sm
-                  ${canControl ? "text-[#00E5FF] hover:text-[#FF00FF]" : "text-zinc-600 cursor-not-allowed"}`}
+                className={`transition-all hover:scale-110 outline-none focus-visible:ring-2 ring-theme-accent rounded-full
+                  ${canControl ? "text-theme-accent hover:text-theme-danger" : "text-theme-muted cursor-not-allowed"}`}
               >
                 <SkipForward className="w-5 h-5 fill-current" />
               </button>
@@ -455,7 +451,7 @@ export default function Player() {
                     e.stopPropagation();
                     setMuted(!muted);
                   }}
-                  className="text-[#00E5FF] hover:text-[#FF00FF] transition-colors outline-none focus-visible:ring-2 ring-[#00E5FF] rounded-sm"
+                  className="text-theme-accent hover:text-theme-danger transition-colors outline-none focus-visible:ring-2 ring-theme-accent rounded-full"
                 >
                   {muted || volume === 0 ? (
                     <VolumeX className="w-5 h-5" />
@@ -463,9 +459,9 @@ export default function Player() {
                     <Volume2 className="w-5 h-5" />
                   )}
                 </button>
-                <div className="w-0 group-hover/volume:w-24 overflow-hidden transition-all duration-300 relative h-2 bg-[#111111] border border-[#333333]">
+                <div className="w-0 group-hover/volume:w-24 overflow-hidden transition-all duration-300 relative h-2 bg-theme-bg border border-theme-border/30 rounded-theme">
                   <div
-                    className="absolute top-0 left-0 h-full bg-[#00E5FF]"
+                    className="absolute top-0 left-0 h-full bg-theme-accent rounded-theme"
                     style={{ width: `${(muted ? 0 : volume) * 100}%` }}
                   />
                   <input
@@ -484,34 +480,34 @@ export default function Player() {
               </div>
 
               {/* Meta */}
-              <div className="hidden md:flex ml-4 px-2 py-0.5 bg-[#FF00FF] text-black text-[10px] font-bold uppercase tracking-wider shadow-[2px_2px_0_#00E5FF]">
+              <div className="hidden md:flex ml-4 px-3 py-0.5 bg-theme-accent text-theme-bg text-[10px] font-bold uppercase tracking-wider rounded-full shadow-sm">
                 {currentMedia.provider}
               </div>
 
-              <div className="text-xs font-bold text-white max-w-[150px] lg:max-w-xs xl:max-w-md truncate ml-2 uppercase tracking-wide">
+              <div className="text-xs font-bold text-theme-text max-w-[150px] lg:max-w-xs xl:max-w-md truncate ml-2 uppercase tracking-wide drop-shadow-sm">
                 {currentMedia.title}
               </div>
             </div>
 
             <div className="flex items-center space-x-4">
               {/* Sync Status Badge */}
-              <div className="hidden md:flex items-center space-x-2 text-[10px] uppercase font-bold mr-2 bg-black px-3 py-1.5 border border-[#333333] min-w-[120px] justify-center">
+              <div className="hidden md:flex items-center space-x-2 text-[10px] uppercase font-bold mr-2 bg-theme-bg/80 px-3 py-1.5 border border-theme-border/50 min-w-[120px] justify-center rounded-theme shadow-sm">
                 <div
-                  className={`w-2 h-2 ${
+                  className={`w-2 h-2 rounded-full ${
                     drift < 0.5
-                      ? "bg-[#00E5FF] shadow-[0_0_8px_#00E5FF]"
+                      ? "bg-theme-accent shadow-[0_0_8px_var(--color-theme-accent)]"
                       : drift < 2
-                        ? "bg-[#FFD700] shadow-[0_0_8px_#FFD700]"
-                        : "bg-[#FF0000] shadow-[0_0_8px_#FF0000]"
+                        ? "bg-theme-danger shadow-[0_0_8px_var(--color-theme-danger)]"
+                        : "bg-red-500 shadow-[0_0_8px_rgb(239,68,68)]"
                   }`}
                 />
                 <span
                   className={`hidden sm:inline-block ${
                     drift < 0.5
-                      ? "text-[#00E5FF]"
+                      ? "text-theme-accent"
                       : drift < 2
-                        ? "text-[#FFD700]"
-                        : "text-[#FF0000]"
+                        ? "text-theme-danger"
+                        : "text-red-500"
                   }`}
                 >
                   {drift < 0.5
@@ -523,10 +519,10 @@ export default function Player() {
               </div>
 
               {playback?.updatedBy && (
-                <span className="text-[10px] text-zinc-500 hidden xl:inline-block uppercase tracking-wider border-l border-[#333333] pl-4">
-                  CMD: {playback.status === "playing" ? "PLAY" : "PAUSE"}{" "}
-                  {"// "}
-                  <strong className="text-[#00E5FF] truncate max-w-[100px] inline-block align-bottom">
+                <span className="text-[10px] text-theme-muted hidden xl:inline-block uppercase tracking-wider border-l border-theme-border/30 pl-4">
+                  CMD: {playback.status === "playing" ? "PLAY" : "PAUSE"}
+                  {" // "}
+                  <strong className="text-theme-accent truncate max-w-[100px] inline-block align-bottom">
                     {playback.updatedBy}
                   </strong>
                 </span>
@@ -544,7 +540,7 @@ export default function Player() {
                     }
                   }
                 }}
-                className="text-[#00E5FF] hover:text-[#FF00FF] transition-colors hover:scale-110 p-2 outline-none focus-visible:ring-2 ring-[#00E5FF] rounded-sm"
+                className="text-theme-accent hover:text-theme-danger transition-colors hover:scale-110 p-2 outline-none focus-visible:ring-2 ring-theme-accent rounded-full"
               >
                 <Maximize className="w-5 h-5" />
               </button>
