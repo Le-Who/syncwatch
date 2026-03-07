@@ -74,3 +74,22 @@ npm install
 npm run dev
 # Server will start on http://localhost:3000 with hot-reloading.
 ```
+
+## Testing Ecosystem (`systematic-debugging`)
+
+SyncWatch comes pre-configured with a dual-layer testing environment to ensure regressions aren't shipped to production:
+
+- **E2E Testing (Playwright)**: Located in `e2e/`. Tests visual implementations, DOM integrity, and simulated multi-client websocket synchronization.
+- **Unit/Integration (Vitest)**: Located in `lib/` and configured via `vitest.config.ts`. Used for atomic functional testing of standalone logic blocks.
+
+### Running Tests
+
+```bash
+# Run all E2E Tests (Requires local Next.js server to be running or bypassed)
+npx playwright test
+
+# Run Playwright UI for visual debugging
+npx playwright test --ui
+```
+
+_Note: The local Next.js 13+ Dev Server strictly blocks WebSocket connections originating from 127.0.0.1 (Playwright's default headless runner origin) without explicit `allowedDevOrigins` bypasses. Local E2E tests executing socket-heavy actions may be skipped locally but will run successfully in CI/CD staging environments._
