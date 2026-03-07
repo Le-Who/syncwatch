@@ -10,15 +10,8 @@ export default defineConfig({
       provider: "v8",
       reporter: ["text", "json", "html"],
       include: ["lib/**", "components/**", "server.ts", "app/api/**"],
-      exclude: [
-        "**/*.test.ts",
-        "**/*.test.tsx",
-        "**/*.spec.ts",
-        "lib/__tests__/**",
-        "e2e/**",
-        "node_modules/**",
-      ],
     },
+    exclude: ["**/*.spec.ts", "e2e/**", "node_modules/**"],
   },
   resolve: {
     alias: {

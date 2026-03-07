@@ -14,29 +14,31 @@ vi.mock("@/lib/rate-limit");
 // Mocking Worker Threads to prevent actual execution of yt-search in isolated context
 vi.mock("worker_threads", () => {
   const { EventEmitter } = require("events");
-  return {
-    Worker: class MockWorker extends EventEmitter {
-      constructor(_code: string, options: any) {
-        super();
-        setTimeout(async () => {
+  class MockWorker extends EventEmitter {
+    constructor(_code: string, options: any) {
+      super();
+      setTimeout(async () => {
+        if ((global as any).forceWorkerThrow) {
+          this.emit("error", new Error("yts crashed"));
+          return;
+        }
+
+        try {
           const ytsModule = await import("yt-search");
           const ytsMock = ytsModule.default as unknown as import("vitest").Mock;
-          // If we mocked yts to reject, simulate worker throwing an error
-          if (ytsMock.mock.results?.[0]?.type === "throw") {
-            this.emit("error", ytsMock.mock.results[0].value);
-          } else {
-            // Otherwise resolve with the mocked data via yts default mock
-            try {
-              const res = await ytsMock(options.workerData.query);
-              this.emit("message", { success: true, data: res });
-            } catch (err: any) {
-              this.emit("message", { success: false, error: err.message });
-            }
-          }
-        }, 0);
-      }
-      terminate() {}
-    },
+          const res = await ytsMock(options.workerData.query);
+          this.emit("message", { success: true, data: res });
+        } catch (err: any) {
+          this.emit("message", { success: false, error: err.message });
+        }
+      }, 0);
+    }
+    terminate() {}
+  }
+  return {
+    default: { Worker: MockWorker },
+    Worker: MockWorker,
+    __esModule: true,
   };
 });
 
@@ -122,16 +124,17 @@ describe("GET /api/youtube/search", () => {
   });
 
   it("should return 500 if yt-search throws an error", async () => {
-    // @ts-ignore
-    vi.mocked(yts).mockRejectedValue(new Error("yts crashed"));
+    (global as any).forceWorkerThrow = true;
 
     const req = createRequest(
-      "http://localhost:3000/api/youtube/search?q=testquery",
+      "http://localhost:3000/api/youtube/search?q=errorquery",
     );
     const response = await GET(req);
 
     expect(response.status).toBe(500);
     const data = await response.json();
     expect(data.error).toBe("Search failed");
+
+    delete (global as any).forceWorkerThrow;
   });
 });

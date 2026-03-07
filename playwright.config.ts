@@ -7,14 +7,27 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   workers: process.env.CI ? 1 : undefined,
   reporter: "html",
+  timeout: 30000,
   use: {
     baseURL: "http://localhost:3000",
     trace: "on-first-retry",
+    actionTimeout: 10000,
+    navigationTimeout: 15000,
+    launchOptions: {
+      args: [
+        "--use-gl=egl",
+        "--disable-dev-shm-usage",
+        "--disable-gpu", // Fallback for pure headless
+      ],
+    },
   },
   projects: [
     {
       name: "chromium",
-      use: { ...devices["Desktop Chrome"] },
+      use: {
+        ...devices["Desktop Chrome"],
+        channel: "chrome",
+      },
     },
   ],
   webServer: {

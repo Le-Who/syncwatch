@@ -39,7 +39,7 @@ export default function Player() {
   const [isReady, setIsReady] = useState(false);
   const [isBuffering, setIsBuffering] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [drift, setDrift] = useState(0);
+  const driftRef = useRef(0);
   const [hostName, setHostName] = useState<string>("localhost");
   const [mounted, setMounted] = useState(false);
   const [localPlaybackRate, setLocalPlaybackRate] = useState<number>(1);
@@ -137,7 +137,7 @@ export default function Player() {
           currentPosition,
           playback.rate,
         );
-        setDrift(currentDrift);
+        driftRef.current = currentDrift;
 
         if (!playing) {
           setPlaying(true);
@@ -167,7 +167,7 @@ export default function Player() {
           currentPosition,
           1.0,
         );
-        setDrift(currentDrift);
+        driftRef.current = currentDrift;
 
         if (playing) {
           setPlaying(false);
@@ -869,21 +869,23 @@ export default function Player() {
                 </div>
 
                 {/* Sync Status Badge */}
-                {drift >= 0.5 && (
+                {driftRef.current >= 0.5 && (
                   <div className="bg-theme-bg/80 border-theme-border/50 rounded-theme animate-in fade-in mr-2 hidden min-w-[120px] items-center justify-center space-x-2 border px-3 py-1.5 text-[10px] font-bold uppercase shadow-sm md:flex">
                     <div
                       className={`h-2 w-2 rounded-full ${
-                        drift < 2
+                        driftRef.current < 2
                           ? "bg-theme-danger shadow-[0_0_8px_var(--color-theme-danger)]"
                           : "bg-red-500 shadow-[0_0_8px_rgb(239,68,68)]"
                       }`}
                     />
                     <span
                       className={`hidden sm:inline-block ${
-                        drift < 2 ? "text-theme-danger" : "text-red-500"
+                        driftRef.current < 2
+                          ? "text-theme-danger"
+                          : "text-red-500"
                       }`}
                     >
-                      {drift < 2 ? "Sync: Locking" : "Sync: Lost"}
+                      {driftRef.current < 2 ? "Sync: Locking" : "Sync: Lost"}
                     </span>
                   </div>
                 )}

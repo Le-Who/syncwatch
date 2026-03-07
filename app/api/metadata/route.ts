@@ -2,25 +2,25 @@ import { NextRequest, NextResponse } from "next/server";
 import { checkRateLimit } from "@/lib/rate-limit";
 import dns from "dns/promises";
 import { Parser } from "htmlparser2";
+import ipaddr from "ipaddr.js";
 
-function isBogon(ip: string): boolean {
-  const parts = ip.split(".").map(Number);
-  if (parts.length === 4) {
-    if (parts[0] === 10 || parts[0] === 127 || parts[0] === 0) return true;
-    if (parts[0] === 169 && parts[1] === 254) return true;
-    if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true;
-    if (parts[0] === 192 && parts[1] === 168) return true;
-  }
-  const ipv6 = ip.toLowerCase();
-  if (
-    ipv6 === "::1" ||
-    ipv6.startsWith("fe80") ||
-    ipv6.startsWith("fc") ||
-    ipv6.startsWith("fd")
-  ) {
+function isBogon(ipStr: string): boolean {
+  try {
+    const ip = ipaddr.process(ipStr);
+    const range = ip.range();
+    return [
+      "private",
+      "loopback",
+      "linkLocal",
+      "multicast",
+      "unspecified",
+      "carrierGradeNat",
+      "broadcast",
+    ].includes(range);
+  } catch (e) {
+    // If it can't be parsed, treat it as a potential risk and block it
     return true;
   }
-  return false;
 }
 
 export async function GET(request: NextRequest) {

@@ -1,5 +1,5 @@
 import { test, expect, Page } from "@playwright/test";
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 
 function getTestRoomUrl() {
   return `/room/e2e-${randomUUID().slice(0, 8)}`;
@@ -57,7 +57,7 @@ test.describe("SyncWatch Player E2E Regressions", () => {
   // Note: We skip the heavy multi-page orchestration tests if they fail frequently in CI
   // due to WebSocket CORS blocks or IP limitations on GitHub Actions / Vercel.
   // We write them out for local development loops when NextServer is reachable.
-  test.skip("3. Multi-user Connection Sync", async ({ browser }) => {
+  test("3. Multi-user Connection Sync", async ({ browser }) => {
     const context1 = await browser.newContext();
     const context2 = await browser.newContext();
     const page1 = await context1.newPage();

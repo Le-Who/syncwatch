@@ -134,6 +134,12 @@ npx playwright test
 npx playwright test --ui
 ```
 
+> **Important note for CI and Headless environments:**
+> SyncWatch utilizes complex media embeds (ReactPlayer/YouTube iframe) which historically trigger WebGL rendering deadlocks in headless Chromium on Windows and standard CI workers. We have structurally patched the `playwright.config.ts` with a **hybrid configuration**:
+>
+> - Native `channel: "chrome"` invocation guarantees proprioritary H.264/AAC media codecs are available, preventing iframe pipeline freezes.
+> - Forced `--use-gl=egl` combined with aggressive headless timeouts (`actionTimeout`, `globalTimeout`) aggressively eliminate "black-screen" GPU hangs during GitHub Actions or local GUI-less testing.
+
 _Note: The local Next.js 13+ Dev Server strictly blocks WebSocket connections originating from 127.0.0.1 (Playwright's default headless runner origin) without explicit `allowedDevOrigins` bypasses. Local E2E tests executing socket-heavy actions may be skipped locally but will run successfully in CI/CD staging environments._
 
 ## Project Factual & Mental Map

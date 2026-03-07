@@ -1,47 +1,38 @@
 import { redisClient } from "./redis-rate-limit";
-import Redlock from "redlock";
 
 export const pubClient = redisClient;
 export const subClient = redisClient ? redisClient.duplicate() : null;
 
-export const redlock = redisClient
-  ? new Redlock([redisClient as any], {
-      driftFactor: 0.01,
-      retryCount: 3,
-      retryDelay: 200, // time in ms
-      retryJitter: 200,
-    })
-  : null;
-
-/**
- * Perform a Redlock-protected atomic operation.
- * If Redis isn't configured, bypass lock seamlessly.
- */
 export async function withLock<T>(
   resourceId: string,
   ttl: number,
   operation: () => Promise<T>,
 ): Promise<T> {
-  if (!redlock || !redisClient) {
+  if (!redisClient) {
     return await operation();
   }
 
   const key = `locks:${resourceId}`;
-  let lock;
+  const val = Math.random().toString(36).substring(2, 15);
+
+  const acquired = await redisClient.set(key, val, "PX", ttl, "NX");
+  if (!acquired) {
+    throw new Error("Could not acquire distributed lock for " + resourceId);
+  }
+
   try {
-    lock = await redlock.acquire([key], ttl);
     return await operation();
-  } catch (err: any) {
-    if (err.name === "ExecutionError") {
-      throw new Error("Could not acquire distributed lock for " + resourceId);
-    }
-    throw err;
   } finally {
-    if (lock) {
-      await (lock as any)
-        .release()
-        .catch((e: any) => console.error("Lock release err:", e));
-    }
+    const script = `
+      if redis.call("get", KEYS[1]) == ARGV[1] then
+        return redis.call("del", KEYS[1])
+      else
+        return 0
+      end
+    `;
+    await redisClient
+      .eval(script, 1, key, val)
+      .catch((e: any) => console.error("Lock release err:", e));
   }
 }
 

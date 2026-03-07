@@ -100,8 +100,10 @@ function searchYoutubeWithWorker(
   timeoutMs: number,
 ): Promise<any> {
   return new Promise((resolve, reject) => {
-    const worker = new Worker(workerCode, {
-      eval: true,
+    // Generate a Data URI to avoid eval: true which is insecure and flagged by SAST tools
+    const workerScript = `data:text/javascript;base64,${Buffer.from(workerCode).toString("base64")}`;
+
+    const worker = new Worker(workerScript, {
       workerData: { query },
     });
 

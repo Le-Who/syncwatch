@@ -207,7 +207,7 @@ const forcePersistRoom = async (room: RoomState) => {
   }
 };
 
-// Background worker to flush queue every 5 seconds
+// Background worker to flush queue every 30 seconds
 setInterval(async () => {
   if (writeBehindQueue.size === 0 || !supabase) return;
 
@@ -225,7 +225,7 @@ setInterval(async () => {
       writeBehindQueue.add(roomId);
     }
   }
-}, 5000);
+}, 30000);
 
 // Graceful Shutdown Sequence
 let isShuttingDown = false;
@@ -371,26 +371,29 @@ app.prepare().then(() => {
   // Global Pub/Sub Listener for Node Synchronization
   if (subClient) {
     subClient.psubscribe("room_events:*");
-    subClient.on("pmessage", (pattern, channel, message) => {
-      try {
-        const roomId = channel.split(":")[1];
-        if (!roomId) return;
-        const data = JSON.parse(message);
-        if (data.type === "state_update") {
-          // If we have local clients connected to this room, update local cache and emit
-          // Using io.sockets.adapter.rooms.has is an efficient way to check local presence
-          if (io.sockets.adapter.rooms.has(roomId)) {
-            rooms.set(roomId, data.payload);
-            io.to(roomId).emit("room_state", {
-              room: data.payload,
-              serverTime: Date.now(),
-            });
+    subClient.on(
+      "pmessage",
+      (pattern: string, channel: string, message: string) => {
+        try {
+          const roomId = channel.split(":")[1];
+          if (!roomId) return;
+          const data = JSON.parse(message);
+          if (data.type === "state_update") {
+            // If we have local clients connected to this room, update local cache and emit
+            // Using io.sockets.adapter.rooms.has is an efficient way to check local presence
+            if (io.sockets.adapter.rooms.has(roomId)) {
+              rooms.set(roomId, data.payload);
+              io.to(roomId).emit("room_state", {
+                room: data.payload,
+                serverTime: Date.now(),
+              });
+            }
           }
+        } catch (e) {
+          console.error("PubSub parse error:", e);
         }
-      } catch (e) {
-        console.error("PubSub parse error:", e);
-      }
-    });
+      },
+    );
   }
 
   // Handle cleanup of zombies periodically if Redis exists
