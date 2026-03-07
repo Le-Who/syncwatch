@@ -64,7 +64,7 @@ export default function Playlist() {
     testUrl: string,
   ): { provider: string; isValid: boolean } => {
     // ReactPlayer checks CanPlay
-    if (ReactPlayer.canPlay(testUrl)) {
+    if (ReactPlayer.canPlay?.(testUrl)) {
       if (testUrl.includes("youtube.com") || testUrl.includes("youtu.be"))
         return { provider: "YouTube", isValid: true };
       if (testUrl.includes("vimeo.com"))
