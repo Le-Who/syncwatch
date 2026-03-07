@@ -54,6 +54,11 @@ export default function Player() {
     room?.participants[participantId!]?.role === "moderator" ||
     room?.settings.controlMode === "hybrid";
 
+  const canEditPlaylist =
+    room?.settings.controlMode === "open" ||
+    room?.participants[participantId!]?.role === "owner" ||
+    room?.participants[participantId!]?.role === "moderator";
+
   const getAccurateTime = useCallback(() => {
     return playerRef.current?.getCurrentTime() || 0;
   }, []);
@@ -233,7 +238,8 @@ export default function Player() {
             System ready. Awaiting media input...
           </p>
 
-          {canControl ? (
+          {canEditPlaylist ||
+          Object.keys(room?.participants || {}).length <= 1 ? (
             <form
               className="w-full relative"
               onSubmit={(e) => {
@@ -241,8 +247,22 @@ export default function Player() {
                 const input = e.currentTarget.elements.namedItem(
                   "urlInput",
                 ) as HTMLInputElement;
-                if (input.value.trim()) {
-                  sendCommand("add_to_playlist", { url: input.value.trim() });
+                const url = input.value.trim();
+                if (url) {
+                  let provider = "unknown";
+                  if (url.includes("youtube.com") || url.includes("youtu.be"))
+                    provider = "youtube";
+                  else if (url.includes("twitch.tv")) provider = "twitch";
+                  else if (url.includes("vimeo.com")) provider = "vimeo";
+                  else if (url.includes("soundcloud.com"))
+                    provider = "soundcloud";
+
+                  sendCommand("add_item", {
+                    url,
+                    provider,
+                    title: `Added from Awaiting Signal`,
+                    duration: 0,
+                  });
                   input.value = "";
                 }
               }}
