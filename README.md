@@ -15,6 +15,13 @@ SyncWatch is a latency-tolerant, real-time, server-authoritative watch-party app
 - **Pro-Max UI/UX**: Includes a Glassmorphic Quality Selection Menu, synchronized floating emoji reactions, intelligent "Up Next" smart-buffer countdowns, and real-time inline progress bars tracking media consumption.
 - **Metadata Resolver**: Background `/api/metadata` routes securely fetch and sanitize video titles from YouTube/Vimeo/Twitch over oEmbed protocols.
 
+## Recent Stability & Sync Improvements
+
+- **Audio Tearing Resolution**: Resolved Chromium audio resampling artifacts by widening the synchronization deadzone to `1.0s` and utilizing gentler `1.02x`/`0.98x` playback rate adjustments for minor drifts.
+- **Multi-Browser Stability**: Implemented deterministic guest ID assignments in the Socket.io `io.use` middleware. Unauthenticated connections now safely receive a `guest_` session (unblocking the UI from freezing) while state-mutating commands are explicitly rejected.
+- **Database UUID Validation**: Guaranteed all dynamically generated room IDs use strict 36-character UUIDv4 strings to satisfy the Postgres `uuid` schema requirements, eliminating `22P02` serialization errors during Supabase write-behind persistence.
+- **Clean Server Logs**: Suppressed legacy `url.parse()` warnings (`DEP0169`) natively via `cross-env` `NODE_OPTIONS` injections.
+
 ## Database Setup (Supabase)
 
 You must configure a Supabase project to persist room states.
