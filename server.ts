@@ -67,6 +67,7 @@ interface Participant {
   nickname: string;
   role: "owner" | "moderator" | "guest";
   lastSeen: number;
+  sessionToken?: string;
 }
 
 interface RoomSettings {
@@ -133,6 +134,16 @@ function createEmptyRoom(id: string, name: string): RoomState {
     sequence: 1,
     lastActivity: Date.now(),
   };
+}
+
+// Security: Prevent sending sensitive tokens to other clients
+function sanitizeRoom(room: RoomState): RoomState {
+  const sanitized = { ...room, participants: { ...room.participants } };
+  for (const pid in sanitized.participants) {
+    sanitized.participants[pid] = { ...sanitized.participants[pid] };
+    delete (sanitized.participants[pid] as any).sessionToken;
+  }
+  return sanitized;
 }
 
 // Database sync helpers
@@ -318,54 +329,97 @@ app.prepare().then(() => {
       },
     );
 
-    socket.on("join_room", async ({ roomId, nickname, participantId }) => {
-      let room: RoomState | undefined | null = rooms.get(roomId);
+    socket.on(
+      "join_room",
+      async ({ roomId, nickname, participantId, sessionToken }) => {
+        let room: RoomState | undefined | null = rooms.get(roomId);
 
-      if (!room) {
-        // Try to load from DB first
-        room = await loadRoomFromDB(roomId);
         if (!room) {
-          room = createEmptyRoom(roomId, `Room ${roomId}`);
+          // Try to load from DB first
+          room = await loadRoomFromDB(roomId);
+          if (!room) {
+            room = createEmptyRoom(roomId, `Room ${roomId}`);
+          }
+          rooms.set(roomId, room);
         }
-        rooms.set(roomId, room);
+
+        room.lastActivity = Date.now();
+
+        const pId = participantId || socket.id;
+        const isFirst = Object.keys(room.participants).length === 0;
+
+        // Handle reconnect or new join
+        const existingParticipant = room.participants[pId];
+        if (existingParticipant) {
+          if (
+            existingParticipant.sessionToken &&
+            existingParticipant.sessionToken !== sessionToken
+          ) {
+            socket.emit("error", {
+              message: "Invalid session token. Access denied.",
+            });
+            return;
+          }
+          existingParticipant.lastSeen = Date.now();
+          existingParticipant.nickname =
+            nickname || existingParticipant.nickname;
+        } else {
+          const newToken = sessionToken || randomUUID();
+          room.participants[pId] = {
+            id: pId,
+            sessionToken: newToken,
+            nickname: nickname || `Guest ${Math.floor(Math.random() * 1000)}`,
+            role: isFirst ? "owner" : "guest",
+            lastSeen: Date.now(),
+          };
+        }
+
+        room.version++;
+
+        socket.join(roomId);
+        currentRoomId = roomId;
+        currentParticipantId = pId;
+
+        socket.emit("room_state", {
+          room: sanitizeRoom(room),
+          serverTime: Date.now(),
+          sessionToken: room.participants[pId].sessionToken,
+        });
+        // participant_joined only needs sanitized data
+        const joinedInfo = { ...room.participants[pId] };
+        delete (joinedInfo as any).sessionToken;
+        socket.to(roomId).emit("participant_joined", joinedInfo);
+      },
+    );
+
+    socket.on("command", (rawCommand) => {
+      // OOM & Type Protection Fast Check
+      if (!rawCommand || typeof rawCommand !== "object") return;
+
+      const payloadString = JSON.stringify(rawCommand);
+      if (payloadString.length > 50000) {
+        socket.emit("error", {
+          message: "Payload too large. Request rejected.",
+        });
+        return;
       }
 
-      room.lastActivity = Date.now();
+      const { roomId, type, payload, sequence, sessionToken } = rawCommand;
+      if (typeof type !== "string" || type.length > 50) return;
 
-      const pId = participantId || socket.id;
-      const isFirst = Object.keys(room.participants).length === 0;
-
-      // Handle reconnect or new join
-      const existingParticipant = room.participants[pId];
-      if (existingParticipant) {
-        existingParticipant.lastSeen = Date.now();
-        existingParticipant.nickname = nickname || existingParticipant.nickname;
-      } else {
-        room.participants[pId] = {
-          id: pId,
-          nickname: nickname || `Guest ${Math.floor(Math.random() * 1000)}`,
-          role: isFirst ? "owner" : "guest",
-          lastSeen: Date.now(),
-        };
-      }
-
-      room.version++;
-
-      socket.join(roomId);
-      currentRoomId = roomId;
-      currentParticipantId = pId;
-
-      socket.emit("room_state", { room, serverTime: Date.now() });
-      socket.to(roomId).emit("participant_joined", room.participants[pId]);
-    });
-
-    socket.on("command", ({ roomId, type, payload, sequence }) => {
       const room = rooms.get(roomId);
       if (!room || !currentParticipantId) return;
 
       room.lastActivity = Date.now();
       const participant = room.participants[currentParticipantId];
-      if (!participant) return;
+
+      // Strict spoofing check
+      if (!participant || participant.sessionToken !== sessionToken) {
+        socket.emit("error", {
+          message: "Unauthorized command. Invalid session.",
+        });
+        return;
+      }
 
       room.sequence++;
 

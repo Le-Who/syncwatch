@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 export async function GET(request: NextRequest) {
+  const ip = request.headers.get("x-forwarded-for") || "unknown";
+  if (!checkRateLimit(ip, 20, 60000)) {
+    return NextResponse.json({ error: "Too many requests" }, { status: 429 });
+  }
+
   const url = request.nextUrl.searchParams.get("url");
   if (!url)
     return NextResponse.json({ title: "Unknown Media" }, { status: 400 });

@@ -17,10 +17,10 @@ import {
   ExternalLink,
 } from "lucide-react";
 import fscreen from "fscreen";
+import ReactPlayerImport from "react-player";
+import { motion } from "motion/react";
 
-const ReactPlayer = dynamic(() => import("react-player"), {
-  ssr: false,
-}) as any;
+const ReactPlayer = ReactPlayerImport as any;
 
 export default function Player() {
   const { room, participantId, sendCommand, serverClockOffset } = useStore();
@@ -38,6 +38,8 @@ export default function Player() {
   const [error, setError] = useState<string | null>(null);
   const [drift, setDrift] = useState(0);
   const [hostName, setHostName] = useState<string>("localhost");
+  const [mounted, setMounted] = useState(false);
+  const [localPlaybackRate, setLocalPlaybackRate] = useState<number>(1);
 
   const [qualityMenuOpen, setQualityMenuOpen] = useState(false);
   const [forceHighRes, setForceHighRes] = useState(false);
@@ -91,6 +93,7 @@ export default function Player() {
     if (typeof window !== "undefined") {
       setHostName(window.location.hostname);
     }
+    setMounted(true);
   }, []);
 
   // Removed ResizeObserver effect
@@ -131,8 +134,15 @@ export default function Player() {
           setPlaying(true);
         }
 
-        if (currentDrift > 2.0 && !isBuffering) {
+        if (currentDrift > 5.0 && !isBuffering) {
           performProgrammaticSeek(expectedPosition);
+          setLocalPlaybackRate(playback.rate);
+        } else if (currentDrift > 0.5 && !isBuffering) {
+          const rateAdjustment =
+            currentPosition < expectedPosition ? 1.05 : 0.95;
+          setLocalPlaybackRate(playback.rate * rateAdjustment);
+        } else {
+          setLocalPlaybackRate(playback.rate);
         }
       } else if (playback.status === "paused") {
         const currentDrift = Math.abs(playback.basePosition - currentPosition);
@@ -210,14 +220,10 @@ export default function Player() {
     setSeeking(true);
   };
 
-  const handleSeekChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setPlayed(parseFloat(e.target.value));
-  };
-
-  const handleSeekMouseUp = (e: React.MouseEvent<HTMLInputElement>) => {
+  const handleSeekMouseUp = (percent: number) => {
     setSeeking(false);
-    const newPosition =
-      parseFloat((e.target as HTMLInputElement).value) * duration;
+    setPlayed(percent);
+    const newPosition = percent * duration;
     playerRef.current?.seekTo(newPosition, "seconds");
 
     if (canControl) {
@@ -408,115 +414,118 @@ export default function Player() {
               : { width: "100%", height: "100%", transform: "none" }
           }
         >
-          <ReactPlayer
-            ref={playerRef}
-            url={currentMedia.url}
-            width="100%"
-            height="100%"
-            playing={playing}
-            volume={volume}
-            muted={muted}
-            playbackRate={playback?.rate || 1}
-            progressInterval={500}
-            onReady={() => {
-              setIsReady(true);
-              setError(null);
+          {mounted && (
+            <ReactPlayer
+              ref={playerRef}
+              url={currentMedia.url}
+              width="100%"
+              height="100%"
+              playing={playing}
+              volume={volume}
+              muted={muted}
+              playbackRate={localPlaybackRate}
+              progressInterval={500}
+              onReady={() => {
+                setIsReady(true);
+                setError(null);
 
-              // Extract HLS Levels if it's a direct stream
-              if (
-                currentMedia.provider !== "youtube" &&
-                currentMedia.provider !== "twitch" &&
-                currentMedia.provider !== "vimeo"
-              ) {
-                try {
-                  const internal = playerRef.current?.getInternalPlayer("hls");
-                  if (internal && internal.levels) {
-                    setHlsLevels(internal.levels);
-                    setCurrentHlsLevel(internal.currentLevel);
+                // Extract HLS Levels if it's a direct stream
+                if (
+                  currentMedia.provider !== "youtube" &&
+                  currentMedia.provider !== "twitch" &&
+                  currentMedia.provider !== "vimeo"
+                ) {
+                  try {
+                    const internal =
+                      playerRef.current?.getInternalPlayer("hls");
+                    if (internal && internal.levels) {
+                      setHlsLevels(internal.levels);
+                      setCurrentHlsLevel(internal.currentLevel);
+                    }
+                  } catch (e) {
+                    console.log("Not an HLS stream or levels unavailable.");
                   }
-                } catch (e) {
-                  console.log("Not an HLS stream or levels unavailable.");
                 }
-              }
-            }}
-            onError={(e: any) => {
-              console.error("Player error:", e);
-              setError("SYSTEM FAILURE. SIGNAL LOST.");
-              setIsBuffering(false);
-            }}
-            onProgress={handleProgress}
-            onSeek={(seconds: number) => {
-              if (nativeInteraction && canControl) {
-                emitCommand("seek", { position: seconds });
-                if (playing) {
-                  emitCommand("play", { position: seconds });
+              }}
+              onError={(e: any) => {
+                console.error("Player error:", e);
+                setError("SYSTEM FAILURE. SIGNAL LOST.");
+                setIsBuffering(false);
+              }}
+              onProgress={handleProgress}
+              onSeek={(seconds: number) => {
+                if (nativeInteraction && canControl) {
+                  emitCommand("seek", { position: seconds });
+                  if (playing) {
+                    emitCommand("play", { position: seconds });
+                  }
                 }
-              }
-            }}
-            onDuration={(dur: number) => {
-              setDuration(dur);
-              if (canControl && room && room.currentMediaId) {
-                emitCommand("update_duration", {
-                  itemId: room.currentMediaId,
-                  duration: dur,
-                });
-              }
-            }}
-            onEnded={() => {
-              if (canControl) {
-                emitCommand("video_ended", {
-                  currentMediaId: room?.currentMediaId,
-                });
-              }
-            }}
-            onBuffer={() => {
-              setIsBuffering(true);
-            }}
-            onBufferEnd={() => {
-              setIsBuffering(false);
-            }}
-            onPlay={() => {
-              setIsBuffering(false);
-              setPlaying(true);
-              if (ignoreNextPlayPauseEvent.current) {
-                ignoreNextPlayPauseEvent.current = false;
-                return;
-              }
-              if (canControl && playback?.status !== "playing") {
-                let pos = getAccurateTime();
-                if (pos === 0 && playback && playback.basePosition > 2) {
-                  pos = playback.basePosition;
+              }}
+              onDuration={(dur: number) => {
+                setDuration(dur);
+                if (canControl && room && room.currentMediaId) {
+                  emitCommand("update_duration", {
+                    itemId: room.currentMediaId,
+                    duration: dur,
+                  });
                 }
-                emitCommand("play", { position: pos });
-              }
-            }}
-            onPause={() => {
-              setIsBuffering(false);
-              setPlaying(false);
-              if (ignoreNextPlayPauseEvent.current) {
-                ignoreNextPlayPauseEvent.current = false;
-                return;
-              }
-              if (canControl && playback?.status === "playing" && !seeking) {
-                emitCommand("pause", { position: getAccurateTime() });
-              }
-            }}
-            style={{ position: "absolute", top: 0, left: 0 }}
-            config={{
-              youtube: { playerVars: { showinfo: 1, controls: 0 } },
-              vimeo: { playerOptions: { controls: false } },
-              twitch: {
-                options: {
-                  parent: [
-                    hostName,
-                    "localhost",
-                    "127.0.0.1",
-                    "syncwatch.example.com",
-                  ],
+              }}
+              onEnded={() => {
+                if (canControl) {
+                  emitCommand("video_ended", {
+                    currentMediaId: room?.currentMediaId,
+                  });
+                }
+              }}
+              onBuffer={() => {
+                setIsBuffering(true);
+              }}
+              onBufferEnd={() => {
+                setIsBuffering(false);
+              }}
+              onPlay={() => {
+                setIsBuffering(false);
+                setPlaying(true);
+                if (ignoreNextPlayPauseEvent.current) {
+                  ignoreNextPlayPauseEvent.current = false;
+                  return;
+                }
+                if (canControl && playback?.status !== "playing") {
+                  let pos = getAccurateTime();
+                  if (pos === 0 && playback && playback.basePosition > 2) {
+                    pos = playback.basePosition;
+                  }
+                  emitCommand("play", { position: pos });
+                }
+              }}
+              onPause={() => {
+                setIsBuffering(false);
+                setPlaying(false);
+                if (ignoreNextPlayPauseEvent.current) {
+                  ignoreNextPlayPauseEvent.current = false;
+                  return;
+                }
+                if (canControl && playback?.status === "playing" && !seeking) {
+                  emitCommand("pause", { position: getAccurateTime() });
+                }
+              }}
+              style={{ position: "absolute", top: 0, left: 0 }}
+              config={{
+                youtube: { playerVars: { showinfo: 1, controls: 0 } },
+                vimeo: { playerOptions: { controls: false } },
+                twitch: {
+                  options: {
+                    parent: [
+                      hostName,
+                      "localhost",
+                      "127.0.0.1",
+                      "syncwatch.example.com",
+                    ],
+                  },
                 },
-              },
-            }}
-          />
+              }}
+            />
+          )}
         </div>
 
         {/* Up Next Overlay Layer */}
@@ -636,45 +645,58 @@ export default function Player() {
               <span className="text-xs text-theme-accent font-bold w-14 text-right">
                 {formatTime(played * duration)}
               </span>
-              <div className="flex-1 relative h-3 bg-theme-bg border border-theme-border/30 rounded-theme overflow-hidden">
-                <div
-                  className="absolute top-0 left-0 h-full bg-theme-accent transition-all ease-linear"
-                  style={{ width: `${played * 100}%` }}
-                />
-                <input
-                  type="range"
-                  min={0}
-                  max={0.999}
-                  step="any"
-                  value={played}
-                  disabled={
+              <div
+                className="flex-1 relative h-4 bg-theme-bg/80 border border-theme-border/50 rounded-full overflow-hidden cursor-pointer group/timeline shadow-inner"
+                onPointerDown={(e) => {
+                  if (
                     !canControl ||
                     currentMedia?.provider?.toLowerCase() === "twitch"
-                  }
-                  onMouseDown={
-                    canControl &&
-                    currentMedia?.provider?.toLowerCase() !== "twitch"
-                      ? handleSeekMouseDown
-                      : undefined
-                  }
-                  onChange={
-                    canControl &&
-                    currentMedia?.provider?.toLowerCase() !== "twitch"
-                      ? handleSeekChange
-                      : undefined
-                  }
-                  onMouseUp={
-                    canControl &&
-                    currentMedia?.provider?.toLowerCase() !== "twitch"
-                      ? handleSeekMouseUp
-                      : undefined
-                  }
-                  className={`absolute inset-0 w-full h-full opacity-0 ${
-                    canControl &&
-                    currentMedia?.provider?.toLowerCase() !== "twitch"
-                      ? "cursor-pointer"
-                      : "cursor-not-allowed"
-                  }`}
+                  )
+                    return;
+                  e.currentTarget.setPointerCapture(e.pointerId);
+                  handleSeekMouseDown();
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const percent = Math.max(
+                    0,
+                    Math.min(1, (e.clientX - rect.left) / rect.width),
+                  );
+                  setPlayed(percent);
+                }}
+                onPointerMove={(e) => {
+                  if (
+                    !seeking ||
+                    !canControl ||
+                    currentMedia?.provider?.toLowerCase() === "twitch"
+                  )
+                    return;
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const percent = Math.max(
+                    0,
+                    Math.min(1, (e.clientX - rect.left) / rect.width),
+                  );
+                  setPlayed(percent);
+                }}
+                onPointerUp={(e) => {
+                  if (
+                    !seeking ||
+                    !canControl ||
+                    currentMedia?.provider?.toLowerCase() === "twitch"
+                  )
+                    return;
+                  e.currentTarget.releasePointerCapture(e.pointerId);
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const percent = Math.max(
+                    0,
+                    Math.min(1, (e.clientX - rect.left) / rect.width),
+                  );
+                  handleSeekMouseUp(percent);
+                }}
+              >
+                <motion.div
+                  className="absolute top-0 left-0 h-full bg-gradient-to-r from-theme-accent/80 to-theme-accent shadow-[0_0_12px_var(--color-theme-accent)] rounded-r-full"
+                  style={{ width: `${played * 100}%` }}
+                  layout
+                  transition={{ type: "tween", ease: "linear", duration: 0.1 }}
                 />
               </div>
               <span className="text-xs text-theme-accent font-bold w-14 text-left">

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import yts from "yt-search";
 import { z } from "zod";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 const ytSearchQuerySchema = z.string().min(1);
 
@@ -17,6 +18,11 @@ const ytSearchResponseSchema = z.object({
 });
 
 export async function GET(request: Request) {
+  const ip = request.headers.get("x-forwarded-for") || "unknown";
+  if (!checkRateLimit(ip, 20, 60000)) {
+    return NextResponse.json({ error: "Too many requests" }, { status: 429 });
+  }
+
   const { searchParams } = new URL(request.url);
   const rawQ = searchParams.get("q");
 

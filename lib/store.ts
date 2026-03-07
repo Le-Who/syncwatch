@@ -79,6 +79,7 @@ interface AppState {
   serverClockOffset: number;
   isConnected: boolean;
   participantId: string | null;
+  sessionToken: string | null;
   nickname: string;
   commandSequence: number;
   setNickname: (name: string) => void;
@@ -93,6 +94,7 @@ export const useStore = create<AppState>((set, get) => ({
   serverClockOffset: 0,
   isConnected: false,
   participantId: null,
+  sessionToken: null,
   nickname: "",
   commandSequence: 1,
   init: () => {
@@ -100,8 +102,13 @@ export const useStore = create<AppState>((set, get) => ({
       const storedName = localStorage.getItem("nickname") || "";
       const storedId =
         localStorage.getItem("participantId") || crypto.randomUUID();
+      const storedToken = localStorage.getItem("sessionToken") || null;
       localStorage.setItem("participantId", storedId);
-      set({ nickname: storedName, participantId: storedId });
+      set({
+        nickname: storedName,
+        participantId: storedId,
+        sessionToken: storedToken,
+      });
     }
   },
   setNickname: (name: string) => {
@@ -117,10 +124,12 @@ export const useStore = create<AppState>((set, get) => ({
   connect: (roomId: string, nickname: string) => {
     const socket = getSocket();
     let pId = get().participantId;
+    let sToken = get().sessionToken;
     if (!pId && typeof window !== "undefined") {
       pId = localStorage.getItem("participantId") || crypto.randomUUID();
+      sToken = localStorage.getItem("sessionToken") || null;
       localStorage.setItem("participantId", pId);
-      set({ participantId: pId });
+      set({ participantId: pId, sessionToken: sToken });
     }
 
     // Remove previous listeners to avoid duplicates
@@ -132,7 +141,12 @@ export const useStore = create<AppState>((set, get) => ({
 
     socket.on("connect", () => {
       set({ isConnected: true });
-      socket.emit("join_room", { roomId, nickname, participantId: pId });
+      socket.emit("join_room", {
+        roomId,
+        nickname,
+        participantId: pId,
+        sessionToken: get().sessionToken,
+      });
 
       // NTP-style clock sync
       let pings = 0;
@@ -177,27 +191,24 @@ export const useStore = create<AppState>((set, get) => ({
 
     socket.on(
       "room_state",
-      (payload: { room: RoomState; serverTime: number }) => {
+      (payload: {
+        room: RoomState;
+        serverTime: number;
+        sessionToken?: string;
+      }) => {
         const { serverClockOffset, commandSequence } = get();
 
-        // Update our sync offset if we haven't done NTP yet
         let newOffset = serverClockOffset;
         if (serverClockOffset === 0) {
           newOffset = payload.serverTime - Date.now();
         }
 
-        // Check for stale event (optimistic UI rejection)
-        // If server sends a sequence less than what we've already sent,
-        // we ignore their playback state but we can accept participant changes.
-        // For simplicity and safety, we merge the room but keep our command sequence.
+        if (payload.sessionToken && typeof window !== "undefined") {
+          localStorage.setItem("sessionToken", payload.sessionToken);
+          set({ sessionToken: payload.sessionToken });
+        }
 
         const previousRoom = get().room;
-
-        // Check for state changes to trigger toasts
-        if (previousRoom) {
-          // Playback status change - disabled for Quiet Mode
-          // Video added - disabled for Quiet Mode
-        }
 
         set({
           room: payload.room,
@@ -246,7 +257,7 @@ export const useStore = create<AppState>((set, get) => ({
     set({ room: null, isConnected: false });
   },
   sendCommand: (type: string, payload?: any) => {
-    const { room, isConnected, commandSequence } = get();
+    const { room, isConnected, commandSequence, sessionToken } = get();
     if (room && isConnected) {
       const nextSequence = commandSequence + 1;
       set({ commandSequence: nextSequence });
@@ -255,6 +266,7 @@ export const useStore = create<AppState>((set, get) => ({
         type,
         payload,
         sequence: nextSequence,
+        sessionToken,
       });
     }
   },

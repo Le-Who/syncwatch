@@ -126,6 +126,7 @@ export default function Playlist() {
     e?: React.FormEvent,
     directUrl?: string,
     directTitle?: string,
+    directThumbnail?: string,
   ) => {
     if (e) e.preventDefault();
     const targetUrl = (directUrl || url).trim();
@@ -176,8 +177,8 @@ export default function Playlist() {
     const startPosition = parseTimeFromUrl(targetUrl);
 
     let fetchedTitle = directTitle || `${check.provider} Video`;
-    let fetchedThumbnail = undefined;
-    if (!directTitle) {
+    let fetchedThumbnail = directThumbnail;
+    if (!directTitle && !directThumbnail) {
       try {
         const res = await fetch(
           `/api/metadata?url=${encodeURIComponent(targetUrl)}`,
@@ -282,7 +283,9 @@ export default function Playlist() {
                     <button
                       key={i}
                       type="button"
-                      onClick={() => handleAdd(undefined, v.url, v.title)}
+                      onClick={() =>
+                        handleAdd(undefined, v.url, v.title, v.thumbnail)
+                      }
                       className="w-full text-left px-3 py-3 hover:bg-theme-accent/10 flex items-center space-x-3 border-b border-theme-border/10 last:border-0 transition-colors"
                     >
                       <img
