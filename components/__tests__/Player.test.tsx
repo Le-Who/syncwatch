@@ -1,6 +1,6 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import Player from "../Player";
-import { vi } from "vitest";
+import { vi, describe, beforeEach, it, expect } from "vitest";
 
 // Mock Zustand store hooks
 vi.mock("@/lib/store", () => {

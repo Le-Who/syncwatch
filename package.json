@@ -49,6 +49,7 @@
     "@types/node": "^25.3.5",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/redlock": "^4.0.8",
     "@types/yt-search": "^2.10.3",
     "@vitest/coverage-v8": "^4.0.18",
     "eslint": "^9.39.4",

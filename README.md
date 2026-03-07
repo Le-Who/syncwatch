@@ -5,13 +5,14 @@ SyncWatch is a latency-tolerant, real-time, server-authoritative watch-party app
 ## Architecture
 
 - **Frontend**: Next.js (App Router), ReactPlayer, Tailwind, Zustand (State Management).
-- **Backend**: Custom `server.ts` running Next.js alongside Socket.io.
+- **Backend**: Custom `server.ts` running Next.js alongside Socket.io, tightly integrated with `ioredis` for horizontal scaling via Pub/Sub, `redlock` for distributed atomic mutations, and an iterative Write-Behind Queue for Supabase persistence.
+- **Security**: JWT-based WebSocket handshakes via `jose`, SSRF-protected metadata over `htmlparser2`, and Sliding Window Log rate limiters deployed globally across all APIs and Socket commands.
+- **Frontend Optimization**: Zustand store decoupled from Socket.io via Singleton DI (`RoomSocketService`). High-frequency video drift synchronizations bypass React rendering completely using an uncontrolled `Scrubber.tsx` architecture and native `requestAnimationFrame`.
 - **Dynamic Theme Engine**: CSS variables natively power seamless client-side toggling between the soft, luminous "Cotton Candy Glassmorphism" and the high-contrast "Cyber-Industrial Brutalist" interface.
 - **Synchronization Model**: Server-authoritative with optimistic UI. Uses custom NTP-style packet handshakes on connect to calculate precise network latency, correcting local player timestamps appropriately. Stale event rejection blocks out-of-order websocket commands.
-- **API Robustness & Type Safety**: Zod validation schemas and strict Promise racing (`AbortSignal`) globally protect external API fetches (YouTube/Vimeo) from malformed data and infinite network hangs.
-- **Persistence & Performance**: Database state is synchronized with **Supabase**. Playback snapshots are safely upserted to survive server restarts. All database syncs perform highly optimized 2-second debouncing per-room to prevent rate limits. Unbounded memory arrays are guarded by strict capacity limiters (500 items/room) to eliminate OOM vulnerabilities. The Server exclusively uses `SERVICE_ROLE_KEY` to bypass RLS, failing-fast into "Ephemeral Memory Mode" if the strict key is absent.
-- **Video Quality Selection Engine (2026)**: A multi-tiered defense-in-depth quality selector. Features **HLS Manifest Hooking** for direct streams and the **"Dimension Trick"** (CSS `container-type` and `transform: scale`) to bypass YouTube's internal low-bandwidth algorithms natively and aggressively force 1080p/4k bitrates. Includes an architectural "Native Controls Unlock" window fallback.
-- **Pro-Max UI/UX**: Includes a Glassmorphic Quality Selection Menu, synchronized floating emoji reactions, intelligent "Up Next" smart-buffer countdowns, and real-time inline progress bars tracking media consumption. All designed with striking neon and brutalist aesthetics.
+- **API Robustness & Type Safety**: Zod validation schemas and strict Promise racing (`AbortSignal`) globally protect external API fetches (YouTube/Vimeo) from malformed data. Circuit breaking and caching safeguard third-party APIs from abuse.
+- **Persistence & Performance**: Database state is synchronized with **Supabase**. Playback snapshots are safely upserted via a periodic write-behind queue to survive server restarts, preventing database rate limits at scale. Unbounded memory arrays are guarded by strict capacity limiters (500 items/room).
+- **Pro-Max UI/UX**: Includes a Glassmorphic Quality Selection Menu, synchronized floating emoji reactions, intelligent "Up Next" smart-buffer countdowns, and real-time inline progress bars tracking media consumption.
 - **Metadata Resolver**: Background `/api/metadata` routes securely fetch and sanitize video titles from YouTube/Vimeo/Twitch over oEmbed protocols.
 
 ## Database Setup (Supabase)

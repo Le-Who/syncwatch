@@ -19,6 +19,9 @@ import {
 import fscreen from "fscreen";
 import { motion } from "motion/react";
 import { formatTime, calculateDrift } from "@/lib/utils";
+import { Scrubber } from "./Scrubber";
+import { MediaApiService } from "@/lib/MediaApiService";
+import { usePlayerShortcuts } from "@/hooks/usePlayerShortcuts";
 
 const ReactPlayer = dynamic(() => import("react-player"), {
   ssr: false,
@@ -31,8 +34,6 @@ export default function Player() {
   const playerRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [playing, setPlaying] = useState(false);
-  const [played, setPlayed] = useState(0);
-  const [playedSeconds, setPlayedSeconds] = useState(0);
   const [duration, setDuration] = useState(0);
   const [seeking, setSeeking] = useState(false);
   const [isReady, setIsReady] = useState(false);
@@ -203,33 +204,14 @@ export default function Player() {
     emitCommand("pause", { position: getAccurateTime() });
   };
 
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Ignore if currently typing in an input
-      const target = e.target as HTMLElement;
-      if (
-        target.tagName === "INPUT" ||
-        target.tagName === "TEXTAREA" ||
-        target.isContentEditable
-      ) {
-        return;
-      }
-
-      if (e.code === "Space") {
-        e.preventDefault();
-        if (canControl) {
-          playing ? handlePause() : handlePlay();
-        }
-      } else if (e.code === "KeyM") {
-        e.preventDefault();
-        setMuted(!muted);
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [playing, canControl, handlePlay, handlePause]);
+  usePlayerShortcuts({
+    canControl,
+    playing,
+    muted,
+    handlePlay,
+    handlePause,
+    setMuted,
+  });
 
   const handleSeekMouseDown = () => {
     setSeeking(true);
@@ -237,7 +219,6 @@ export default function Player() {
 
   const handleSeekMouseUp = (percent: number) => {
     setSeeking(false);
-    setPlayed(percent);
     const newPosition = percent * duration;
     if (playerRef.current) {
       playerRef.current.currentTime = newPosition;
@@ -251,18 +232,50 @@ export default function Player() {
     }
   };
 
-  const handleProgress = (state: { played: number; playedSeconds: number }) => {
-    if (!seeking) {
-      setPlayed(state.played);
-      setPlayedSeconds(state.playedSeconds);
-    }
-  };
-
   const handleNext = () => {
     emitCommand("next", { currentMediaId: room?.currentMediaId });
   };
 
   // formatTime is now imported from @/lib/utils
+
+  const currentIndex =
+    room?.playlist.findIndex((i) => i.id === currentMedia?.id) ?? -1;
+  let nextItem = null;
+  if (currentIndex !== -1 && room) {
+    nextItem = room.playlist[currentIndex + 1];
+    if (!nextItem && room.settings.looping) {
+      nextItem = room.playlist[0];
+    }
+  }
+
+  const [upNextState, setUpNextState] = useState({ show: false, remaining: 0 });
+
+  useEffect(() => {
+    if (!room?.settings.autoplayNext || !canControl || duration === 0) return;
+
+    const interval = setInterval(() => {
+      const remaining = duration - getAccurateTime();
+      const shouldShow = remaining <= 5 && remaining > 0;
+
+      setUpNextState((prev) => {
+        if (
+          prev.show === shouldShow &&
+          (!shouldShow || Math.ceil(prev.remaining) === Math.ceil(remaining))
+        ) {
+          return prev; // Avoid unnecessary re-renders
+        }
+        return { show: shouldShow, remaining };
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [
+    duration,
+    getAccurateTime,
+    room?.settings.autoplayNext,
+    canControl,
+    playing,
+  ]);
 
   if (!currentMedia) {
     return (
@@ -292,50 +305,8 @@ export default function Player() {
                 if (btn) btn.disabled = true;
 
                 if (url) {
-                  let provider = "unknown";
-                  let title = "Direct Media";
-                  let duration = 0;
-                  let thumbnail = undefined;
-
-                  if (url.includes("youtube.com") || url.includes("youtu.be")) {
-                    provider = "youtube";
-                    try {
-                      const res = await fetch(
-                        `/api/youtube/search?q=${encodeURIComponent(url)}`,
-                      );
-                      if (res.ok) {
-                        const data = await res.json();
-                        if (data.videos && data.videos.length > 0) {
-                          title = data.videos[0].title;
-                          duration = data.videos[0].duration;
-                          thumbnail = data.videos[0].thumbnail;
-                        }
-                      }
-                    } catch (err) {}
-                  } else {
-                    if (url.includes("twitch.tv")) provider = "twitch";
-                    else if (url.includes("vimeo.com")) provider = "vimeo";
-                    else if (url.includes("soundcloud.com"))
-                      provider = "soundcloud";
-                    try {
-                      const res = await fetch(
-                        `/api/metadata?url=${encodeURIComponent(url)}`,
-                      );
-                      if (res.ok) {
-                        const data = await res.json();
-                        if (data.title) title = data.title;
-                        if (data.thumbnail) thumbnail = data.thumbnail;
-                      }
-                    } catch (err) {}
-                  }
-
-                  sendCommand("add_item", {
-                    url,
-                    provider,
-                    title,
-                    duration,
-                    thumbnail,
-                  });
+                  const mediaInfo = await MediaApiService.fetchMediaInfo(url);
+                  sendCommand("add_item", mediaInfo);
                   input.value = "";
                 }
                 if (btn) btn.disabled = false;
@@ -368,24 +339,10 @@ export default function Player() {
     );
   }
 
-  const currentIndex =
-    room?.playlist.findIndex((i) => i.id === currentMedia.id) ?? -1;
-  let nextItem = null;
-  if (currentIndex !== -1 && room) {
-    nextItem = room.playlist[currentIndex + 1];
-    if (!nextItem && room.settings.looping) {
-      nextItem = room.playlist[0];
-    }
-  }
+  // (Hooks merged upwards, see top of render)
 
-  const timeRemaining = duration - playedSeconds;
-  const showUpNext =
-    canControl &&
-    room?.settings.autoplayNext &&
-    nextItem &&
-    duration > 0 &&
-    timeRemaining <= 5 &&
-    timeRemaining > 0;
+  const timeRemaining = upNextState.remaining;
+  const showUpNext = upNextState.show && nextItem !== null;
 
   return (
     <div
@@ -461,21 +418,6 @@ export default function Player() {
                 console.error("Player error:", e);
                 setError("SYSTEM FAILURE. SIGNAL LOST.");
                 setIsBuffering(false);
-              }}
-              onTimeUpdate={(e: any) => {
-                const ct =
-                  playerRef.current?.currentTime ||
-                  e?.target?.currentTime ||
-                  e?.time ||
-                  0;
-                const dur =
-                  playerRef.current?.duration ||
-                  e?.target?.duration ||
-                  e?.duration ||
-                  1;
-                handleProgress({ played: ct / dur, playedSeconds: ct });
-                // We intentionally do NOT clear isBuffering here, because rapid
-                // timeupdate events during preload can falsely clear the lock.
               }}
               onSeeked={(e: any) => {
                 if (isBuffering) setIsBuffering(false);
@@ -688,66 +630,13 @@ export default function Player() {
           <div className="bg-theme-bg/80 border-theme-border/50 rounded-theme border-2 p-3 shadow-lg backdrop-blur-md">
             {/* Timeline */}
             <div className="mb-3 flex items-center space-x-4">
-              <span className="text-theme-accent w-14 text-right text-xs font-bold">
-                {formatTime(played * duration)}
-              </span>
-              <div
-                className="bg-theme-bg/80 border-theme-border/50 group/timeline relative h-4 flex-1 cursor-pointer overflow-hidden rounded-full border shadow-inner"
-                onPointerDown={(e) => {
-                  if (
-                    !canControl ||
-                    currentMedia?.provider?.toLowerCase() === "twitch"
-                  )
-                    return;
-                  e.currentTarget.setPointerCapture(e.pointerId);
-                  handleSeekMouseDown();
-                  const rect = e.currentTarget.getBoundingClientRect();
-                  const percent = Math.max(
-                    0,
-                    Math.min(1, (e.clientX - rect.left) / rect.width),
-                  );
-                  setPlayed(percent);
-                }}
-                onPointerMove={(e) => {
-                  if (
-                    !seeking ||
-                    !canControl ||
-                    currentMedia?.provider?.toLowerCase() === "twitch"
-                  )
-                    return;
-                  const rect = e.currentTarget.getBoundingClientRect();
-                  const percent = Math.max(
-                    0,
-                    Math.min(1, (e.clientX - rect.left) / rect.width),
-                  );
-                  setPlayed(percent);
-                }}
-                onPointerUp={(e) => {
-                  if (
-                    !seeking ||
-                    !canControl ||
-                    currentMedia?.provider?.toLowerCase() === "twitch"
-                  )
-                    return;
-                  e.currentTarget.releasePointerCapture(e.pointerId);
-                  const rect = e.currentTarget.getBoundingClientRect();
-                  const percent = Math.max(
-                    0,
-                    Math.min(1, (e.clientX - rect.left) / rect.width),
-                  );
-                  handleSeekMouseUp(percent);
-                }}
-              >
-                <motion.div
-                  className="from-theme-accent/80 to-theme-accent absolute top-0 left-0 h-full rounded-r-full bg-linear-to-r shadow-[0_0_12px_var(--color-theme-accent)]"
-                  style={{ width: `${played * 100}%` }}
-                  layout
-                  transition={{ type: "tween", ease: "linear", duration: 0.1 }}
-                />
-              </div>
-              <span className="text-theme-accent w-14 text-left text-xs font-bold">
-                {formatTime(duration)}
-              </span>
+              <Scrubber
+                playerRef={playerRef}
+                duration={duration}
+                canControl={canControl}
+                onSeekStart={handleSeekMouseDown}
+                onSeekEnd={handleSeekMouseUp}
+              />
             </div>
 
             <div className="flex items-center justify-between">

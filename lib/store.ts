@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { getSocket } from "./socket";
+import { roomSocketService } from "./socket";
 import { toast } from "sonner";
 
 export type PlaybackStatus = "playing" | "paused" | "buffering" | "ended";
@@ -83,7 +83,7 @@ interface AppState {
   nickname: string;
   commandSequence: number;
   setNickname: (name: string) => void;
-  connect: (roomId: string, nickname: string) => void;
+  connect: (roomId: string, nickname: string) => Promise<void>;
   disconnect: () => void;
   sendCommand: (type: string, payload?: any) => void;
   init: () => void;
@@ -109,6 +109,9 @@ export const useStore = create<AppState>((set, get) => ({
         participantId: storedId,
         sessionToken: storedToken,
       });
+
+      // Inject Zustand state getters/setters into the Socket Service
+      roomSocketService.init(get, set);
     }
   },
   setNickname: (name: string) => {
@@ -121,8 +124,7 @@ export const useStore = create<AppState>((set, get) => ({
       get().sendCommand("update_nickname", { nickname: name });
     }
   },
-  connect: (roomId: string, nickname: string) => {
-    const socket = getSocket();
+  connect: async (roomId: string, nickname: string) => {
     let pId = get().participantId;
     let sToken = get().sessionToken;
     if (!pId && typeof window !== "undefined") {
@@ -132,142 +134,28 @@ export const useStore = create<AppState>((set, get) => ({
       set({ participantId: pId, sessionToken: sToken });
     }
 
-    // Remove previous listeners to avoid duplicates
-    socket.off("connect");
-    socket.off("disconnect");
-    socket.off("room_state");
-    socket.off("participant_joined");
-    socket.off("participant_left");
-
-    socket.on("connect", () => {
-      set({ isConnected: true });
-      socket.emit("join_room", {
-        roomId,
-        nickname,
-        participantId: pId,
-        sessionToken: get().sessionToken,
+    try {
+      const res = await fetch("/api/auth/session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ participantId: pId }),
       });
-
-      // NTP-style clock sync
-      let pings = 0;
-      let offsets: number[] = [];
-
-      const doPing = () => {
-        socket.emit(
-          "ping_time",
-          Date.now(),
-          (serverTime: number, clientTime: number) => {
-            const end = Date.now();
-            const rtt = end - clientTime;
-            // Offset = server point of view - client point of view
-            // If server is 1000 and client is 500, offset is 500 (sync client + 500)
-            const offset = serverTime - (end - rtt / 2);
-
-            offsets.push(offset);
-            if (offsets.length > 5) offsets.shift();
-
-            const sorted = [...offsets].sort((a, b) => a - b);
-            const median = sorted[Math.floor(sorted.length / 2)];
-
-            set({ serverClockOffset: median });
-          },
-        );
-      };
-
-      doPing();
-      const pingInterval = setInterval(() => {
-        pings++;
-        if (pings > 5) {
-          clearInterval(pingInterval);
-        } else {
-          doPing();
-        }
-      }, 1000);
-    });
-
-    socket.on("disconnect", () => {
-      set({ isConnected: false });
-    });
-
-    socket.on(
-      "room_state",
-      (payload: {
-        room: RoomState;
-        serverTime: number;
-        sessionToken?: string;
-      }) => {
-        const { serverClockOffset, commandSequence } = get();
-
-        let newOffset = serverClockOffset;
-        if (serverClockOffset === 0) {
-          newOffset = payload.serverTime - Date.now();
-        }
-
-        if (payload.sessionToken && typeof window !== "undefined") {
-          localStorage.setItem("sessionToken", payload.sessionToken);
-          set({ sessionToken: payload.sessionToken });
-        }
-
-        const previousRoom = get().room;
-
-        set({
-          room: payload.room,
-          serverClockOffset: newOffset,
-          commandSequence: payload.room.sequence,
-        });
-      },
-    );
-
-    socket.on("participant_joined", (participant: Participant) => {
-      set((state) => {
-        if (!state.room) return state;
-        return {
-          room: {
-            ...state.room,
-            participants: {
-              ...state.room.participants,
-              [participant.id]: participant,
-            },
-          },
-        };
-      });
-    });
-
-    socket.on("participant_left", ({ participantId }) => {
-      set((state) => {
-        if (!state.room) return state;
-        const participant = state.room.participants[participantId];
-
-        const newParticipants = { ...state.room.participants };
-        delete newParticipants[participantId];
-        return {
-          room: {
-            ...state.room,
-            participants: newParticipants,
-          },
-        };
-      });
-    });
-
-    socket.connect();
+      if (!res.ok) {
+        toast.error("Handshake failed. Features may be restricted.");
+      } else {
+        roomSocketService.connect(roomId, nickname, pId as string);
+      }
+    } catch (err) {
+      console.warn("Could not establish secure session", err);
+      // Fallback
+      roomSocketService.connect(roomId, nickname, pId as string);
+    }
   },
   disconnect: () => {
-    const socket = getSocket();
-    socket.disconnect();
-    set({ room: null, isConnected: false });
+    roomSocketService.disconnect();
+    set({ isConnected: false, room: null });
   },
   sendCommand: (type: string, payload?: any) => {
-    const { room, isConnected, commandSequence, sessionToken } = get();
-    if (room && isConnected) {
-      const nextSequence = commandSequence + 1;
-      set({ commandSequence: nextSequence });
-      getSocket().emit("command", {
-        roomId: room.id,
-        type,
-        payload,
-        sequence: nextSequence,
-        sessionToken,
-      });
-    }
+    roomSocketService.sendCommand(type, payload);
   },
 }));

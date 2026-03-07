@@ -1,33 +1,16 @@
 import { renderHook, act } from "@testing-library/react";
 import { useStore, useSettingsStore } from "../store";
-import { getSocket } from "../socket";
-import { vi } from "vitest";
+import { roomSocketService } from "../socket";
+import { vi, describe, beforeEach, it, expect } from "vitest";
 
-// Mock socket
 vi.mock("../socket", () => {
-  const listeners: Record<string, Function[]> = {};
-
-  const mockSocket = {
-    on: vi.fn((event: string, callback: Function) => {
-      if (!listeners[event]) listeners[event] = [];
-      listeners[event].push(callback);
-    }),
-    off: vi.fn((event: string) => {
-      delete listeners[event];
-    }),
-    emit: vi.fn(),
-    connect: vi.fn(),
-    disconnect: vi.fn(),
-    // Helper to simulate receiving events
-    simulateEvent: (event: string, ...args: any[]) => {
-      if (listeners[event]) {
-        listeners[event].forEach((cb) => cb(...args));
-      }
-    },
-  };
-
   return {
-    getSocket: () => mockSocket,
+    roomSocketService: {
+      init: vi.fn(),
+      connect: vi.fn(),
+      disconnect: vi.fn(),
+      sendCommand: vi.fn(),
+    },
   };
 });
 
@@ -108,7 +91,7 @@ describe("useStore", () => {
 
     expect(result.current.nickname).toBe("NewName");
     expect(localStorage.getItem("nickname")).toBe("NewName");
-    expect(getSocket().emit).not.toHaveBeenCalled();
+    expect(roomSocketService.sendCommand).not.toHaveBeenCalled();
   });
 
   it("should emit update_nickname if connected and in a room", () => {
@@ -119,12 +102,9 @@ describe("useStore", () => {
       result.current.setNickname("EmitName");
     });
 
-    expect(getSocket().emit).toHaveBeenCalledWith(
-      "command",
-      expect.objectContaining({
-        type: "update_nickname",
-        payload: { nickname: "EmitName" },
-      }),
+    expect(roomSocketService.sendCommand).toHaveBeenCalledWith(
+      "update_nickname",
+      { nickname: "EmitName" },
     );
   });
 
@@ -135,7 +115,7 @@ describe("useStore", () => {
       result.current.disconnect();
     });
 
-    expect(getSocket().disconnect).toHaveBeenCalled();
+    expect(roomSocketService.disconnect).toHaveBeenCalled();
     expect(result.current.isConnected).toBe(false);
     expect(result.current.room).toBeNull();
   });

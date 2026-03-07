@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { getSocket } from "@/lib/socket";
+import { roomSocketService } from "@/lib/socket";
 import { Smile } from "lucide-react";
 
 interface EmojiParticle {
@@ -18,7 +18,7 @@ export default function Reactions() {
   const [isOpen, setIsOpen] = useState(false);
 
   useEffect(() => {
-    const socket = getSocket();
+    const socket = roomSocketService.getSocket();
 
     const handleReaction = (payload: { emoji: string }) => {
       const newParticle = {
@@ -43,7 +43,7 @@ export default function Reactions() {
   }, []);
 
   const sendReaction = useCallback((emoji: string) => {
-    const socket = getSocket();
+    const socket = roomSocketService.getSocket();
     socket.emit("reaction", { emoji });
 
     // Play locally too
@@ -97,7 +97,7 @@ export default function Reactions() {
         )}
         <button
           onClick={() => setIsOpen(!isOpen)}
-          className={`text-theme-text ring-theme-accent border-theme-border/50 flex h-12 w-12 items-center justify-center rounded-full border-2 shadow-[var(--theme-shadow)] backdrop-blur-md transition-all focus:outline-none focus-visible:ring-2 ${
+          className={`text-theme-text ring-theme-accent border-theme-border/50 shadow-theme flex h-12 w-12 items-center justify-center rounded-full border-2 backdrop-blur-md transition-all focus:outline-none focus-visible:ring-2 ${
             isOpen
               ? "bg-theme-accent text-theme-bg border-theme-accent scale-95 shadow-none"
               : "bg-theme-bg/80 hover:bg-theme-accent/20 hover:border-theme-accent"
