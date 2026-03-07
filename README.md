@@ -137,8 +137,19 @@ npx playwright test --ui
 > **Important note for CI and Headless environments:**
 > SyncWatch utilizes complex media embeds (ReactPlayer/YouTube iframe) which historically trigger WebGL rendering deadlocks in headless Chromium on Windows and standard CI workers. We have structurally patched the `playwright.config.ts` with a **hybrid configuration**:
 >
-> - Native `channel: "chrome"` invocation guarantees proprioritary H.264/AAC media codecs are available, preventing iframe pipeline freezes.
-> - Forced `--use-gl=egl` combined with aggressive headless timeouts (`actionTimeout`, `globalTimeout`) aggressively eliminate "black-screen" GPU hangs during GitHub Actions or local GUI-less testing.
+> 1. **Native `channel: "chrome"` invocation** guarantees proprioritary H.264/AAC media codecs are available, preventing iframe pipeline freezes.
+> 2. **Forced `--use-gl=egl`** combined with aggressive headless timeouts aggressively eliminate GPU hangs during testing.
+
+### [Phase 5] Distributed Redis Lock Race Condition (System busy spam)
+
+**Symptom:** UI spamming "System busy acquiring room lock" toasts immediately whenever a peer enters a room. Lock evaluations failed silently due to concurrent socket event emissions (e.g. `play` + `update_duration`).
+**Root Cause:**
+
+1. The distributed Redis Mutex (`set NX` mode) was implemented as a fast-fail. Concurrent websocket events were processed in the same millisecond. Message 1 acquired the lock, Message 2 immediately threw a Lock Failed Exception because there was zero wait-retry or queueing loop logic inside `withLock`.
+2. The `process.env.REDIS_URL` evaluation inside `redis-rate-limit.ts` was executed globally at module load time (Lexical hoisting) _before_ `server.ts` executed `loadEnvConfig()`.
+   **Solution:**
+3. Converted `redisClient` to a lazy `getRedisClient()` initialization function evaluated exclusively at runtime to honor `.env.local` propagation mapping.
+4. Replaced the `withLock` fast-fail with a **Jittered Spin-Lock Backoff Queue**. `withLock` now spins up to 20 times (with 30-70ms randomized jitter) waiting for lock evaluation to complete before firing failures.
 
 _Note: The local Next.js 13+ Dev Server strictly blocks WebSocket connections originating from 127.0.0.1 (Playwright's default headless runner origin) without explicit `allowedDevOrigins` bypasses. Local E2E tests executing socket-heavy actions may be skipped locally but will run successfully in CI/CD staging environments._
 

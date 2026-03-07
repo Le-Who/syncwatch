@@ -5,7 +5,7 @@ import { randomUUID } from "crypto";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { jwtVerify } from "jose";
 import * as cookie from "cookie";
-import { checkRedisRateLimit } from "./lib/redis-rate-limit";
+import { checkRedisRateLimit, getRedisClient } from "./lib/redis-rate-limit";
 import {
   withLock,
   getRedisRoom,
@@ -347,6 +347,8 @@ app.prepare().then(() => {
       const cookies = cookie.parse(socket.request.headers.cookie || "");
       const token = cookies.syncwatch_session;
 
+      const redisClient = getRedisClient(); // Added this line as per instruction
+
       if (token) {
         const { payload } = await jwtVerify(token, JWT_SECRET);
         if (payload.participantId) {
@@ -369,9 +371,10 @@ app.prepare().then(() => {
   });
 
   // Global Pub/Sub Listener for Node Synchronization
-  if (subClient) {
-    subClient.psubscribe("room_events:*");
-    subClient.on(
+  const sClient = subClient();
+  if (sClient) {
+    sClient.psubscribe("room_events:*");
+    sClient.on(
       "pmessage",
       (pattern: string, channel: string, message: string) => {
         try {
@@ -403,8 +406,9 @@ app.prepare().then(() => {
         if (Date.now() - room.lastActivity > 1000 * 60 * 15) {
           persistRoomState(room);
           rooms.delete(roomId);
-          if (pubClient) {
-            pubClient.del(`room_state:${roomId}`).catch(() => {});
+          const redisClient = getRedisClient();
+          if (redisClient) {
+            await redisClient.del(`room_state:${roomId}`).catch(() => {});
           }
         }
       });
@@ -1034,9 +1038,14 @@ app.prepare().then(() => {
           if (stateChanged) {
             room.version++;
             rooms.set(roomId, room); // Always update local L1 cache
-            if (pubClient) {
+            const pClient = pubClient();
+            if (pClient) {
               await setRedisRoom(roomId, room);
-              await publishRoomEvent(roomId, "state_update", room);
+              await publishRoomEvent(roomId, {
+                type: "state_update",
+                roomId,
+                payload: room,
+              });
             } else {
               // Redis offline/disabled, fallback to local emission
               io.to(roomId).emit("room_state", {
@@ -1047,7 +1056,13 @@ app.prepare().then(() => {
           }
         }); // End of withLock block
       } catch (err) {
-        console.error("Lock error for room", roomId, err);
+        console.error(
+          "Lock error for room",
+          roomId,
+          "Command Type:",
+          type,
+          err,
+        );
         socket.emit("error", {
           message: "System busy acquiring room lock. Try again.",
         });

@@ -1,13 +1,15 @@
-import { redisClient } from "./redis-rate-limit";
+import { getRedisClient } from "./redis-rate-limit";
 
-export const pubClient = redisClient;
-export const subClient = redisClient ? redisClient.duplicate() : null;
+export const pubClient = getRedisClient;
+export const subClient = () => getRedisClient()?.duplicate();
 
 export async function withLock<T>(
   resourceId: string,
   ttl: number,
   operation: () => Promise<T>,
+  maxRetries = 20, // 20 retries (~1 second max queue wait)
 ): Promise<T> {
+  const redisClient = getRedisClient();
   if (!redisClient) {
     return await operation();
   }
@@ -15,7 +17,16 @@ export async function withLock<T>(
   const key = `locks:${resourceId}`;
   const val = Math.random().toString(36).substring(2, 15);
 
-  const acquired = await redisClient.set(key, val, "PX", ttl, "NX");
+  let acquired = false;
+  for (let i = 0; i < maxRetries; i++) {
+    acquired = (await redisClient.set(key, val, "PX", ttl, "NX")) === "OK";
+    if (acquired) break;
+    // Jittered backoff: 30ms to 70ms wait to avoid stampedes
+    await new Promise((resolve) =>
+      setTimeout(resolve, 30 + Math.random() * 40),
+    );
+  }
+
   if (!acquired) {
     throw new Error("Could not acquire distributed lock for " + resourceId);
   }
@@ -30,9 +41,12 @@ export async function withLock<T>(
         return 0
       end
     `;
-    await redisClient
-      .eval(script, 1, key, val)
-      .catch((e: any) => console.error("Lock release err:", e));
+    const redisClient = getRedisClient();
+    if (redisClient) {
+      await redisClient
+        .eval(script, 1, key, val)
+        .catch((e: any) => console.error("Lock release err:", e));
+    }
   }
 }
 
@@ -40,6 +54,7 @@ export async function withLock<T>(
  * Load room state from Redis cache
  */
 export async function getRedisRoom(roomId: string): Promise<any | null> {
+  const redisClient = getRedisClient();
   if (!redisClient) return null;
   const data = await redisClient.get(`room_state:${roomId}`);
   return data ? JSON.parse(data) : null;
@@ -48,27 +63,21 @@ export async function getRedisRoom(roomId: string): Promise<any | null> {
 /**
  * Save room state to Redis cache
  */
-export async function setRedisRoom(roomId: string, room: any): Promise<void> {
+export async function setRedisRoom(roomId: string, state: any): Promise<void> {
+  const redisClient = getRedisClient();
   if (!redisClient) return;
-  await redisClient.set(
-    `room_state:${roomId}`,
-    JSON.stringify(room),
-    "EX",
-    60 * 60 * 24,
-  ); // 24hr expiry
+  await redisClient.set(`room_state:${roomId}`, JSON.stringify(state));
+  await redisClient.expire(`room_state:${roomId}`, 86400); // 1 day
 }
 
 /**
- * Broadcast event to all instances
+ * Publish an event to other nodes (in a multi-node deployment)
  */
 export async function publishRoomEvent(
   roomId: string,
-  type: string,
-  payload: any,
+  event: any,
 ): Promise<void> {
-  if (!pubClient) return;
-  await pubClient.publish(
-    `room_events:${roomId}`,
-    JSON.stringify({ type, roomId, payload }),
-  );
+  const pClient = pubClient();
+  if (!pClient) return;
+  await pClient.publish(`room_events:${roomId}`, JSON.stringify(event));
 }

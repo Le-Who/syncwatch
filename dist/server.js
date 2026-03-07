@@ -172,7 +172,7 @@ const forcePersistRoom = async (room) => {
         throw err; // Re-throw for parent to catch
     }
 };
-// Background worker to flush queue every 5 seconds
+// Background worker to flush queue every 30 seconds
 setInterval(async () => {
     if (writeBehindQueue.size === 0 || !supabase)
         return;
@@ -190,7 +190,7 @@ setInterval(async () => {
             writeBehindQueue.add(roomId);
         }
     }
-}, 5000);
+}, 30000);
 // Graceful Shutdown Sequence
 let isShuttingDown = false;
 async function gracefulShutdown() {
