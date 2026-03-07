@@ -459,12 +459,25 @@ export default function Player() {
                 setIsBuffering(false);
               }}
               onTimeUpdate={(e: any) => {
-                const ct = (e.currentTarget as any).currentTime || 0;
-                const dur = (e.currentTarget as any).duration || 1;
+                const ct =
+                  playerRef.current?.currentTime ||
+                  e?.target?.currentTime ||
+                  e?.time ||
+                  0;
+                const dur =
+                  playerRef.current?.duration ||
+                  e?.target?.duration ||
+                  e?.duration ||
+                  1;
                 handleProgress({ played: ct / dur, playedSeconds: ct });
+                if (isBuffering) setIsBuffering(false);
               }}
               onSeeked={(e: any) => {
-                const ct = (e.currentTarget as any).currentTime || 0;
+                const ct =
+                  playerRef.current?.currentTime ||
+                  e?.target?.currentTime ||
+                  e?.time ||
+                  0;
                 if (nativeInteraction && canControl) {
                   emitCommand("seek", { position: ct });
                   if (playing) {
@@ -473,7 +486,11 @@ export default function Player() {
                 }
               }}
               onDurationChange={(e: any) => {
-                const dur = (e.currentTarget as any).duration || 0;
+                const dur =
+                  playerRef.current?.duration ||
+                  e?.target?.duration ||
+                  e?.duration ||
+                  0;
                 setDuration(dur);
                 if (canControl && room && room.currentMediaId) {
                   emitCommand("update_duration", {
