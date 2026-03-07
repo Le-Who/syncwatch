@@ -18,3 +18,8 @@ blob-report/
 Dockerfile
 .dockerignore
 e2e/
+lib/__tests__/
+vitest.config.ts
+playwright.config.ts
+skills/
+.gemini/

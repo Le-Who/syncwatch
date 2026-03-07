@@ -95,3 +95,47 @@ npx playwright test --ui
 ```
 
 _Note: The local Next.js 13+ Dev Server strictly blocks WebSocket connections originating from 127.0.0.1 (Playwright's default headless runner origin) without explicit `allowedDevOrigins` bypasses. Local E2E tests executing socket-heavy actions may be skipped locally but will run successfully in CI/CD staging environments._
+
+## Project Factual & Mental Map
+
+### 1. Frontend Layer (Next.js APP Router & React 19)
+
+- **App/Routing (`app/`)**: Manages routing, API endpoints (`api/metadata`), and root layouts.
+- **UI Components (`components/`)**:
+  - `Player.tsx`: Wraps `react-player`, handles low-level playback state and syncing with store.
+  - `Playlist.tsx`: Manages video queue (maximum 500 items constraint).
+  - `Participants.tsx`: Displays users and roles.
+  - `ThemeProvider.tsx`/`ThemeToggle.tsx`: Manages custom CSS theme switching.
+- **State Management (`lib/store.ts`)**: Zustand store managing room state, playback progress, and user info. Synchronizes natively with Socket.io events.
+
+### 2. Backend Layer (Node.js & Socket.io)
+
+- **Custom Server (`server.ts`)**: The architectural backbone. Holds in-memory multi-room states securely.
+- **WebSocket Gateway**: Processes `command` and `join_room` events. Authoritative over playback rate, seeking, and playing/pausing to prevent desyncs. Guards against memory exhaustion (OOM).
+- **Supabase Persistence**: `server.ts` debounces state persistence (2s loop) to Supabase tables (`rooms`, `playlist_items`, `playback_snapshots`).
+
+### 3. Data Flow Pattern
+
+1. Client action (e.g., Click Play in UI).
+2. `useStore.sendCommand('play', payload)` fires the event to Socket.io.
+3. `server.ts` receives event, validates permissions/limits securely.
+4. `server.ts` mutates authoritative in-memory room state.
+5. `server.ts` emits updated `room_state` back to all connected clients in the room.
+6. Local Zustand store (`lib/store.ts`) updates; React re-renders globally.
+
+## Targeted Test Coverage Strategy
+
+Based on comprehensive systematic analysis, full coverage requires addressing the following identified gaps:
+
+1. **Unit Testing (Vitest)**:
+   - **Gaps**: `lib/store.ts` (critical state logic), `components/Player.tsx` (state mapping), `server.ts` (in-memory validation logic).
+   - **Strategy**: Implement mock-driven Vitest files focusing on the AAA pattern (Arrange, Act, Assert). E.g. mocking `getSocket()` to verify Zustand store mutations. Include edge case testing (null payloads).
+2. **Integration Testing**:
+   - **Gaps**: Core socket message throughput (e.g., testing `add_items` deduplication logic and limits in `server.ts`).
+   - **Strategy**: Set up local in-memory Socket.io server-client pairs to validate event handling boundaries safely.
+3. **E2E Testing (Playwright)**:
+   - **Current State**: Visuals and basic multi-client connect exist (`e2e/player.spec.ts`).
+   - **Gaps**: Complex sync actions (buffering pauses, playback rate modifications, malicious payload testing).
+   - **Strategy**: Extend Playwright test matrix to test specific error boundaries and UI recovery mechanisms.
+
+_(Note: The agent relies on the local `skills/syncwatch-testing/SKILL.md` custom skill to rigorously drive TDD coverage across these layers for this project.)_

@@ -4,6 +4,13 @@ playwright-report/
 playwright/.cache/
 blob-report/
 e2e/
+lib/__tests__/
+vitest.config.ts
+playwright.config.ts
+
+# Custom AI Skills and Workflows
+skills/
+.gemini/
 
 # Source Map files (if any are generated in production)
 *.map
