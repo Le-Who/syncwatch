@@ -612,21 +612,32 @@ export default function Player() {
           <div className="pointer-events-none absolute inset-0 z-0 bg-[linear-gradient(rgba(0,0,0,0)_50%,rgba(0,0,0,0.1)_50%)] bg-[length:100%_4px] opacity-30 mix-blend-overlay" />
         )}
 
-        {/* Interaction overlay - Hidden for Twitch because Twitch requires native controls for volume/quality and blocks occluded autoplay */}
+        {/* Interaction overlay - Blocks native interaction but allows custom controls */}
         {currentMedia.provider?.toLowerCase() !== "twitch" &&
           !nativeInteraction && (
-            <div
-              className={`absolute inset-0 z-10 ${canControl ? "cursor-pointer" : "cursor-default"}`}
-              onClick={() => {
-                if (qualityMenuOpen) {
-                  setQualityMenuOpen(false);
-                  return;
-                }
-                if (canControl) {
-                  playing ? handlePause() : handlePlay();
-                }
-              }}
-            />
+            <>
+              {/* Main click capture layer */}
+              <div
+                className={`absolute inset-0 z-10 ${canControl ? "cursor-pointer" : "cursor-default"} ${qualityMenuOpen ? "pointer-events-none" : ""}`}
+                onClick={() => {
+                  if (qualityMenuOpen) {
+                    return;
+                  }
+                  if (canControl) {
+                    playing ? handlePause() : handlePlay();
+                  }
+                }}
+              />
+
+              {/* Passthrough window for YouTube's native Gear Icon (top right usually) */}
+              {currentMedia.provider === "youtube" && (
+                <div
+                  className="pointer-events-none absolute top-0 right-0 z-20 h-16 w-24"
+                  // Actually we need the pointer events to fall straight through z-10
+                  // to the iframe below (z-0). We achieve this by *not* covering it.
+                />
+              )}
+            </>
           )}
 
         {error && (
@@ -938,17 +949,18 @@ export default function Player() {
                           </div>
                         )}
 
-                        <div className="bg-theme-bg/90 mt-1">
+                        {/* Native Controls Override */}
+                        <div className="bg-theme-bg/90 border-theme-border/30 mt-1 w-full border-t">
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
                               setNativeInteraction(true);
                               setQualityMenuOpen(false);
                             }}
-                            className="text-theme-danger hover:bg-theme-danger/20 border-theme-border/30 flex w-full items-center gap-3 border-t px-4 py-4 text-left text-xs font-bold transition-all hover:text-red-400"
+                            className="text-theme-danger hover:bg-theme-danger/20 flex w-full items-center gap-3 px-4 py-3 text-left text-xs font-bold transition-all hover:text-red-400"
                           >
-                            <ExternalLink className="h-5 w-5" />
-                            Unlock Native Controls
+                            <ExternalLink className="h-4 w-4 shrink-0" />
+                            <span>Unlock Native Controls</span>
                           </button>
                         </div>
                       </div>
