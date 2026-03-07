@@ -113,12 +113,12 @@ export default function Playlist() {
   };
 
   const formatTime = (seconds: number) => {
-    if (!seconds || isNaN(seconds)) return "0:00";
-    const date = new Date(seconds * 1000);
-    const hh = date.getUTCHours();
-    const mm = date.getUTCMinutes();
-    const ss = date.getUTCSeconds().toString().padStart(2, "0");
-    if (hh) return `${hh}:${mm.toString().padStart(2, "0")}:${ss}`;
+    if (!seconds || isNaN(seconds) || seconds < 0) return "0:00";
+    const totalSeconds = Math.max(0, Math.floor(seconds));
+    const hh = Math.floor(totalSeconds / 3600);
+    const mm = Math.floor((totalSeconds % 3600) / 60);
+    const ss = (totalSeconds % 60).toString().padStart(2, "0");
+    if (hh > 0) return `${hh}:${mm.toString().padStart(2, "0")}:${ss}`;
     return `${mm}:${ss}`;
   };
 

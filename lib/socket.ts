@@ -7,6 +7,9 @@ export const getSocket = () => {
     socket = io({
       path: "/socket.io",
       autoConnect: false,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
     });
   }
   return socket;

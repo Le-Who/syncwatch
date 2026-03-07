@@ -72,7 +72,6 @@ export default function Player() {
   };
 
   useEffect(() => {
-     
     setError(null);
     setIsReady(false);
     setIsBuffering(false);
@@ -80,7 +79,6 @@ export default function Player() {
 
   useEffect(() => {
     if (typeof window !== "undefined") {
-       
       setHostName(window.location.hostname);
     }
   }, []);
@@ -232,12 +230,12 @@ export default function Player() {
   };
 
   const formatTime = (seconds: number) => {
-    if (!seconds || isNaN(seconds)) return "0:00";
-    const date = new Date(seconds * 1000);
-    const hh = date.getUTCHours();
-    const mm = date.getUTCMinutes();
-    const ss = date.getUTCSeconds().toString().padStart(2, "0");
-    if (hh) return `${hh}:${mm.toString().padStart(2, "0")}:${ss}`;
+    if (!seconds || isNaN(seconds) || seconds < 0) return "0:00";
+    const totalSeconds = Math.max(0, Math.floor(seconds));
+    const hh = Math.floor(totalSeconds / 3600);
+    const mm = Math.floor((totalSeconds % 3600) / 60);
+    const ss = (totalSeconds % 60).toString().padStart(2, "0");
+    if (hh > 0) return `${hh}:${mm.toString().padStart(2, "0")}:${ss}`;
     return `${mm}:${ss}`;
   };
 
@@ -531,16 +529,19 @@ export default function Player() {
           </div>
         )}
 
-        {(isBuffering || playback?.status === "buffering") && !error && (
-          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-theme-bg/80 backdrop-blur-sm">
-            <div className="w-16 h-16 border-4 border-theme-accent border-t-transparent border-b-theme-danger rounded-full animate-spin mb-6" />
-            <div className="bg-theme-accent text-theme-bg px-4 py-1 text-xs uppercase font-bold tracking-[0.2em] shadow-[var(--theme-shadow)] rounded-full">
-              {playback?.status === "buffering" && !isBuffering
-                ? `Syncing to ${playback.updatedBy}`
-                : "Buffering Stream"}
+        {/* Buffering Overlay - Yield to explicit Pause state */}
+        {(isBuffering || playback?.status === "buffering") &&
+          playing &&
+          !error && (
+            <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-theme-bg/80 backdrop-blur-sm">
+              <div className="w-16 h-16 border-4 border-theme-accent border-t-transparent border-b-theme-danger rounded-full animate-spin mb-6" />
+              <div className="bg-theme-accent text-theme-bg px-4 py-1 text-xs uppercase font-bold tracking-[0.2em] shadow-[var(--theme-shadow)] rounded-full">
+                {playback?.status === "buffering" && !isBuffering
+                  ? `Syncing to ${playback.updatedBy}`
+                  : "Buffering Stream"}
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
         {/* PAUSED Overlay */}
         {!playing && !isBuffering && isReady && !error && (

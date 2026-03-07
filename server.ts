@@ -285,6 +285,8 @@ app.prepare().then(() => {
       origin: "*",
       methods: ["GET", "POST"],
     },
+    pingTimeout: 60000,
+    pingInterval: 25000,
   });
 
   io.on("connection", (socket) => {
@@ -388,6 +390,7 @@ app.prepare().then(() => {
         case "pause":
           if (!canControlPlayback) break;
           if (typeof payload.position !== "number") break;
+          // ALLOW escaping from stuck buffering state
           if (room.playback.status !== "paused") {
             room.playback.status = "paused";
             room.playback.basePosition = payload.position;
@@ -465,7 +468,9 @@ app.prepare().then(() => {
             room.currentMediaId = newItem.id;
             room.playback.basePosition = newItem.startPosition || 0;
             room.playback.baseTimestamp = Date.now();
-            room.playback.status = "paused";
+            // Inherit momentum, otherwise paused
+            room.playback.status =
+              room.playback.status === "playing" ? "playing" : "paused";
           }
           stateChanged = true;
           persistRoomState(room); // Debounced automatically
@@ -510,7 +515,8 @@ app.prepare().then(() => {
               room.currentMediaId = newBulkItem.id;
               room.playback.basePosition = newBulkItem.startPosition || 0;
               room.playback.baseTimestamp = Date.now();
-              room.playback.status = "paused";
+              room.playback.status =
+                room.playback.status === "playing" ? "playing" : "paused";
             }
           }
           if (addedCount > 0) {
@@ -538,7 +544,8 @@ app.prepare().then(() => {
           if (room.currentMediaId === payload.itemId) {
             room.currentMediaId =
               room.playlist.length > 0 ? room.playlist[0].id : null;
-            room.playback.status = "paused";
+            room.playback.status =
+              room.playback.status === "playing" ? "playing" : "paused";
             const newHead = room.currentMediaId
               ? room.playlist.find((i) => i.id === room.currentMediaId)
               : null;
@@ -587,7 +594,8 @@ app.prepare().then(() => {
           const targetItemForSet = room.playlist.find(
             (i) => i.id === payload.itemId,
           );
-          room.playback.status = "paused";
+          room.playback.status =
+            room.playback.status === "playing" ? "playing" : "paused";
           room.playback.basePosition =
             targetItemForSet?.lastPosition ||
             targetItemForSet?.startPosition ||
