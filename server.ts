@@ -346,19 +346,25 @@ app.prepare().then(() => {
     try {
       const cookies = cookie.parse(socket.request.headers.cookie || "");
       const token = cookies.syncwatch_session;
-      if (!token) {
-        return next(new Error("Authentication error: Missing token"));
+
+      if (token) {
+        const { payload } = await jwtVerify(token, JWT_SECRET);
+        if (payload.participantId) {
+          socket.data.participantId = payload.participantId;
+          return next();
+        }
       }
 
-      const { payload } = await jwtVerify(token, JWT_SECRET);
-      if (!payload.participantId) {
-        return next(new Error("Authentication error: Invalid payload"));
-      }
-
-      socket.data.participantId = payload.participantId;
+      // If no token exists (e.g. fresh secondary browser), don't reject the connection immediately.
+      // Rejecting it completely breaks the UI sync loop because the frontend expects a connection.
+      // Instead, we assign a temporary guest connection ID. The frontend must be smart enough
+      // to request a real session if it needs to execute commands.
+      socket.data.participantId = `guest_${socket.id}`;
       next();
     } catch (err) {
-      next(new Error("Authentication error"));
+      // Even on error, allow connection but mark as temporary guest to prevent UI freezes
+      socket.data.participantId = `guest_${socket.id}`;
+      next();
     }
   });
 
@@ -501,11 +507,29 @@ app.prepare().then(() => {
 
       try {
         await withLock(roomId, 5000, async () => {
+          if (!currentParticipantId) {
+            // This should ideally not happen if the socket.io middleware works correctly
+            socket.emit("error", {
+              message: "Unauthorized command. No participant ID.",
+            });
+            return;
+          }
+
+          // We must explicitly reject "guest_" accounts from sending commands.
+          // They are allowed to connect to receive state, but cannot mutate state.
+          if (currentParticipantId.startsWith("guest_")) {
+            socket.emit("error", {
+              message:
+                "Unauthorized command. Guest accounts cannot send commands.",
+            });
+            return;
+          }
+
           let room = await getRedisRoom(roomId);
           if (!room) {
             room = rooms.get(roomId); // Fallback local
           }
-          if (!room || !currentParticipantId) return;
+          if (!room) return;
 
           room.lastActivity = Date.now();
           const participant = room.participants[currentParticipantId];

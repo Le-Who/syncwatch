@@ -12,7 +12,7 @@ export default function Home() {
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setNewRoomId(crypto.randomUUID().split("-")[0]);
+    setNewRoomId(crypto.randomUUID());
   }, []);
 
   const handleJoin = (e: React.FormEvent) => {

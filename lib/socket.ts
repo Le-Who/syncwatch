@@ -85,8 +85,31 @@ class RoomSocketService {
       });
     });
 
-    socket.on("error", (error: any) => {
-      toast.error(error.message || "An error occurred");
+    socket.on("error", async (error: any) => {
+      const msg = error.message || "An error occurred";
+      toast.error(msg);
+
+      // If we got an unauthorized command because we are a guest, try to recreate the session
+      if (msg.includes("Unauthorized") || msg.includes("Guest")) {
+        const state = this.getState();
+        if (state.room && typeof window !== "undefined") {
+          // Re-trigger the handshake
+          const stateProvider = this.getState as any; // We know it's injected by useStore
+          try {
+            // Using a dynamic fetch here to recreate session since we can't easily import useStore without a circular dep
+            const res = await fetch("/api/auth/session", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ participantId: state.participantId }),
+            });
+            if (res.ok) {
+              toast.success("Session resynced securely.");
+            }
+          } catch (e) {
+            console.warn("Failed to resync session", e);
+          }
+        }
+      }
     });
   }
 

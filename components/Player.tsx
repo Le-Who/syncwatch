@@ -143,14 +143,19 @@ export default function Player() {
           setPlaying(true);
         }
 
-        if (currentDrift > 5.0 && !isBuffering) {
+        // Increase the deadzone from 0.5s to 1.0s to stop aggressive audio resampling (tearing).
+        // If drift > 3.0s, force a programmatic seek (visual skip, but catches up instantly)
+        if (currentDrift > 3.0 && !isBuffering) {
           performProgrammaticSeek(expectedPosition);
           setLocalPlaybackRate(playback.rate);
-        } else if (currentDrift > 0.5 && !isBuffering) {
+        }
+        // If drift is between 1.0s and 3.0s, gently correct it (1.02x or 0.98x) to preserve audio fidelity.
+        else if (currentDrift > 1.0 && !isBuffering) {
           const rateAdjustment =
-            currentPosition < expectedPosition ? 1.05 : 0.95;
+            currentPosition < expectedPosition ? 1.02 : 0.98;
           setLocalPlaybackRate(playback.rate * rateAdjustment);
         } else {
+          // Inside the 1.0s deadzone, trust local playback rate entirely.
           setLocalPlaybackRate(playback.rate);
         }
       } else if (playback.status === "paused") {

@@ -2,14 +2,50 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { GET } from "../route";
 import yts from "yt-search";
 import * as rateLimit from "@/lib/rate-limit";
+import { EventEmitter } from "events";
 
-vi.mock("yt-search");
+vi.mock("yt-search", () => {
+  return {
+    default: vi.fn(),
+  };
+});
 vi.mock("@/lib/rate-limit");
+
+// Mocking Worker Threads to prevent actual execution of yt-search in isolated context
+vi.mock("worker_threads", () => {
+  const { EventEmitter } = require("events");
+  return {
+    Worker: class MockWorker extends EventEmitter {
+      constructor(_code: string, options: any) {
+        super();
+        setTimeout(async () => {
+          const ytsModule = await import("yt-search");
+          const ytsMock = ytsModule.default as unknown as import("vitest").Mock;
+          // If we mocked yts to reject, simulate worker throwing an error
+          if (ytsMock.mock.results?.[0]?.type === "throw") {
+            this.emit("error", ytsMock.mock.results[0].value);
+          } else {
+            // Otherwise resolve with the mocked data via yts default mock
+            try {
+              const res = await ytsMock(options.workerData.query);
+              this.emit("message", { success: true, data: res });
+            } catch (err: any) {
+              this.emit("message", { success: false, error: err.message });
+            }
+          }
+        }, 0);
+      }
+      terminate() {}
+    },
+  };
+});
 
 describe("GET /api/youtube/search", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(rateLimit.checkRateLimit).mockReturnValue(true);
+    // Force fallback to scraped worker by omitting the API key in test environment
+    delete process.env.YOUTUBE_API_KEY;
   });
 
   const createRequest = (url: string, ip: string = "127.0.0.1") => {
@@ -21,7 +57,7 @@ describe("GET /api/youtube/search", () => {
   };
 
   it("should return 429 Too Many Requests if rate limit is exceeded", async () => {
-    vi.mocked(rateLimit.checkRateLimit).mockReturnValue(false);
+    vi.mocked(rateLimit.checkRateLimit).mockReturnValueOnce(false);
 
     const req = createRequest(
       "http://localhost:3000/api/youtube/search?q=test",
