@@ -68,7 +68,7 @@ export default function Home() {
             >
               <Link
                 href={`/room/${newRoomId}`}
-                className="bg-theme-accent text-theme-bg rounded-theme block w-full cursor-pointer border-2 border-transparent px-4 py-4 text-center text-sm font-bold tracking-widest uppercase shadow-[var(--theme-shadow)] transition-all hover:shadow-[var(--theme-shadow-hover)] sm:text-base"
+                className="bg-theme-accent text-theme-bg rounded-theme shadow-theme hover:shadow-theme-hover block w-full cursor-pointer border-2 border-transparent px-4 py-4 text-center text-sm font-bold tracking-widest uppercase transition-all sm:text-base"
               >
                 ++ Initialize New Room ++
               </Link>
