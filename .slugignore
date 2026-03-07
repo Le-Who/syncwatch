@@ -11,6 +11,7 @@ playwright.config.ts
 # Custom AI Skills and Workflows
 skills/
 .gemini/
+.kilocode/
 
 # Source Map files (if any are generated in production)
 *.map

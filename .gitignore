@@ -30,3 +30,4 @@ pnpm-debug.log*
 # Custom AI Skills and Workflows
 skills/
 .gemini/
+.kilocode/
