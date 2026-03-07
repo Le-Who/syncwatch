@@ -1,0 +1,142 @@
+import { renderHook, act } from "@testing-library/react";
+import { useStore, useSettingsStore } from "../store";
+import { getSocket } from "../socket";
+import { vi } from "vitest";
+
+// Mock socket
+vi.mock("../socket", () => {
+  const listeners: Record<string, Function[]> = {};
+
+  const mockSocket = {
+    on: vi.fn((event: string, callback: Function) => {
+      if (!listeners[event]) listeners[event] = [];
+      listeners[event].push(callback);
+    }),
+    off: vi.fn((event: string) => {
+      delete listeners[event];
+    }),
+    emit: vi.fn(),
+    connect: vi.fn(),
+    disconnect: vi.fn(),
+    // Helper to simulate receiving events
+    simulateEvent: (event: string, ...args: any[]) => {
+      if (listeners[event]) {
+        listeners[event].forEach((cb) => cb(...args));
+      }
+    },
+  };
+
+  return {
+    getSocket: () => mockSocket,
+  };
+});
+
+describe("useSettingsStore", () => {
+  beforeEach(() => {
+    // Reset local storage
+    localStorage.clear();
+  });
+
+  it("should initialize with default settings", () => {
+    const { result } = renderHook(() => useSettingsStore());
+    expect(result.current.volume).toBe(0.8);
+    expect(result.current.muted).toBe(false);
+    expect(result.current.theaterMode).toBe(false);
+  });
+
+  it("should update volume", () => {
+    const { result } = renderHook(() => useSettingsStore());
+    act(() => {
+      result.current.setVolume(0.5);
+    });
+    expect(result.current.volume).toBe(0.5);
+  });
+
+  it("should toggle theater mode", () => {
+    const { result } = renderHook(() => useSettingsStore());
+    act(() => {
+      result.current.toggleTheaterMode();
+    });
+    expect(result.current.theaterMode).toBe(true);
+  });
+});
+
+describe("useStore", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    const { result } = renderHook(() => useStore());
+    act(() => {
+      // Clear state manually for clean runs
+      useStore.setState({
+        room: null,
+        serverClockOffset: 0,
+        isConnected: false,
+        participantId: null,
+        sessionToken: null,
+        nickname: "",
+        commandSequence: 1,
+      });
+    });
+    vi.clearAllMocks();
+  });
+
+  it("should initialize with correct default state", () => {
+    const { result } = renderHook(() => useStore());
+    expect(result.current.isConnected).toBe(false);
+    expect(result.current.room).toBeNull();
+  });
+
+  it("should call init and load from localStorage", () => {
+    localStorage.setItem("nickname", "TestUser");
+    localStorage.setItem("participantId", "1234");
+
+    const { result } = renderHook(() => useStore());
+    act(() => {
+      result.current.init();
+    });
+
+    expect(result.current.nickname).toBe("TestUser");
+    expect(result.current.participantId).toBe("1234");
+  });
+
+  it("should update nickname and omit emitting if not connected", () => {
+    const { result } = renderHook(() => useStore());
+
+    act(() => {
+      result.current.setNickname("NewName");
+    });
+
+    expect(result.current.nickname).toBe("NewName");
+    expect(localStorage.getItem("nickname")).toBe("NewName");
+    expect(getSocket().emit).not.toHaveBeenCalled();
+  });
+
+  it("should emit update_nickname if connected and in a room", () => {
+    const { result } = renderHook(() => useStore());
+
+    act(() => {
+      useStore.setState({ isConnected: true, room: { id: "room1" } as any });
+      result.current.setNickname("EmitName");
+    });
+
+    expect(getSocket().emit).toHaveBeenCalledWith(
+      "command",
+      expect.objectContaining({
+        type: "update_nickname",
+        payload: { nickname: "EmitName" },
+      }),
+    );
+  });
+
+  it("should handle disconnect", () => {
+    const { result } = renderHook(() => useStore());
+    act(() => {
+      useStore.setState({ isConnected: true, room: { id: "1" } as any });
+      result.current.disconnect();
+    });
+
+    expect(getSocket().disconnect).toHaveBeenCalled();
+    expect(result.current.isConnected).toBe(false);
+    expect(result.current.room).toBeNull();
+  });
+});
