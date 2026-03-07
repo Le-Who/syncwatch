@@ -17,10 +17,11 @@ import {
   ExternalLink,
 } from "lucide-react";
 import fscreen from "fscreen";
-import ReactPlayerImport from "react-player";
 import { motion } from "motion/react";
 
-const ReactPlayer = ReactPlayerImport as any;
+const ReactPlayer = dynamic(() => import("react-player"), {
+  ssr: false,
+}) as any;
 
 export default function Player() {
   const { room, participantId, sendCommand, serverClockOffset } = useStore();
@@ -457,16 +458,22 @@ export default function Player() {
                 setError("SYSTEM FAILURE. SIGNAL LOST.");
                 setIsBuffering(false);
               }}
-              onProgress={handleProgress}
-              onSeek={(seconds: number) => {
+              onTimeUpdate={(e: any) => {
+                const ct = (e.currentTarget as any).currentTime || 0;
+                const dur = (e.currentTarget as any).duration || 1;
+                handleProgress({ played: ct / dur, playedSeconds: ct });
+              }}
+              onSeeked={(e: any) => {
+                const ct = (e.currentTarget as any).currentTime || 0;
                 if (nativeInteraction && canControl) {
-                  emitCommand("seek", { position: seconds });
+                  emitCommand("seek", { position: ct });
                   if (playing) {
-                    emitCommand("play", { position: seconds });
+                    emitCommand("play", { position: ct });
                   }
                 }
               }}
-              onDuration={(dur: number) => {
+              onDurationChange={(e: any) => {
+                const dur = (e.currentTarget as any).duration || 0;
                 setDuration(dur);
                 if (canControl && room && room.currentMediaId) {
                   emitCommand("update_duration", {
@@ -482,10 +489,10 @@ export default function Player() {
                   });
                 }
               }}
-              onBuffer={() => {
+              onWaiting={() => {
                 setIsBuffering(true);
               }}
-              onBufferEnd={() => {
+              onPlaying={() => {
                 setIsBuffering(false);
               }}
               onPlay={() => {

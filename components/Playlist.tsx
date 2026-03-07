@@ -75,8 +75,6 @@ export default function Playlist() {
         testUrl.includes(".ogg")
       )
         return { provider: "Direct Video", isValid: true };
-      if (testUrl.includes("soundcloud.com"))
-        return { provider: "SoundCloud", isValid: true };
       if (testUrl.includes("twitch.tv"))
         return { provider: "Twitch", isValid: true };
       return { provider: "Supported Media", isValid: true };
@@ -153,6 +151,7 @@ export default function Playlist() {
                   title: v.title,
                   duration: v.duration,
                   startPosition: 0,
+                  thumbnail: v.thumbnail,
                 })),
               });
               setUrl("");

@@ -16,14 +16,25 @@ const dev = process.env.NODE_ENV !== "production";
 const app = (0, next_1.default)({ dev });
 const handle = app.getRequestHandler();
 // Supabase Setup
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || "";
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.SUPABASE_ANON_KEY ||
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_SERVICE_KEY ||
     "";
-const supabase = supabaseUrl && supabaseKey ? (0, supabase_js_1.createClient)(supabaseUrl, supabaseKey) : null;
-if (!supabase) {
-    console.warn("⚠️ Supabase credentials missing (NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY). Running in memory-only mode.");
+let supabase = null;
+if (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
+    supabase = (0, supabase_js_1.createClient)(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+        auth: {
+            persistSession: false,
+        },
+    });
+    console.log("✅ Supabase initialized with Service Role (Persistence Enabled)");
+}
+else {
+    console.warn("\n=======================================================");
+    console.warn("⚠️ WARNING: Running in Ephemeral Memory Mode.");
+    console.warn("⚠️ SUPABASE_SERVICE_ROLE_KEY is missing.");
+    console.warn("⚠️ Data will NOT persist to the database.");
+    console.warn("=======================================================\n");
 }
 // In-memory state
 const rooms = new Map();
@@ -66,12 +77,23 @@ function createEmptyRoom(id, name) {
         lastActivity: Date.now(),
     };
 }
+// Security: Prevent sending sensitive tokens to other clients
+function sanitizeRoom(room) {
+    const sanitized = Object.assign(Object.assign({}, room), { participants: Object.assign({}, room.participants) });
+    for (const pid in sanitized.participants) {
+        sanitized.participants[pid] = Object.assign({}, sanitized.participants[pid]);
+        delete sanitized.participants[pid].sessionToken;
+    }
+    return sanitized;
+}
 // Database sync helpers
 // Debounce persistence globally per room to prevent database spam
 const persistenceTimers = new Map();
-async function persistRoomState(room) {
+// Debounced save
+const persistRoomState = async (room) => {
+    // Changed to async function, removed debounce wrapper as it's not defined
     if (!supabase)
-        return;
+        return; // Immediately stop if we are in Ephemeral Memory Mode
     // Clear any existing timer to debounce
     const existingTimer = persistenceTimers.get(room.id);
     if (existingTimer) {
@@ -110,6 +132,7 @@ async function persistRoomState(room) {
                     added_by: item.addedBy,
                     position: index,
                     last_position: item.lastPosition || 0,
+                    thumbnail: item.thumbnail,
                 }));
                 await supabase.from("playlist_items").upsert(itemsToUpsert);
             }
@@ -134,7 +157,7 @@ async function persistRoomState(room) {
         }
     }, 2000); // Debounce by 2 seconds
     persistenceTimers.set(room.id, timer);
-}
+};
 async function loadRoomFromDB(roomId) {
     if (!supabase)
         return null;
@@ -170,6 +193,7 @@ async function loadRoomFromDB(roomId) {
                 duration: item.duration,
                 addedBy: item.added_by,
                 lastPosition: item.last_position || 0,
+                thumbnail: item.thumbnail,
             }));
         }
         if (snapshotData) {
@@ -214,6 +238,8 @@ app.prepare().then(() => {
             origin: "*",
             methods: ["GET", "POST"],
         },
+        pingTimeout: 60000,
+        pingInterval: 25000,
     });
     io.on("connection", (socket) => {
         let currentRoomId = null;
@@ -223,7 +249,7 @@ app.prepare().then(() => {
             // Send back immediately so client can calculate RTT and offset
             callback(Date.now(), clientTime);
         });
-        socket.on("join_room", async ({ roomId, nickname, participantId }) => {
+        socket.on("join_room", async ({ roomId, nickname, participantId, sessionToken }) => {
             let room = rooms.get(roomId);
             if (!room) {
                 // Try to load from DB first
@@ -239,12 +265,22 @@ app.prepare().then(() => {
             // Handle reconnect or new join
             const existingParticipant = room.participants[pId];
             if (existingParticipant) {
+                if (existingParticipant.sessionToken &&
+                    existingParticipant.sessionToken !== sessionToken) {
+                    socket.emit("error", {
+                        message: "Invalid session token. Access denied.",
+                    });
+                    return;
+                }
                 existingParticipant.lastSeen = Date.now();
-                existingParticipant.nickname = nickname || existingParticipant.nickname;
+                existingParticipant.nickname =
+                    nickname || existingParticipant.nickname;
             }
             else {
+                const newToken = sessionToken || (0, crypto_1.randomUUID)();
                 room.participants[pId] = {
                     id: pId,
+                    sessionToken: newToken,
                     nickname: nickname || `Guest ${Math.floor(Math.random() * 1000)}`,
                     role: isFirst ? "owner" : "guest",
                     lastSeen: Date.now(),
@@ -254,17 +290,42 @@ app.prepare().then(() => {
             socket.join(roomId);
             currentRoomId = roomId;
             currentParticipantId = pId;
-            socket.emit("room_state", { room, serverTime: Date.now() });
-            socket.to(roomId).emit("participant_joined", room.participants[pId]);
+            socket.emit("room_state", {
+                room: sanitizeRoom(room),
+                serverTime: Date.now(),
+                sessionToken: room.participants[pId].sessionToken,
+            });
+            // participant_joined only needs sanitized data
+            const joinedInfo = Object.assign({}, room.participants[pId]);
+            delete joinedInfo.sessionToken;
+            socket.to(roomId).emit("participant_joined", joinedInfo);
         });
-        socket.on("command", ({ roomId, type, payload, sequence }) => {
+        socket.on("command", (rawCommand) => {
+            // OOM & Type Protection Fast Check
+            if (!rawCommand || typeof rawCommand !== "object")
+                return;
+            const payloadString = JSON.stringify(rawCommand);
+            if (payloadString.length > 50000) {
+                socket.emit("error", {
+                    message: "Payload too large. Request rejected.",
+                });
+                return;
+            }
+            const { roomId, type, payload, sequence, sessionToken } = rawCommand;
+            if (typeof type !== "string" || type.length > 50)
+                return;
             const room = rooms.get(roomId);
             if (!room || !currentParticipantId)
                 return;
             room.lastActivity = Date.now();
             const participant = room.participants[currentParticipantId];
-            if (!participant)
+            // Strict spoofing check
+            if (!participant || participant.sessionToken !== sessionToken) {
+                socket.emit("error", {
+                    message: "Unauthorized command. Invalid session.",
+                });
                 return;
+            }
             room.sequence++;
             // Permission checks
             const isOwnerOrMod = participant.role === "owner" || participant.role === "moderator";
@@ -279,7 +340,9 @@ app.prepare().then(() => {
                 case "play":
                     if (!canControlPlayback)
                         break;
-                    if (typeof payload.position !== "number")
+                    if (typeof payload.position !== "number" ||
+                        !Number.isFinite(payload.position) ||
+                        payload.position < 0)
                         break;
                     // Validations: verify position is reasonable
                     if (room.playback.status !== "playing" ||
@@ -294,8 +357,11 @@ app.prepare().then(() => {
                 case "pause":
                     if (!canControlPlayback)
                         break;
-                    if (typeof payload.position !== "number")
+                    if (typeof payload.position !== "number" ||
+                        !Number.isFinite(payload.position) ||
+                        payload.position < 0)
                         break;
+                    // ALLOW escaping from stuck buffering state
                     if (room.playback.status !== "paused") {
                         room.playback.status = "paused";
                         room.playback.basePosition = payload.position;
@@ -307,7 +373,9 @@ app.prepare().then(() => {
                 case "seek":
                     if (!canControlPlayback)
                         break;
-                    if (typeof payload.position !== "number")
+                    if (typeof payload.position !== "number" ||
+                        !Number.isFinite(payload.position) ||
+                        payload.position < 0)
                         break;
                     room.playback.basePosition = payload.position;
                     room.playback.baseTimestamp = Date.now();
@@ -317,10 +385,11 @@ app.prepare().then(() => {
                 case "update_rate":
                     if (!canControlPlayback)
                         break;
-                    if (typeof payload.rate !== "number")
+                    if (typeof payload.rate !== "number" ||
+                        !Number.isFinite(payload.rate))
                         break;
                     // Only allow reasonable playback rates (e.g. 0.25 to 4.0)
-                    if (payload.rate > 0 && payload.rate <= 4.0) {
+                    if (payload.rate >= 0.25 && payload.rate <= 4.0) {
                         // Need to update basePosition to current virtual position before changing rate
                         // so we don't jump backward/forward unexpectedly
                         if (room.playback.status === "playing") {
@@ -340,7 +409,9 @@ app.prepare().then(() => {
                 case "buffering":
                     if (!canControlPlayback)
                         break;
-                    if (typeof payload.position !== "number")
+                    if (typeof payload.position !== "number" ||
+                        !Number.isFinite(payload.position) ||
+                        payload.position < 0)
                         break;
                     if (room.playback.status === "playing") {
                         room.playback.status = "buffering";
@@ -375,7 +446,9 @@ app.prepare().then(() => {
                         room.currentMediaId = newItem.id;
                         room.playback.basePosition = newItem.startPosition || 0;
                         room.playback.baseTimestamp = Date.now();
-                        room.playback.status = "paused";
+                        // Inherit momentum, otherwise paused
+                        room.playback.status =
+                            room.playback.status === "playing" ? "playing" : "paused";
                     }
                     stateChanged = true;
                     persistRoomState(room); // Debounced automatically
@@ -385,23 +458,39 @@ app.prepare().then(() => {
                         break;
                     if (!Array.isArray(payload.items))
                         break;
-                    let addedCount = 0;
-                    for (const item of payload.items) {
-                        if (room.playlist.length >= 500) {
-                            if (addedCount > 0) {
-                                socket.emit("error", {
-                                    message: "Partial add: Playlist limit reached (500 items)",
-                                });
-                            }
-                            else {
-                                socket.emit("error", {
-                                    message: "Playlist maximum limit reached (500 items)",
-                                });
-                            }
-                            break;
-                        }
+                    const availableSlots = 500 - room.playlist.length;
+                    if (availableSlots <= 0) {
+                        socket.emit("error", {
+                            message: "Playlist maximum limit reached (500 items)",
+                        });
+                        break;
+                    }
+                    // 1. Slice to available capacity explicitly to avoid iterating over 500+ items that will just fail
+                    const itemsToProcess = payload.items.slice(0, availableSlots);
+                    // 2. Deduplicate URLs within the payload
+                    const uniqueUrls = new Set();
+                    const dedupedItemsToProcess = [];
+                    for (const item of itemsToProcess) {
                         if (typeof item.url !== "string" || !item.url.trim())
                             continue;
+                        // Also dedupe against existing playlist quickly
+                        const alreadyExists = room.playlist.some((pi) => pi.url === item.url);
+                        if (!uniqueUrls.has(item.url) && !alreadyExists) {
+                            uniqueUrls.add(item.url);
+                            dedupedItemsToProcess.push(item);
+                        }
+                    }
+                    if (dedupedItemsToProcess.length === 0) {
+                        if (itemsToProcess.length > 0) {
+                            socket.emit("error", {
+                                message: "All provided items are already in the playlist.",
+                            });
+                        }
+                        break;
+                    }
+                    let addedCount = 0;
+                    let firstAddedId = null;
+                    for (const item of dedupedItemsToProcess) {
                         const newBulkItem = {
                             id: (0, crypto_1.randomUUID)(),
                             url: item.url,
@@ -415,12 +504,21 @@ app.prepare().then(() => {
                         };
                         room.playlist.push(newBulkItem);
                         addedCount++;
+                        if (!firstAddedId)
+                            firstAddedId = newBulkItem.id;
                         if (!room.currentMediaId) {
                             room.currentMediaId = newBulkItem.id;
                             room.playback.basePosition = newBulkItem.startPosition || 0;
                             room.playback.baseTimestamp = Date.now();
-                            room.playback.status = "paused";
+                            room.playback.status =
+                                room.playback.status === "playing" ? "playing" : "paused";
                         }
+                    }
+                    if (addedCount < itemsToProcess.length &&
+                        availableSlots < payload.items.length) {
+                        socket.emit("error", {
+                            message: `Partial add: Added ${addedCount} items. Playlist limit reached (500 items).`,
+                        });
                     }
                     if (addedCount > 0) {
                         stateChanged = true;
@@ -443,7 +541,8 @@ app.prepare().then(() => {
                     if (room.currentMediaId === payload.itemId) {
                         room.currentMediaId =
                             room.playlist.length > 0 ? room.playlist[0].id : null;
-                        room.playback.status = "paused";
+                        room.playback.status =
+                            room.playback.status === "playing" ? "playing" : "paused";
                         const newHead = room.currentMediaId
                             ? room.playlist.find((i) => i.id === room.currentMediaId)
                             : null;
@@ -483,7 +582,8 @@ app.prepare().then(() => {
                     }
                     room.currentMediaId = payload.itemId;
                     const targetItemForSet = room.playlist.find((i) => i.id === payload.itemId);
-                    room.playback.status = "paused";
+                    room.playback.status =
+                        room.playback.status === "playing" ? "playing" : "paused";
                     room.playback.basePosition =
                         (targetItemForSet === null || targetItemForSet === void 0 ? void 0 : targetItemForSet.lastPosition) ||
                             (targetItemForSet === null || targetItemForSet === void 0 ? void 0 : targetItemForSet.startPosition) ||
