@@ -2,14 +2,16 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import dynamic from "next/dynamic";
-import { useStore } from "@/lib/store";
+import { useStore, useSettingsStore } from "@/lib/store";
 import {
   Play,
   Pause,
   SkipForward,
+  SkipBack,
   Volume2,
   VolumeX,
   Maximize,
+  MonitorPlay,
   AlertCircle,
 } from "lucide-react";
 
@@ -19,11 +21,12 @@ const ReactPlayer = dynamic(() => import("react-player"), {
 
 export default function Player() {
   const { room, participantId, sendCommand, serverClockOffset } = useStore();
+  const { volume, muted, theaterMode, setVolume, setMuted, toggleTheaterMode } =
+    useSettingsStore();
   const playerRef = useRef<any>(null);
   const [playing, setPlaying] = useState(false);
-  const [volume, setVolume] = useState(0.8);
-  const [muted, setMuted] = useState(false);
   const [played, setPlayed] = useState(0);
+  const [playedSeconds, setPlayedSeconds] = useState(0);
   const [duration, setDuration] = useState(0);
   const [seeking, setSeeking] = useState(false);
   const [isReady, setIsReady] = useState(false);
@@ -234,9 +237,15 @@ export default function Player() {
   const handleProgress = (state: { played: number; playedSeconds: number }) => {
     if (!seeking) {
       setPlayed(state.played);
+      setPlayedSeconds(state.playedSeconds);
     }
   };
 
+  const handleEnded = () => {
+    if (canControl) {
+      emitCommand("video_ended", { currentMediaId: playback?.currentMediaId });
+    }
+  };
   const handleNext = () => {
     emitCommand("next", { currentMediaId: room?.currentMediaId });
   };
@@ -321,6 +330,25 @@ export default function Player() {
     );
   }
 
+  const currentIndex =
+    room?.playlist.findIndex((i) => i.id === currentMedia.id) ?? -1;
+  let nextItem = null;
+  if (currentIndex !== -1 && room) {
+    nextItem = room.playlist[currentIndex + 1];
+    if (!nextItem && room.settings.looping) {
+      nextItem = room.playlist[0];
+    }
+  }
+
+  const timeRemaining = duration - playedSeconds;
+  const showUpNext =
+    canControl &&
+    room?.settings.autoplayNext &&
+    nextItem &&
+    duration > 0 &&
+    timeRemaining <= 5 &&
+    timeRemaining > 0;
+
   return (
     <div className="w-full h-full flex flex-col bg-theme-bg relative group react-player-wrapper border-y-2 lg:border-y-0 lg:border-x-2 border-theme-border/50 font-theme flex-1">
       <div className="w-full h-full relative flex-1" ref={containerRef}>
@@ -345,7 +373,15 @@ export default function Player() {
               setIsBuffering(false);
             }}
             onProgress={handleProgress}
-            onDuration={(dur: number) => setDuration(dur)}
+            onDuration={(dur: number) => {
+              setDuration(dur);
+              if (canControl && room && room.currentMediaId) {
+                emitCommand("update_duration", {
+                  itemId: room.currentMediaId,
+                  duration: dur,
+                });
+              }
+            }}
             onEnded={() => {
               if (
                 room?.settings.autoplayNext &&
@@ -405,6 +441,56 @@ export default function Player() {
               },
             }}
           />
+        )}
+
+        {/* Up Next Overlay Layer */}
+        {showUpNext && (
+          <div className="absolute bottom-24 right-4 z-40 bg-theme-bg/95 backdrop-blur-md border border-theme-border/50 rounded-theme p-4 shadow-[0_10px_40px_rgba(0,0,0,0.5)] flex items-center space-x-4 animate-in fade-in slide-in-from-right-8 pointer-events-auto">
+            <div className="relative flex items-center justify-center w-12 h-12">
+              <svg className="w-full h-full transform -rotate-90">
+                <circle
+                  cx="24"
+                  cy="24"
+                  r="20"
+                  stroke="currentColor"
+                  strokeWidth="3"
+                  fill="transparent"
+                  className="text-theme-border/30"
+                />
+                <circle
+                  cx="24"
+                  cy="24"
+                  r="20"
+                  stroke="currentColor"
+                  strokeWidth="3"
+                  fill="transparent"
+                  className="text-theme-accent transition-all duration-1000 ease-linear"
+                  strokeDasharray="125"
+                  strokeDashoffset={125 - (125 * (5 - timeRemaining)) / 5}
+                />
+              </svg>
+              <span className="absolute text-sm font-bold text-theme-text">
+                {Math.ceil(timeRemaining)}
+              </span>
+            </div>
+            <div className="flex flex-col max-w-[200px] truncate pr-4">
+              <span className="text-[10px] uppercase font-bold tracking-widest text-theme-muted">
+                Up Next
+              </span>
+              <span className="text-sm font-bold truncate text-theme-text">
+                {nextItem?.title}
+              </span>
+            </div>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleNext();
+              }}
+              className="text-theme-bg bg-theme-accent hover:filter hover:brightness-110 px-3 py-1.5 rounded-theme text-xs font-bold uppercase tracking-widest transition-all"
+            >
+              Skip
+            </button>
+          </div>
         )}
 
         {/* Thematic Scanline Overlay - Hidden for Twitch to prevent iframe visibility occlusion blocks */}
@@ -522,31 +608,34 @@ export default function Player() {
                 <button className="text-theme-accent hover:text-theme-danger text-[10px] font-bold uppercase tracking-widest outline-none focus-visible:ring-2 ring-theme-accent rounded-sm px-1.5 py-1 border border-theme-accent/30 transition-colors">
                   {playback?.rate || 1}x
                 </button>
-                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover/speed:flex flex-col bg-theme-bg/95 border-2 border-theme-border/50 rounded-theme shadow-xl backdrop-blur-md overflow-hidden z-50">
-                  <div className="text-[9px] text-theme-muted font-bold text-center py-1.5 border-b border-theme-border/30 tracking-widest uppercase bg-theme-bg/50">
-                    SPEED
+                {/* Add a transparent bridge area using pb-2 on the outer container so hovering the gap keeps it open */}
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 pb-2 hidden group-hover/speed:flex flex-col z-50">
+                  <div className="bg-theme-bg/95 border-2 border-theme-border/50 rounded-theme shadow-xl backdrop-blur-md overflow-hidden flex flex-col">
+                    <div className="text-[9px] text-theme-muted font-bold text-center py-1.5 border-b border-theme-border/30 tracking-widest uppercase bg-theme-bg/50">
+                      SPEED
+                    </div>
+                    {[0.5, 1, 1.25, 1.5, 2].map((r) => (
+                      <button
+                        key={r}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (canControl) {
+                            emitCommand("update_rate", { rate: r });
+                          }
+                        }}
+                        disabled={!canControl}
+                        className={`px-4 py-2.5 text-xs font-bold transition-all border-b border-theme-border/10 last:border-0 hover:bg-theme-accent/20 ${
+                          !canControl ? "cursor-not-allowed opacity-50" : ""
+                        } ${
+                          playback?.rate === r
+                            ? "text-theme-accent bg-theme-accent/10 shadow-[inset_2px_0_0_var(--color-theme-accent)]"
+                            : "text-theme-text"
+                        }`}
+                      >
+                        {r}x
+                      </button>
+                    ))}
                   </div>
-                  {[0.5, 1, 1.25, 1.5, 2].map((r) => (
-                    <button
-                      key={r}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (canControl) {
-                          emitCommand("update_rate", { rate: r });
-                        }
-                      }}
-                      disabled={!canControl}
-                      className={`px-4 py-2.5 text-xs font-bold transition-all border-b border-theme-border/10 last:border-0 hover:bg-theme-accent/20 ${
-                        !canControl ? "cursor-not-allowed opacity-50" : ""
-                      } ${
-                        playback?.rate === r
-                          ? "text-theme-accent bg-theme-accent/10 shadow-[inset_2px_0_0_var(--color-theme-accent)]"
-                          : "text-theme-text"
-                      }`}
-                    >
-                      {r}x
-                    </button>
-                  ))}
                 </div>
               </div>
 
@@ -574,11 +663,11 @@ export default function Player() {
                     type="range"
                     min={0}
                     max={1}
-                    step="any"
-                    value={muted ? 0 : volume}
                     onChange={(e) => {
                       setVolume(parseFloat(e.target.value));
-                      setMuted(false);
+                      if (muted && parseFloat(e.target.value) > 0) {
+                        setMuted(false);
+                      }
                     }}
                     className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                   />
@@ -633,6 +722,19 @@ export default function Player() {
                   </strong>
                 </span>
               )}
+
+              {/* Theater Mode */}
+              <button
+                onClick={toggleTheaterMode}
+                className={`transition-colors hover:scale-110 p-2 outline-none focus-visible:ring-2 ring-theme-accent rounded-full ${
+                  theaterMode
+                    ? "text-theme-danger"
+                    : "text-theme-accent hover:text-theme-danger"
+                }`}
+                title="Theater Mode"
+              >
+                <MonitorPlay className="w-5 h-5" />
+              </button>
 
               {/* Fullscreen */}
               <button

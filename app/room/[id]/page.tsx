@@ -10,6 +10,8 @@ import Player from "@/components/Player";
 import Playlist from "@/components/Playlist";
 import Participants from "@/components/Participants";
 import RoomSettingsDialog from "@/components/RoomSettingsDialog";
+import Reactions from "@/components/Reactions";
+import { useSettingsStore } from "@/lib/store";
 
 export default function RoomPage() {
   const params = useParams();
@@ -35,6 +37,7 @@ export default function RoomPage() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isEditingRoomName, setIsEditingRoomName] = useState(false);
   const [editRoomName, setEditRoomName] = useState("");
+  const { theaterMode } = useSettingsStore();
 
   useEffect(() => {
     init();
@@ -233,15 +236,35 @@ export default function RoomPage() {
       {/* Main Content */}
       <div className="flex flex-1 overflow-hidden flex-col lg:flex-row relative mt-1 bg-transparent">
         {/* Player Area */}
-        <div className="flex-1 flex flex-col min-h-[40vh] lg:min-h-0 relative z-10 p-2 lg:p-4">
+        <div className="flex-1 flex flex-col min-h-[40vh] lg:min-h-0 relative z-10 p-2 lg:p-4 transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]">
           <div className="w-full h-full border-2 border-theme-border/50 shadow-[var(--theme-shadow)] bg-theme-bg rounded-theme overflow-hidden relative">
             <Player />
+            <Reactions />
           </div>
         </div>
 
         {/* Sidebar */}
-        <div className="w-full lg:w-[400px] xl:w-[460px] flex flex-col shrink-0 h-[50vh] lg:h-auto z-20 p-2 lg:p-4 lg:pl-0">
-          <div className="flex-1 flex flex-col theme-panel overflow-hidden">
+        <div
+          className={`shrink-0 flex flex-col z-20 transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] group/sidebar
+            ${
+              theaterMode
+                ? "absolute right-0 top-0 bottom-0 w-[90%] sm:w-[400px] xl:w-[460px] p-2 lg:p-4 translate-x-[calc(100%-20px)] hover:translate-x-0 focus-within:translate-x-0"
+                : "w-full lg:w-[400px] xl:w-[460px] h-[50vh] lg:h-auto p-2 lg:p-4 lg:pl-0 relative"
+            }
+          `}
+        >
+          {theaterMode && (
+            <div className="absolute left-0 top-1/2 -translate-y-1/2 w-5 h-32 bg-theme-accent/20 rounded-l-md border-y border-l border-theme-accent/40 flex items-center justify-center cursor-pointer backdrop-blur-md opacity-100 group-hover/sidebar:opacity-0 transition-opacity z-50">
+              <div className="w-1 h-10 bg-theme-accent rounded-full animate-pulse"></div>
+            </div>
+          )}
+          <div
+            className={`flex-1 flex flex-col overflow-hidden transition-all duration-700 ${
+              theaterMode
+                ? "bg-theme-bg/95 backdrop-blur-2xl border-2 border-theme-border/50 shadow-[-20px_0_40px_rgba(0,0,0,0.5)] rounded-theme ml-4"
+                : "theme-panel"
+            }`}
+          >
             {/* Tabs */}
             <div className="flex border-b-2 border-theme-border shrink-0">
               <button

@@ -80,6 +80,25 @@ interface RoomState {
 // In-memory state
 const rooms = new Map<string, RoomState>();
 
+// Garbage Collection: Check every 5 minutes and delete rooms empty for >15 minutes
+setInterval(
+  () => {
+    const now = Date.now();
+    for (const [roomId, room] of rooms.entries()) {
+      const participantsCount = Object.keys(room.participants).length;
+      if (participantsCount === 0) {
+        if (now - room.lastActivity > 15 * 60 * 1000) {
+          // Force a final persist just in case, then delete
+          persistRoomState(room).then(() => {
+            rooms.delete(roomId);
+          });
+        }
+      }
+    }
+  },
+  5 * 60 * 1000,
+);
+
 function createEmptyRoom(id: string, name: string): RoomState {
   return {
     id,
@@ -154,6 +173,7 @@ async function persistRoomState(room: RoomState) {
           duration: item.duration,
           added_by: item.addedBy,
           position: index,
+          last_position: item.lastPosition || 0,
         }));
         await supabase.from("playlist_items").upsert(itemsToUpsert);
       }
@@ -215,6 +235,7 @@ async function loadRoomFromDB(roomId: string): Promise<RoomState | null> {
         title: item.title,
         duration: item.duration,
         addedBy: item.added_by,
+        lastPosition: item.last_position || 0,
       }));
     }
 
@@ -449,6 +470,17 @@ app.prepare().then(() => {
 
         case "remove_item":
           if (!canEditPlaylist) break;
+          // Capture progress if removing current
+          if (room.currentMediaId === payload.itemId) {
+            const currentItem = room.playlist.find(
+              (i) => i.id === payload.itemId,
+            );
+            if (currentItem && room.playback.status === "playing") {
+              const elapsed = (Date.now() - room.playback.baseTimestamp) / 1000;
+              currentItem.lastPosition =
+                room.playback.basePosition + elapsed * room.playback.rate;
+            }
+          }
           room.playlist = room.playlist.filter(
             (item) => item.id !== payload.itemId,
           );
@@ -456,9 +488,11 @@ app.prepare().then(() => {
             room.currentMediaId =
               room.playlist.length > 0 ? room.playlist[0].id : null;
             room.playback.status = "paused";
-            room.playback.basePosition = room.currentMediaId
+            const newHead = room.currentMediaId
               ? room.playlist.find((i) => i.id === room.currentMediaId)
-                  ?.startPosition || 0
+              : null;
+            room.playback.basePosition = newHead
+              ? newHead.lastPosition || newHead.startPosition || 0
               : 0;
             room.playback.baseTimestamp = Date.now();
           }
@@ -484,12 +518,29 @@ app.prepare().then(() => {
 
         case "set_media":
           if (!canControlPlayback && !canEditPlaylist) break;
+
+          // Save current progress before switching
+          const activeItemSet = room.playlist.find(
+            (i) => i.id === room.currentMediaId,
+          );
+          if (activeItemSet) {
+            const elapsed =
+              room.playback.status === "playing"
+                ? (Date.now() - room.playback.baseTimestamp) / 1000
+                : 0;
+            activeItemSet.lastPosition =
+              room.playback.basePosition + elapsed * room.playback.rate;
+          }
+
           room.currentMediaId = payload.itemId;
           const targetItemForSet = room.playlist.find(
             (i) => i.id === payload.itemId,
           );
           room.playback.status = "paused";
-          room.playback.basePosition = targetItemForSet?.startPosition || 0;
+          room.playback.basePosition =
+            targetItemForSet?.lastPosition ||
+            targetItemForSet?.startPosition ||
+            0;
           room.playback.baseTimestamp = Date.now();
           room.playback.updatedBy = participant.nickname;
           stateChanged = true;
@@ -500,6 +551,18 @@ app.prepare().then(() => {
           if (!canControlPlayback) break;
           if (payload.currentMediaId !== room.currentMediaId) break;
 
+          const activeItemNext = room.playlist.find(
+            (i) => i.id === room.currentMediaId,
+          );
+          if (activeItemNext) {
+            const elapsed =
+              room.playback.status === "playing"
+                ? (Date.now() - room.playback.baseTimestamp) / 1000
+                : 0;
+            activeItemNext.lastPosition =
+              room.playback.basePosition + elapsed * room.playback.rate;
+          }
+
           const currentIndex = room.playlist.findIndex(
             (i) => i.id === room.currentMediaId,
           );
@@ -507,7 +570,8 @@ app.prepare().then(() => {
             const nextItem = room.playlist[currentIndex + 1];
             room.currentMediaId = nextItem.id;
             room.playback.status = "playing"; // Auto-play next
-            room.playback.basePosition = nextItem.startPosition || 0;
+            room.playback.basePosition =
+              nextItem.lastPosition || nextItem.startPosition || 0;
             room.playback.baseTimestamp = Date.now();
             room.playback.updatedBy = participant.nickname;
             stateChanged = true;
@@ -516,9 +580,72 @@ app.prepare().then(() => {
             const loopItem = room.playlist[0];
             room.currentMediaId = loopItem.id;
             room.playback.status = "playing";
-            room.playback.basePosition = loopItem.startPosition || 0;
+            room.playback.basePosition =
+              loopItem.lastPosition || loopItem.startPosition || 0;
             room.playback.baseTimestamp = Date.now();
             room.playback.updatedBy = participant.nickname;
+            stateChanged = true;
+            persistRoomState(room);
+          }
+          break;
+
+        case "video_ended":
+          if (!canControlPlayback) break;
+          if (payload.currentMediaId !== room.currentMediaId) break;
+
+          const activeItemEnded = room.playlist.find(
+            (i) => i.id === room.currentMediaId,
+          );
+          if (activeItemEnded) {
+            activeItemEnded.lastPosition = 0; // Reset progress when naturally ended
+          }
+
+          const nextIndex = room.playlist.findIndex(
+            (i) => i.id === room.currentMediaId,
+          );
+          if (
+            nextIndex !== -1 &&
+            nextIndex < room.playlist.length - 1 &&
+            room.settings.autoplayNext
+          ) {
+            const nextItem = room.playlist[nextIndex + 1];
+            room.currentMediaId = nextItem.id;
+            room.playback.status = "playing"; // Auto-play next
+            room.playback.basePosition =
+              nextItem.lastPosition || nextItem.startPosition || 0;
+            room.playback.baseTimestamp = Date.now();
+            room.playback.updatedBy = participant.nickname;
+            stateChanged = true;
+            persistRoomState(room);
+          } else if (
+            room.settings.looping &&
+            room.playlist.length > 0 &&
+            room.settings.autoplayNext
+          ) {
+            const loopItem = room.playlist[0];
+            room.currentMediaId = loopItem.id;
+            room.playback.status = "playing";
+            room.playback.basePosition =
+              loopItem.lastPosition || loopItem.startPosition || 0;
+            room.playback.baseTimestamp = Date.now();
+            room.playback.updatedBy = participant.nickname;
+            stateChanged = true;
+            persistRoomState(room);
+          } else {
+            room.playback.status = "ended";
+            room.playback.updatedBy = participant.nickname;
+            stateChanged = true;
+            persistRoomState(room);
+          }
+          break;
+
+        case "update_duration":
+          if (typeof payload.duration !== "number" || !payload.itemId) break;
+          const targetItemDur = room.playlist.find(
+            (i) => i.id === payload.itemId,
+          );
+          if (targetItemDur && targetItemDur.duration !== payload.duration) {
+            targetItemDur.duration = payload.duration;
             stateChanged = true;
             persistRoomState(room);
           }
@@ -565,6 +692,17 @@ app.prepare().then(() => {
           }
           break;
 
+        case "claim_host":
+          // Only allow claiming if literally NO ONE is an owner
+          const hasOwner = Object.values(room.participants).some(
+            (p) => p.role === "owner",
+          );
+          if (!hasOwner) {
+            participant.role = "owner";
+            stateChanged = true;
+          }
+          break;
+
         default:
           socket.emit("error", {
             message: "Unknown command or permission denied",
@@ -575,6 +713,16 @@ app.prepare().then(() => {
       if (stateChanged) {
         room.version++;
         io.to(roomId).emit("room_state", { room, serverTime: Date.now() });
+      }
+    });
+
+    socket.on("reaction", (payload) => {
+      try {
+        if (!roomId || !participantId) return;
+        // Broadcast reaction to everyone else in the room
+        socket.to(roomId).emit("reaction", payload);
+      } catch (e) {
+        console.error("Error processing reaction:", e);
       }
     });
 
@@ -603,10 +751,9 @@ app.prepare().then(() => {
               // Empty room cleanup
               const remaining = Object.values(r.participants);
               if (remaining.length === 0) {
-                // Perform final persistence before removing from memory
-                persistRoomState(r).then(() => {
-                  rooms.delete(currentRoomId!);
-                });
+                // Room is empty, it will be cleaned up by the global Garbage Collector
+                // after 15 minutes of inactivity.
+                persistRoomState(r);
               } else {
                 // Owner transfer guard
                 if (!remaining.some((p) => p.role === "owner")) {

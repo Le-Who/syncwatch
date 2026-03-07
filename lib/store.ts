@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
 import { getSocket } from "./socket";
 import { toast } from "sonner";
 
@@ -46,6 +47,30 @@ export interface RoomState {
   version: number;
   sequence: number;
 }
+
+interface LocalSettingsState {
+  volume: number;
+  muted: boolean;
+  theaterMode: boolean;
+  setVolume: (v: number) => void;
+  setMuted: (m: boolean) => void;
+  toggleTheaterMode: () => void;
+}
+
+export const useSettingsStore = create<LocalSettingsState>()(
+  persist(
+    (set) => ({
+      volume: 0.8,
+      muted: false,
+      theaterMode: false,
+      setVolume: (volume) => set({ volume }),
+      setMuted: (muted) => set({ muted }),
+      toggleTheaterMode: () =>
+        set((state) => ({ theaterMode: !state.theaterMode })),
+    }),
+    { name: "syncwatch-settings" },
+  ),
+);
 
 interface AppState {
   room: RoomState | null;
@@ -168,34 +193,8 @@ export const useStore = create<AppState>((set, get) => ({
 
         // Check for state changes to trigger toasts
         if (previousRoom) {
-          // Playback status change
-          if (
-            previousRoom.playback.status !== payload.room.playback.status &&
-            payload.room.playback.updatedBy !== get().nickname &&
-            payload.room.playback.updatedBy !== "system"
-          ) {
-            const action =
-              payload.room.playback.status === "playing"
-                ? "▶️ Started playing via"
-                : payload.room.playback.status === "paused"
-                  ? "⏸️ Paused by"
-                  : payload.room.playback.status === "buffering"
-                    ? "⏳ Buffering for"
-                    : "Playback updated by";
-            toast(`${action} ${payload.room.playback.updatedBy}`);
-          }
-
-          // Video added
-          if (previousRoom.playlist.length < payload.room.playlist.length) {
-            const newVideos = payload.room.playlist.filter(
-              (item) => !previousRoom.playlist.some((p) => p.id === item.id),
-            );
-            newVideos.forEach((v) => {
-              if (v.addedBy !== get().nickname) {
-                toast(`🎵 Video added by ${v.addedBy}`);
-              }
-            });
-          }
+          // Playback status change - disabled for Quiet Mode
+          // Video added - disabled for Quiet Mode
         }
 
         set({
@@ -207,7 +206,6 @@ export const useStore = create<AppState>((set, get) => ({
     );
 
     socket.on("participant_joined", (participant: Participant) => {
-      toast(`👋 ${participant.nickname} joined the room`);
       set((state) => {
         if (!state.room) return state;
         return {
@@ -226,9 +224,6 @@ export const useStore = create<AppState>((set, get) => ({
       set((state) => {
         if (!state.room) return state;
         const participant = state.room.participants[participantId];
-        if (participant) {
-          toast(`🚪 ${participant.nickname} left the room`);
-        }
 
         const newParticipants = { ...state.room.participants };
         delete newParticipants[participantId];

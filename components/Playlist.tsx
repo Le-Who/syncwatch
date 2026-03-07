@@ -95,10 +95,25 @@ export default function Playlist() {
 
     const startPosition = parseTimeFromUrl(cleanUrl);
 
+    let fetchedTitle = `${check.provider} Video`;
+    try {
+      const res = await fetch(
+        `/api/metadata?url=${encodeURIComponent(cleanUrl)}`,
+      );
+      if (res.ok) {
+        const data = await res.json();
+        if (data.title) {
+          fetchedTitle = data.title;
+        }
+      }
+    } catch (err) {
+      console.error("Failed to fetch metadata:", err);
+    }
+
     sendCommand("add_item", {
       url: cleanUrl,
       provider: check.provider,
-      title: `${check.provider} Video`, // Ideally fetched via oEmbed or server-side metadata in prod
+      title: fetchedTitle,
       startPosition,
     });
 
@@ -205,18 +220,55 @@ export default function Playlist() {
                   >
                     {item.title}
                   </p>
-                  <p className="text-[11px] text-theme-muted truncate flex items-center space-x-1.5 font-bold tracking-widest uppercase">
+                  <p className="text-[11px] text-theme-muted truncate flex items-center space-x-1.5 font-bold tracking-widest uppercase mb-1">
                     <span className="text-theme-text/70">{item.provider}</span>
                     <span className="opacity-30 border-l-2 border-theme-border/50 h-3 mx-1"></span>
                     <span>ADDED BY // {item.addedBy}</span>
                   </p>
                 </div>
 
+                {/* Progress Bar inside card */}
+                {(() => {
+                  let progress = 0;
+                  if (room.currentMediaId === item.id) {
+                    const elapsed =
+                      room.playback.status === "playing"
+                        ? (Date.now() - room.playback.baseTimestamp) / 1000
+                        : 0;
+                    const currentPos =
+                      room.playback.basePosition + elapsed * room.playback.rate;
+                    progress = item.duration
+                      ? Math.min((currentPos / item.duration) * 100, 100)
+                      : 0;
+                  } else if (item.lastPosition && item.duration) {
+                    progress = Math.min(
+                      (item.lastPosition / item.duration) * 100,
+                      100,
+                    );
+                  }
+
+                  if (progress > 0) {
+                    return (
+                      <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-theme-border/30 rounded-b-theme overflow-hidden">
+                        <div
+                          className={`h-full transition-all duration-1000 ${
+                            room.currentMediaId === item.id
+                              ? "bg-theme-accent shadow-[0_0_8px_var(--color-theme-accent)]"
+                              : "bg-theme-muted/50"
+                          }`}
+                          style={{ width: `${progress}%` }}
+                        />
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
+
                 {canEdit && (
                   <button
                     onClick={() => handleRemove(item.id)}
-                    className="p-2 text-theme-muted hover:text-theme-danger hover:bg-theme-danger/20 transition-colors rounded-theme border-2 border-transparent hover:border-theme-danger/50 outline-none focus-visible:ring-2 ring-theme-text"
-                    title="Remove item"
+                    className="p-2 opacity-50 hover:opacity-100 hover:text-theme-danger hover:bg-theme-danger/10 rounded-theme transition-all z-10"
+                    title="Remove"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>

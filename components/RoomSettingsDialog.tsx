@@ -25,6 +25,10 @@ export default function RoomSettingsDialog({
     room.participants[participantId!]?.role === "owner" ||
     room.participants[participantId!]?.role === "moderator";
 
+  const hasOwner = Object.values(room.participants).some(
+    (p) => p.role === "owner",
+  );
+
   const handleSave = () => {
     if (isOwnerOrMod) {
       sendCommand("update_settings", { settings });
@@ -186,6 +190,30 @@ export default function RoomSettingsDialog({
               />
             </label>
           </div>
+
+          {!hasOwner && (
+            <div className="pt-6 border-t-2 border-theme-border/30">
+              <div className="p-4 rounded-theme bg-theme-accent/10 border border-theme-accent/30 flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-bold text-theme-accent uppercase tracking-widest">
+                    Orphaned Room
+                  </h3>
+                  <p className="text-[10px] text-theme-text/80 mt-1 leading-relaxed">
+                    This room currently has no owner.
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    sendCommand("claim_host", {});
+                    onClose();
+                  }}
+                  className="px-4 py-2 bg-theme-accent text-theme-bg text-xs font-bold rounded-theme tracking-widest shadow-[var(--theme-shadow)] hover:shadow-[var(--theme-shadow-hover)] transition-all active:translate-y-0.5 active:shadow-none"
+                >
+                  CLAIM HOST
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="p-5 border-t-2 border-theme-border/30 bg-theme-bg/50 flex justify-end space-x-3">

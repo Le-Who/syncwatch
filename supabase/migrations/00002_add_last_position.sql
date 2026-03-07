@@ -1,0 +1,1 @@
+ALTER TABLE playlist_items ADD COLUMN last_position DOUBLE PRECISION DEFAULT 0;
