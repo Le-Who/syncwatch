@@ -50,12 +50,17 @@ export async function withLock<T>(
   }
 }
 
+const localRooms = new Map<string, any>();
+
 /**
  * Load room state from Redis cache
  */
 export async function getRedisRoom(roomId: string): Promise<any | null> {
   const redisClient = getRedisClient();
-  if (!redisClient) return null;
+  if (!redisClient) {
+    const memRoom = localRooms.get(roomId);
+    return memRoom ? JSON.parse(JSON.stringify(memRoom)) : null; // Return clone to prevent reference mutations
+  }
   const data = await redisClient.get(`room_state:${roomId}`);
   return data ? JSON.parse(data) : null;
 }
@@ -65,7 +70,10 @@ export async function getRedisRoom(roomId: string): Promise<any | null> {
  */
 export async function setRedisRoom(roomId: string, state: any): Promise<void> {
   const redisClient = getRedisClient();
-  if (!redisClient) return;
+  if (!redisClient) {
+    localRooms.set(roomId, JSON.parse(JSON.stringify(state)));
+    return;
+  }
   await redisClient.set(`room_state:${roomId}`, JSON.stringify(state));
   await redisClient.expire(`room_state:${roomId}`, 86400); // 1 day
 }
@@ -80,7 +88,15 @@ export async function setRedisRoomCAS(
   expectedVersion: number,
 ): Promise<boolean> {
   const redisClient = getRedisClient();
-  if (!redisClient) return true; // Local memory fallback
+  if (!redisClient) {
+    // Local memory fallback CAS
+    const existing = localRooms.get(roomId);
+    if (!existing || existing.version === expectedVersion) {
+      localRooms.set(roomId, JSON.parse(JSON.stringify(state)));
+      return true;
+    }
+    return false;
+  }
 
   const script = `
     local val = redis.call("get", KEYS[1])

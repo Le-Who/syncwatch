@@ -117,27 +117,8 @@ interface RoomState {
   lastActivity: number;
 }
 
-// In-memory state
-const rooms = new Map<string, RoomState>();
-
-// Garbage Collection: Check every 5 minutes and delete rooms empty for >15 minutes
-setInterval(
-  () => {
-    const now = Date.now();
-    for (const [roomId, room] of rooms.entries()) {
-      const participantsCount = Object.keys(room.participants).length;
-      if (participantsCount === 0) {
-        if (now - room.lastActivity > 15 * 60 * 1000) {
-          // Force a final persist just in case, then delete
-          // Force a final persist just in case, then delete
-          persistRoomState(room);
-          rooms.delete(roomId);
-        }
-      }
-    }
-  },
-  5 * 60 * 1000,
-);
+// Memory state is now exclusively managed via Redis (`getRedisRoom` / `setRedisRoom`)
+// to strictly enforce a stateless backend Architecture. Local fallback is handled in `redis-actor.ts`.
 
 function createEmptyRoom(id: string, name: string): RoomState {
   return {
@@ -174,12 +155,19 @@ function sanitizeRoom(room: RoomState): RoomState {
   return sanitized;
 }
 
-// Database sync helpers - Write-Behind Queue
+// Database sync helpers - Persistent Redis Write-Behind Queue
 const writeBehindQueue = new Set<string>();
 
 const persistRoomState = (room: RoomState) => {
   if (!supabase) return; // Immediately stop if we are in Ephemeral Memory Mode
-  writeBehindQueue.add(room.id);
+  const redisClient = getRedisClient();
+  if (redisClient) {
+    redisClient
+      .sadd("pending_syncs", room.id)
+      .catch((e) => console.error("Redis queue error:", e));
+  } else {
+    writeBehindQueue.add(room.id);
+  }
 };
 
 const forcePersistRoom = async (room: RoomState) => {
@@ -237,20 +225,39 @@ const forcePersistRoom = async (room: RoomState) => {
 
 // Background worker to flush queue every 30 seconds
 setInterval(async () => {
-  if (writeBehindQueue.size === 0 || !supabase) return;
+  if (!supabase) return;
 
-  const queue = Array.from(writeBehindQueue);
-  writeBehindQueue.clear();
+  const redisClient = getRedisClient();
+  let queue: string[] = [];
+
+  if (redisClient) {
+    queue = await redisClient.smembers("pending_syncs").catch(() => []);
+  } else {
+    if (writeBehindQueue.size === 0) return;
+    queue = Array.from(writeBehindQueue);
+    writeBehindQueue.clear();
+  }
 
   for (const roomId of queue) {
-    const room = rooms.get(roomId);
-    if (!room) continue;
+    let room;
+    const roomStr = await getRedisRoom(roomId);
+    if (roomStr) room = roomStr;
+
+    if (!room) {
+      // If room no longer exists in cache, remove it from queue
+      if (redisClient)
+        await redisClient.srem("pending_syncs", roomId).catch(() => {});
+      continue;
+    }
 
     try {
       await forcePersistRoom(room);
+      if (redisClient)
+        await redisClient.srem("pending_syncs", roomId).catch(() => {});
     } catch (err) {
-      // Re-queue on transient failure
-      writeBehindQueue.add(roomId);
+      // Re-queue on transient failure for local mode
+      // Redis mode implicitly keeps it in the set because we haven't SREM'd it yet
+      if (!redisClient) writeBehindQueue.add(roomId);
     }
   }
 }, 30000);
@@ -262,11 +269,24 @@ async function gracefulShutdown() {
   isShuttingDown = true;
   console.log("Shutting down... flushing write-behind queue...");
 
-  const queue = Array.from(writeBehindQueue);
+  const redisClient = getRedisClient();
+  let queue: string[] = [];
+
+  if (redisClient) {
+    queue = await redisClient.smembers("pending_syncs").catch(() => []);
+  } else {
+    queue = Array.from(writeBehindQueue);
+  }
+
   for (const roomId of queue) {
-    const room = rooms.get(roomId);
+    let room;
+    const roomStr = await getRedisRoom(roomId);
+    if (roomStr) room = roomStr;
+
     if (room) {
       await forcePersistRoom(room).catch(() => {});
+      if (redisClient)
+        await redisClient.srem("pending_syncs", roomId).catch(() => {});
     }
   }
 
@@ -411,10 +431,9 @@ app.prepare().then(() => {
           if (!roomId) return;
           const data = JSON.parse(message);
           if (data.type === "state_update") {
-            // If we have local clients connected to this room, update local cache and emit
+            // If we have local clients connected to this room, emit
             // Using io.sockets.adapter.rooms.has is an efficient way to check local presence
             if (io.sockets.adapter.rooms.has(roomId)) {
-              rooms.set(roomId, data.payload);
               io.to(roomId).emit("room_state", {
                 room: data.payload,
                 serverTime: Date.now(),
@@ -428,22 +447,7 @@ app.prepare().then(() => {
     );
   }
 
-  // Handle cleanup of zombies periodically if Redis exists
-  setInterval(
-    () => {
-      rooms.forEach(async (room, roomId) => {
-        if (Date.now() - room.lastActivity > 1000 * 60 * 15) {
-          persistRoomState(room);
-          rooms.delete(roomId);
-          const redisClient = getRedisClient();
-          if (redisClient) {
-            await redisClient.del(`room_state:${roomId}`).catch(() => {});
-          }
-        }
-      });
-    },
-    1000 * 60 * 15,
-  );
+  // Disconnected/Inactive rooms are automatically garbage collected by Redis TTL (EXPIRE).
 
   io.on("connection", (socket) => {
     let currentRoomId: string | null = null;
@@ -471,49 +475,70 @@ app.prepare().then(() => {
         return;
       }
 
-      let room: RoomState | undefined | null = rooms.get(roomId);
+      let occRetries = 10;
+      let finalRoomState = null;
 
-      if (!room) {
-        // Try to load from DB first
-        room = await loadRoomFromDB(roomId);
+      while (occRetries > 0) {
+        let room: RoomState | null = await getRedisRoom(roomId);
+
         if (!room) {
-          room = createEmptyRoom(roomId, `Room ${roomId}`);
+          room = await loadRoomFromDB(roomId);
+          if (!room) {
+            room = createEmptyRoom(roomId, `Room ${roomId}`);
+          }
         }
-        rooms.set(roomId, room);
+
+        const baseVersion = room.version;
+        room.lastActivity = Date.now();
+
+        const pId = socket.data.participantId;
+        const isFirst = Object.keys(room.participants).length === 0;
+
+        const existingParticipant = room.participants[pId];
+        if (existingParticipant) {
+          existingParticipant.lastSeen = Date.now();
+          existingParticipant.nickname =
+            nickname || existingParticipant.nickname;
+        } else {
+          room.participants[pId] = {
+            id: pId,
+            nickname: nickname || `Guest ${Math.floor(Math.random() * 1000)}`,
+            role: isFirst ? "owner" : "guest",
+            lastSeen: Date.now(),
+          };
+        }
+
+        room.version++;
+
+        const success = await setRedisRoomCAS(roomId, room, baseVersion);
+        if (success) {
+          finalRoomState = room;
+          break;
+        }
+
+        // OCC backoff
+        await new Promise((r) => setTimeout(r, 10 + Math.random() * 20));
+        occRetries--;
       }
 
-      room.lastActivity = Date.now();
+      if (!finalRoomState) {
+        socket.emit("error", {
+          message: "Could not join room due to high load.",
+        });
+        return;
+      }
 
       const pId = socket.data.participantId;
-      const isFirst = Object.keys(room.participants).length === 0;
-
-      // Handle reconnect or new join
-      const existingParticipant = room.participants[pId];
-      if (existingParticipant) {
-        existingParticipant.lastSeen = Date.now();
-        existingParticipant.nickname = nickname || existingParticipant.nickname;
-      } else {
-        room.participants[pId] = {
-          id: pId,
-          nickname: nickname || `Guest ${Math.floor(Math.random() * 1000)}`,
-          role: isFirst ? "owner" : "guest",
-          lastSeen: Date.now(),
-        };
-      }
-
-      room.version++;
-
       socket.join(roomId);
       currentRoomId = roomId;
       currentParticipantId = pId;
 
       socket.emit("room_state", {
-        room: sanitizeRoom(room),
+        room: sanitizeRoom(finalRoomState),
         serverTime: Date.now(),
       });
 
-      // participant_joined only needs sanitized data
-      const joinedInfo = { ...room.participants[pId] };
+      const joinedInfo = { ...finalRoomState.participants[pId] };
       socket.to(roomId).emit("participant_joined", joinedInfo);
     });
 
@@ -567,12 +592,6 @@ app.prepare().then(() => {
           }
 
           let room = await getRedisRoom(roomId);
-          if (!room) {
-            room = rooms.get(roomId); // Fallback local
-            if (room) {
-              room = JSON.parse(JSON.stringify(room)); // deep clone for OCC
-            }
-          }
           if (!room) return;
 
           const baseVersion = room.version;
@@ -1106,7 +1125,6 @@ app.prepare().then(() => {
         }
 
         if (finalRoomState) {
-          rooms.set(roomId, finalRoomState); // L1 Cache Update
           const pClient = pubClient();
           if (pClient) {
             await publishRoomEvent(roomId, {
@@ -1147,45 +1165,76 @@ app.prepare().then(() => {
 
     socket.on("disconnect", () => {
       if (currentRoomId && currentParticipantId) {
-        const room = rooms.get(currentRoomId);
-        if (room && room.participants[currentParticipantId]) {
-          // Grace period for reconnects
-          room.participants[currentParticipantId].lastSeen = Date.now();
+        // Since we are stateless, we can't synchronously flag lastSeen without an OCC write.
+        // Instead of writing to DB just for a transient disconnected state, we'll run the timeout
+        // and if they haven't re-joined (which would update lastSeen), we remove them.
+        setTimeout(async () => {
+          let retries = 5;
+          while (retries > 0) {
+            const r = await getRedisRoom(currentRoomId!);
+            if (!r) break;
 
-          // Use a timeout to actually remove them
-          setTimeout(() => {
-            const r = rooms.get(currentRoomId!);
-            if (
-              r &&
-              r.participants[currentParticipantId!] &&
-              Date.now() - r.participants[currentParticipantId!].lastSeen >
-                10000
-            ) {
-              delete r.participants[currentParticipantId!];
-              r.version++;
-              io.to(currentRoomId!).emit("participant_left", {
-                participantId: currentParticipantId,
-              });
+            const participant = r.participants[currentParticipantId!];
+            if (participant) {
+              // Wait, if they reconnected, their lastSeen would be very recent, or socket.data.participantId might differ
+              // Actually, since this is a stateless architecture, we check if their lastSeen is old
+              if (Date.now() - participant.lastSeen > 10000) {
+                delete r.participants[currentParticipantId!];
+                r.version++;
 
-              // Empty room cleanup
-              const remaining = Object.values(r.participants);
-              if (remaining.length === 0) {
-                // Room is empty, it will be cleaned up by the global Garbage Collector
-                // after 15 minutes of inactivity.
-                persistRoomState(r);
-              } else {
-                // Owner transfer guard
-                if (!remaining.some((p) => p.role === "owner")) {
-                  remaining[0].role = "owner"; // Promote oldest user to owner
-                  io.to(currentRoomId!).emit("room_state", {
-                    room: r,
-                    serverTime: Date.now(),
-                  });
+                const remaining = Object.values(r.participants);
+                if (remaining.length === 0) {
+                  persistRoomState(r);
+                } else {
+                  if (!remaining.some((p: any) => p.role === "owner")) {
+                    (remaining[0] as any).role = "owner";
+                  }
                 }
+
+                const success = await setRedisRoomCAS(
+                  currentRoomId!,
+                  r,
+                  r.version - 1,
+                );
+                if (success) {
+                  io.to(currentRoomId!).emit("participant_left", {
+                    participantId: currentParticipantId,
+                  });
+                  if (
+                    remaining.length > 0 &&
+                    !remaining.some((p: any) => p.role === "owner")
+                  ) {
+                    // Though we just set it above, emit full state if owner changed
+                    io.to(currentRoomId!).emit("room_state", {
+                      room: sanitizeRoom(r),
+                      serverTime: Date.now(),
+                    });
+                  }
+
+                  // Broadcast state update to other nodes
+                  const pClient = pubClient();
+                  if (pClient) {
+                    await publishRoomEvent(currentRoomId!, {
+                      type: "state_update",
+                      roomId: currentRoomId,
+                      payload: r,
+                    });
+                  }
+                  break;
+                }
+                // Retry if OCC failed
+                await new Promise((resolve) =>
+                  setTimeout(resolve, 30 + Math.random() * 50),
+                );
+                retries--;
+              } else {
+                break; // They reconnected and updated lastSeen, don't remove
               }
+            } else {
+              break; // Already removed
             }
-          }, 15000); // Wait 15s to see if they reconnect
-        }
+          }
+        }, 15000);
       }
     });
   });

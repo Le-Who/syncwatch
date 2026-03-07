@@ -1,12 +1,37 @@
 "use client";
 
+import { useState, useRef, useEffect } from "react";
 import { useStore } from "@/lib/store";
-import { User, Crown, Shield, Clock } from "lucide-react";
+import {
+  User,
+  Crown,
+  Shield,
+  MoreVertical,
+  ShieldPlus,
+  ShieldMinus,
+} from "lucide-react";
+import { motion, AnimatePresence } from "motion/react";
 
 export default function Participants() {
-  const { room, participantId, setNickname } = useStore();
+  const { room, participantId, setNickname, sendCommand } = useStore();
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setOpenMenuId(null);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   if (!room) return null;
+
+  const currentUserRole =
+    room.participants[participantId || ""]?.role || "guest";
+  const isOwner = currentUserRole === "owner";
 
   const participants = Object.values(room.participants).sort((a, b) => {
     if (a.role === "owner") return -1;
@@ -16,15 +41,26 @@ export default function Participants() {
     return a.nickname.localeCompare(b.nickname);
   });
 
+  const handleRoleChange = (targetParticipantId: string, newRole: string) => {
+    sendCommand("update_role", {
+      participantId: targetParticipantId,
+      role: newRole,
+    });
+    setOpenMenuId(null);
+  };
+
   return (
-    <div className="scrollbar-thin scrollbar-thumb-theme-accent/50 scrollbar-track-transparent flex h-full flex-col overflow-y-auto bg-transparent p-4">
+    <div
+      className="scrollbar-thin scrollbar-thumb-theme-accent/50 scrollbar-track-transparent flex h-full flex-col overflow-y-auto bg-transparent p-4"
+      onClick={() => setOpenMenuId(null)}
+    >
       <div className="space-y-3">
         {participants.map((p) => (
           <div
             key={p.id}
-            className={`rounded-theme flex items-center justify-between border-2 p-3.5 transition-all ${
+            className={`rounded-theme relative flex items-center justify-between border-2 p-3.5 transition-all ${
               p.id === participantId
-                ? "bg-theme-accent/20 border-theme-accent shadow-[var(--theme-shadow)]"
+                ? "bg-theme-accent/20 border-theme-accent shadow-theme"
                 : "bg-theme-bg/40 border-theme-border/30 hover:bg-theme-bg/60 hover:border-theme-accent"
             }`}
           >
@@ -68,7 +104,7 @@ export default function Participants() {
                     </p>
                   )}
                   {p.id === participantId && (
-                    <span className="bg-theme-accent text-theme-bg rounded-sm border border-transparent px-1.5 py-0.5 text-[9px] font-bold tracking-widest uppercase shadow-[var(--theme-shadow)]">
+                    <span className="bg-theme-accent text-theme-bg shadow-theme rounded-sm border border-transparent px-1.5 py-0.5 text-[9px] font-bold tracking-widest uppercase">
                       YOU
                     </span>
                   )}
@@ -78,6 +114,71 @@ export default function Participants() {
                 </p>
               </div>
             </div>
+
+            {/* Admin Controls */}
+            {isOwner && p.id !== participantId && (
+              <div
+                className="relative ml-2"
+                ref={openMenuId === p.id ? menuRef : null}
+              >
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setOpenMenuId(openMenuId === p.id ? null : p.id);
+                  }}
+                  className="text-theme-muted hover:text-theme-accent bg-theme-bg/30 border-theme-border/50 hover:border-theme-accent rounded-full border p-1.5 transition-all"
+                  aria-label="Manage user"
+                >
+                  <MoreVertical className="h-4 w-4" />
+                </button>
+
+                <AnimatePresence>
+                  {openMenuId === p.id && (
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.9, y: -10 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.9, y: -10 }}
+                      transition={{ duration: 0.2, ease: "easeOut" }}
+                      className="bg-theme-bg/90 border-theme-border/50 shadow-theme-hover absolute top-full right-0 z-50 mt-2 w-48 overflow-hidden rounded-xl border backdrop-blur-xl"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="flex flex-col p-1">
+                        {p.role !== "moderator" && (
+                          <button
+                            onClick={() => handleRoleChange(p.id, "moderator")}
+                            className="hover:bg-theme-accent/20 hover:text-theme-accent text-theme-text flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold tracking-wide transition-colors"
+                          >
+                            <ShieldPlus className="h-4 w-4" /> Make Moderator
+                          </button>
+                        )}
+                        {p.role === "moderator" && (
+                          <button
+                            onClick={() => handleRoleChange(p.id, "guest")}
+                            className="text-theme-text flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold tracking-wide transition-colors hover:bg-orange-500/20 hover:text-orange-500"
+                          >
+                            <ShieldMinus className="h-4 w-4" /> Remove Mod
+                          </button>
+                        )}
+                        <button
+                          onClick={() => {
+                            if (
+                              confirm(
+                                `Are you sure you want to transfer ownership to ${p.nickname}? You will become a moderator.`,
+                              )
+                            ) {
+                              handleRoleChange(p.id, "owner");
+                            }
+                          }}
+                          className="text-theme-text flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold tracking-wide transition-colors hover:bg-amber-500/20 hover:text-amber-500"
+                        >
+                          <Crown className="h-4 w-4" /> Transfer Owner
+                        </button>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
           </div>
         ))}
       </div>

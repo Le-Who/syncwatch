@@ -5,8 +5,9 @@ SyncWatch is a latency-tolerant, real-time, server-authoritative watch-party app
 ## Architecture
 
 - **Frontend**: Next.js (App Router), ReactPlayer, Tailwind, Zustand (State Management).
-- **Backend**: Custom `server.ts` running Next.js alongside Socket.io, tightly integrated with `ioredis` for horizontal scaling via Pub/Sub, `redlock` for distributed atomic mutations, and an iterative Write-Behind Queue for Supabase persistence.
+- **Backend**: Fully stateless custom `server.ts` running Next.js alongside Socket.io. Tightly integrated with `ioredis` for horizontal scaling via Pub/Sub, **Optimistic Concurrency Control (OCC) Lua Scripts** for atomic state mutations, and robust Redis Sets for a crash-resilient Write-Behind Queue for Supabase persistence.
 - **Security**: JWT-based WebSocket handshakes via `jose`, SSRF-protected metadata over `htmlparser2`, and Sliding Window Log rate limiters deployed globally across all APIs and Socket commands.
+
 - **Frontend Optimization**: Zustand store decoupled from Socket.io via Singleton DI (`RoomSocketService`). High-frequency video drift synchronizations bypass React rendering completely using an uncontrolled `Scrubber.tsx` architecture and native `requestAnimationFrame`.
 - **Dynamic Theme Engine**: CSS variables natively power seamless client-side toggling between the soft, luminous "Cotton Candy Glassmorphism" and the high-contrast "Cyber-Industrial Brutalist" interface.
 - **Synchronization Model**: Server-authoritative with optimistic UI. Uses custom NTP-style packet handshakes on connect to calculate precise network latency, correcting local player timestamps appropriately. Stale event rejection blocks out-of-order websocket commands.
@@ -17,10 +18,13 @@ SyncWatch is a latency-tolerant, real-time, server-authoritative watch-party app
 
 ## Recent Stability & Sync Improvements
 
+- **Stateless Backend Migration:** Transitioned the core `server.ts` off of fragile in-memory maps (`rooms`) to a fully stateless Node.js architecture driven entirely by Redis.
+- **Lock Contention Eradication (OCC):** Replaced simplistic Redis distributed locks (`withLock`/`redlock`) with ultra-fast Optimistic Concurrency Control using atomic Lua scripts (Check-and-Set) to prevent "System Busy" lock stampedes.
+- **Role Management UI:** Designed a premium glassmorphic dropdown menu in the Participants tab, allowing Room Owners to seamlessly transfer ownership or elevate Guests to Moderators.
 - **Audio Tearing Resolution**: Resolved Chromium audio resampling artifacts by widening the synchronization deadzone to `1.0s` and utilizing gentler `1.02x`/`0.98x` playback rate adjustments for minor drifts.
+- **Media Initialization & Throttling Guards:** Implemented an aggressive "Initialize Stream" user-gesture overlay to bypass browser auto-play blocks, and integrated the Page Visibility API (`document.hidden`) to prevent inactive background tabs from emitting false-positive pause commands when `requestAnimationFrame` is throttled by the OS.
+- **Database UUID Validation**: Guaranteed all dynamically generated room IDs use strict 36-character UUIDv5 strings using reliable MD5 hashes, satisfying the Postgres `uuid` schema requirements and eliminating `22P02` serialization poison-pill crashes.
 - **Multi-Browser Stability**: Implemented deterministic guest ID assignments in the Socket.io `io.use` middleware. Unauthenticated connections now safely receive a `guest_` session (unblocking the UI from freezing) while state-mutating commands are explicitly rejected.
-- **Database UUID Validation**: Guaranteed all dynamically generated room IDs use strict 36-character UUIDv4 strings to satisfy the Postgres `uuid` schema requirements, eliminating `22P02` serialization errors during Supabase write-behind persistence.
-- **Clean Server Logs**: Suppressed legacy `url.parse()` warnings (`DEP0169`) natively via `cross-env` `NODE_OPTIONS` injections.
 
 ## Database Setup (Supabase)
 
@@ -167,9 +171,9 @@ _Note: The local Next.js 13+ Dev Server strictly blocks WebSocket connections or
 
 ### 2. Backend Layer (Node.js & Socket.io)
 
-- **Custom Server (`server.ts`)**: The architectural backbone. Holds in-memory multi-room states securely.
-- **WebSocket Gateway**: Processes `command` and `join_room` events. Authoritative over playback rate, seeking, and playing/pausing to prevent desyncs. Guards against memory exhaustion (OOM).
-- **Supabase Persistence**: `server.ts` debounces state persistence (2s loop) to Supabase tables (`rooms`, `playlist_items`, `playback_snapshots`).
+- **Custom Server (`server.ts`)**: The architectural backbone. Fully **Stateless** Node.js server using Redis as the singular source of truth.
+- **WebSocket Gateway**: Processes `command` and `join_room` events via pure OCC Lua Scripts. Authoritative over playback rate, seeking, and playing/pausing to prevent desyncs. Guards against memory exhaustion (OOM).
+- **Supabase Persistence**: Background worker debounces state persistence (2s loop) from resilient Redis Sets (`writeBehindQueue`) to Supabase tables (`rooms`, `playlist_items`, `playback_snapshots`).
 
 ### 3. Data Flow Pattern
 
