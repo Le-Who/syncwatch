@@ -57,8 +57,40 @@ Northflank provides generous developer tiers for stateful Docker/Node services.
 2.  Select **Build from version control** and connect your repo.
 3.  Choose the **Node.js** buildpack or define a raw Docker builder if needed.
 4.  For the **Start Command**, ensure it targets `npm start`.
-5.  Under **Environment**, link your Supabase secrets.
+5.  Under **Environment**, add the required variables listed below.
 6.  Ensure **Public Ports** are mapping port `3000` to HTTP.
+
+#### Required Environment Variables for Northflank
+
+To deploy successfully on Northflank, you must configure the following Environment Variables in your Service's **Environment / Secrets** tab:
+
+**1. Database & Authentication (Essential)**
+
+- `NEXT_PUBLIC_SUPABASE_URL`: The URL of your Supabase project.
+  - _How to get it:_ Go to your Supabase Project -> Settings -> API -> Project URL.
+- `SUPABASE_SERVICE_ROLE_KEY`: The secret service role key to bypass RLS for server-side state persistence.
+  - _How to get it:_ Go to your Supabase Project -> Settings -> API -> Project API Keys -> `service_role` (secret).
+- `JWT_SECRET`: A long, random cryptographic string used to securely sign user session cookies.
+  - _How to get it:_ Generate a random string using your terminal (`openssl rand -base64 32`) or a secure password generator. Do not use the default local secret in production.
+
+**2. Application Routing (Essential)**
+
+- `APP_URL`: The public-facing URL where your Northflank service will be accessible.
+  - _How to get it:_ After creating your service on Northflank, look at the "Ports & DNS" tab in your service dashboard and copy the generated public webdomain URL (e.g., `https://syncwatch-app-xxxx.northflank.app`).
+
+**3. Rate Limiting (Infrastructure)**
+
+- `REDIS_URL` (or `UPSTASH_REDIS_REST_URL`): A Redis connection string required to prevent API abuse via rate limiting.
+  - _How to get it:_ Create a new Redis **Addon** directly in Northflank. Once created, go to your Service -> Environment -> Linked Addons, and link the Redis addon. Northflank will automatically inject the connection details, or you can supply an external URI from Upstash.
+
+**4. External Integrations (Optional but Recommended)**
+
+- `YOUTUBE_API_KEY`: Used for the built-in YouTube search via official API (falls back to scraping if missing, but API is more stable).
+  - _How to get it:_ Go to the [Google Cloud Console](https://console.cloud.google.com/), create a project, enable "YouTube Data API v3", and generate an API key under Credentials.
+- `GEMINI_API_KEY`: Used for AI-related operations.
+  - _How to get it:_ Obtain an API key from [Google AI Studio](https://aistudio.google.com/).
+
+_(Note: `NODE_ENV` is set to `production` and `PORT` is mapped automatically by the Northflank Node.js buildpack.)_
 
 ### 3. Vercel (Not Recommended for WebSockets)
 
