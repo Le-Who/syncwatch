@@ -43,6 +43,23 @@ export default function Player() {
   const [hostName, setHostName] = useState<string>("localhost");
   const [mounted, setMounted] = useState(false);
   const [localPlaybackRate, setLocalPlaybackRate] = useState<number>(1);
+  const [userJoined, setUserJoined] = useState(false);
+
+  const isDocumentVisibleRef = useRef(true);
+
+  useEffect(() => {
+    if (typeof document !== "undefined") {
+      const handleVisibilityChange = () => {
+        isDocumentVisibleRef.current = !document.hidden;
+      };
+      document.addEventListener("visibilitychange", handleVisibilityChange);
+      return () =>
+        document.removeEventListener(
+          "visibilitychange",
+          handleVisibilityChange,
+        );
+    }
+  }, []);
 
   const [qualityMenuOpen, setQualityMenuOpen] = useState(false);
   const [forceHighRes, setForceHighRes] = useState(false);
@@ -105,10 +122,17 @@ export default function Player() {
 
   // In strict server state, we don't emit commands from native events
   const emitCommand = (type: string, payload: any) => {
+    // BACKGROUND TAB FIX: Block false-positive pause/seek events from throttled tabs
+    if (
+      !isDocumentVisibleRef.current &&
+      ["play", "pause", "seek", "buffering"].includes(type)
+    ) {
+      return;
+    }
     lastCommandEmitTimeRef.current = Date.now();
     lastStateEmittedRef.current = {
       status: type,
-      position: payload.position,
+      position: payload?.position,
       time: Date.now(),
     };
     sendCommand(type, payload);
@@ -391,9 +415,9 @@ export default function Player() {
               src={currentMedia.url}
               width="100%"
               height="100%"
-              playing={playing}
+              playing={userJoined ? playing : false}
               volume={volume}
-              muted={muted}
+              muted={userJoined ? muted : true}
               playbackRate={localPlaybackRate}
               progressInterval={500}
               onReady={() => {
@@ -620,11 +644,30 @@ export default function Player() {
           )}
 
         {/* PAUSED Overlay */}
-        {!playing && !isBuffering && isReady && !error && (
+        {!playing && !isBuffering && isReady && !error && userJoined && (
           <div className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/40 backdrop-blur-[2px] transition-opacity duration-300">
             <div className="bg-theme-bg/80 border-theme-accent text-theme-accent flex h-24 w-24 items-center justify-center rounded-full border-4 shadow-[0_0_30px_var(--color-theme-accent)] backdrop-blur-md">
               <Play className="ml-2 h-12 w-12" />
             </div>
+          </div>
+        )}
+
+        {/* User Gesture Guard Overlay */}
+        {!userJoined && (
+          <div className="absolute inset-0 z-60 flex flex-col items-center justify-center bg-black/80 backdrop-blur-md">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setUserJoined(true);
+              }}
+              className="bg-theme-accent text-theme-bg flex items-center gap-3 rounded-full px-8 py-4 font-bold tracking-widest uppercase shadow-[0_0_40px_var(--color-theme-accent)] transition-all hover:scale-105 active:scale-95"
+            >
+              <MonitorPlay className="h-6 w-6" />
+              Initialize Stream Sync
+            </button>
+            <p className="text-theme-muted mt-6 text-xs tracking-widest uppercase">
+              Browser policy requires manual activation
+            </p>
           </div>
         )}
       </div>

@@ -85,18 +85,28 @@ class RoomSocketService {
       });
     });
 
+    let isResyncing = false;
+
     socket.on("error", async (error: any) => {
       const msg = error.message || "An error occurred";
-      toast.error(msg);
+
+      // Avoid spamming toasts for rate limits
+      if (!msg.includes("Too many") && !msg.includes("Rate limit")) {
+        toast.error(msg);
+      }
 
       // If we got an unauthorized command because we are a guest, try to recreate the session
       if (msg.includes("Unauthorized") || msg.includes("Guest")) {
+        if (isResyncing) return;
+        isResyncing = true;
+        setTimeout(() => {
+          isResyncing = false;
+        }, 5000); // 5 sec debounce to prevent 429 loops
+
         const state = this.getState();
         if (state.room && typeof window !== "undefined") {
           // Re-trigger the handshake
-          const stateProvider = this.getState as any; // We know it's injected by useStore
           try {
-            // Using a dynamic fetch here to recreate session since we can't easily import useStore without a circular dep
             const res = await fetch("/api/auth/session", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -129,8 +139,14 @@ class RoomSocketService {
 
   public sendCommand(type: string, payload?: any) {
     if (!this.socket || !this.socket.connected) return;
-    const { room, commandSequence } = this.getState();
+    const { room, commandSequence, participantId } = this.getState();
     if (!room) return;
+
+    // CLIENT-SIDE GUEST GUARD: Prevent sending commands if we are a guest
+    if (participantId && participantId.startsWith("guest_")) {
+      toast.error("Please log in to interact with the room.");
+      return;
+    }
 
     this.socket.emit("command", {
       roomId: room.id,

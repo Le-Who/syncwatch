@@ -71,6 +71,48 @@ export async function setRedisRoom(roomId: string, state: any): Promise<void> {
 }
 
 /**
+ * Save room state to Redis cache with OCC Version Check
+ * Returns true if successful, false if version conflict
+ */
+export async function setRedisRoomCAS(
+  roomId: string,
+  state: any,
+  expectedVersion: number,
+): Promise<boolean> {
+  const redisClient = getRedisClient();
+  if (!redisClient) return true; // Local memory fallback
+
+  const script = `
+    local val = redis.call("get", KEYS[1])
+    if not val then
+      redis.call("set", KEYS[1], ARGV[1])
+      redis.call("expire", KEYS[1], 86400)
+      return 1
+    end
+    local decoded = cjson.decode(val)
+    if decoded.version == tonumber(ARGV[2]) then
+      redis.call("set", KEYS[1], ARGV[1])
+      redis.call("expire", KEYS[1], 86400)
+      return 1
+    end
+    return 0
+  `;
+  try {
+    const result = await redisClient.eval(
+      script,
+      1,
+      `room_state:${roomId}`,
+      JSON.stringify(state),
+      expectedVersion,
+    );
+    return result === 1;
+  } catch (e) {
+    console.error("CAS Lua Error:", e);
+    return false;
+  }
+}
+
+/**
  * Publish an event to other nodes (in a multi-node deployment)
  */
 export async function publishRoomEvent(

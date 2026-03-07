@@ -6,14 +6,31 @@ import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { jwtVerify } from "jose";
 import * as cookie from "cookie";
 import { checkRedisRateLimit, getRedisClient } from "./lib/redis-rate-limit";
+import { createHash } from "crypto";
 import {
   withLock,
   getRedisRoom,
   setRedisRoom,
+  setRedisRoomCAS,
   publishRoomEvent,
   subClient,
   pubClient,
 } from "./lib/redis-actor";
+
+function getDeterministicUUID(roomId: string): string {
+  if (
+    roomId.length === 36 &&
+    roomId.match(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+    )
+  ) {
+    return roomId;
+  }
+  const hash = createHash("md5")
+    .update("room_" + roomId)
+    .digest("hex");
+  return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-4${hash.slice(13, 16)}-a${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
+}
 
 // Load environment variables manually for the custom server
 import { loadEnvConfig } from "@next/env";
@@ -169,7 +186,7 @@ const forcePersistRoom = async (room: RoomState) => {
   if (!supabase) return;
   try {
     const { error } = await supabase.rpc("sync_room_state", {
-      p_room_id: room.id,
+      p_room_id: getDeterministicUUID(room.id),
       p_name: room.name,
       p_settings: room.settings,
       p_owner_id:
@@ -198,10 +215,21 @@ const forcePersistRoom = async (room: RoomState) => {
     });
 
     if (error) {
+      if (error.code === "22P02") {
+        console.warn(
+          `[Poison Pill] Dropping invalid UUID task for room ${room.id}:`,
+          error,
+        );
+        return;
+      }
       console.error(`Failed to persist room ${room.id} via RPC:`, error);
       throw error;
     }
-  } catch (err) {
+  } catch (err: any) {
+    if (err?.code === "22P02") {
+      console.warn(`[Poison Pill] Dropping invalid task:`, err);
+      return;
+    }
     console.error(`Fatal error persisting room ${room.id}`, err);
     throw err; // Re-throw for parent to catch
   }
@@ -252,22 +280,23 @@ process.on("SIGINT", gracefulShutdown);
 async function loadRoomFromDB(roomId: string): Promise<RoomState | null> {
   if (!supabase) return null;
   try {
+    const dbRoomId = getDeterministicUUID(roomId);
     const { data: roomData } = await supabase
       .from("rooms")
       .select("*")
-      .eq("id", roomId)
+      .eq("id", dbRoomId)
       .single();
     if (!roomData) return null;
 
     const { data: playlistData } = await supabase
       .from("playlist_items")
       .select("*")
-      .eq("room_id", roomId)
+      .eq("room_id", dbRoomId)
       .order("position");
     const { data: snapshotData } = await supabase
       .from("playback_snapshots")
       .select("*")
-      .eq("room_id", roomId)
+      .eq("room_id", dbRoomId)
       .single();
 
     const room = createEmptyRoom(roomId, roomData.name);
@@ -513,7 +542,12 @@ app.prepare().then(() => {
       if (typeof type !== "string" || type.length > 50) return;
 
       try {
-        await withLock(roomId, 5000, async () => {
+        let occRetries = 10;
+        let finalRoomState = null;
+        let stateChanged = false;
+
+        while (occRetries > 0) {
+          stateChanged = false;
           if (!currentParticipantId) {
             // This should ideally not happen if the socket.io middleware works correctly
             socket.emit("error", {
@@ -535,9 +569,13 @@ app.prepare().then(() => {
           let room = await getRedisRoom(roomId);
           if (!room) {
             room = rooms.get(roomId); // Fallback local
+            if (room) {
+              room = JSON.parse(JSON.stringify(room)); // deep clone for OCC
+            }
           }
           if (!room) return;
 
+          const baseVersion = room.version;
           room.lastActivity = Date.now();
           const participant = room.participants[currentParticipantId];
 
@@ -560,8 +598,6 @@ app.prepare().then(() => {
               ["play", "pause", "seek", "buffering", "next"].includes(type));
           const canEditPlaylist =
             room.settings.controlMode === "open" || isOwnerOrMod;
-
-          let stateChanged = false;
 
           // Ensure commands are valid and authoritative
           switch (type) {
@@ -1036,25 +1072,55 @@ app.prepare().then(() => {
           }
 
           if (stateChanged) {
-            room.version++;
-            rooms.set(roomId, room); // Always update local L1 cache
+            room.version = baseVersion + 1;
             const pClient = pubClient();
+
             if (pClient) {
-              await setRedisRoom(roomId, room);
-              await publishRoomEvent(roomId, {
-                type: "state_update",
+              const redisSuccess = await setRedisRoomCAS(
                 roomId,
-                payload: room,
-              });
-            } else {
-              // Redis offline/disabled, fallback to local emission
-              io.to(roomId).emit("room_state", {
                 room,
-                serverTime: Date.now(),
-              });
+                baseVersion,
+              );
+              if (redisSuccess) {
+                finalRoomState = room;
+                break;
+              }
+              // OCC conflict, backoff and retry
+              await new Promise((r) => setTimeout(r, 10 + Math.random() * 20));
+              occRetries--;
+            } else {
+              // Fallback no Redis
+              finalRoomState = room;
+              break;
             }
+          } else {
+            break;
           }
-        }); // End of withLock block
+        } // End of OCC while block
+
+        if (stateChanged && !finalRoomState) {
+          socket.emit("error", {
+            message: "System busy acquiring room lock. Try again.",
+          });
+          return;
+        }
+
+        if (finalRoomState) {
+          rooms.set(roomId, finalRoomState); // L1 Cache Update
+          const pClient = pubClient();
+          if (pClient) {
+            await publishRoomEvent(roomId, {
+              type: "state_update",
+              roomId,
+              payload: finalRoomState,
+            });
+          } else {
+            io.to(roomId).emit("room_state", {
+              room: finalRoomState,
+              serverTime: Date.now(),
+            });
+          }
+        }
       } catch (err) {
         console.error(
           "Lock error for room",
