@@ -9,3 +9,9 @@ coverage/
 # Build output
 dist/
 *.tsbuildinfo
+
+# Testing
+test-results/
+playwright-report/
+playwright/.cache/
+blob-report/
