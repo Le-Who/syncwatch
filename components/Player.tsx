@@ -346,6 +346,7 @@ export default function Player() {
             }}
             onPlay={() => {
               setIsBuffering(false);
+              setPlaying(true);
               if (ignoreNextPlayPauseEvent.current) {
                 ignoreNextPlayPauseEvent.current = false;
                 return;
@@ -356,6 +357,7 @@ export default function Player() {
             }}
             onPause={() => {
               setIsBuffering(false);
+              setPlaying(false);
               if (ignoreNextPlayPauseEvent.current) {
                 ignoreNextPlayPauseEvent.current = false;
                 return;
