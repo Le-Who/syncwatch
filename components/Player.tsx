@@ -75,12 +75,14 @@ export default function Player() {
     room?.participants[participantId!]?.role === "moderator";
 
   const getAccurateTime = useCallback(() => {
-    return playerRef.current?.getCurrentTime() || 0;
+    return playerRef.current?.currentTime || 0;
   }, []);
 
   const performProgrammaticSeek = (position: number) => {
     ignoreNextPlayPauseEvent.current = true; // A seek might trigger buffering/play events
-    playerRef.current?.seekTo(position, "seconds");
+    if (playerRef.current) {
+      playerRef.current.currentTime = position;
+    }
   };
 
   useEffect(() => {
@@ -224,7 +226,9 @@ export default function Player() {
     setSeeking(false);
     setPlayed(percent);
     const newPosition = percent * duration;
-    playerRef.current?.seekTo(newPosition, "seconds");
+    if (playerRef.current) {
+      playerRef.current.currentTime = newPosition;
+    }
 
     if (canControl) {
       emitCommand("seek", { position: newPosition });
@@ -436,11 +440,12 @@ export default function Player() {
                   currentMedia.provider !== "vimeo"
                 ) {
                   try {
-                    const internal =
-                      playerRef.current?.getInternalPlayer("hls");
-                    if (internal && internal.levels) {
-                      setHlsLevels(internal.levels);
-                      setCurrentHlsLevel(internal.currentLevel);
+                    const el = playerRef.current as any;
+                    // In react-player v3, if using HLS, the web component might expose native properties
+                    // Just cleanly ignore it if unavailable, or try to access the underlying HLS instance.
+                    if (el && el.levels) {
+                      setHlsLevels(el.levels);
+                      setCurrentHlsLevel(el.currentLevel);
                     }
                   } catch (e) {
                     console.log("Not an HLS stream or levels unavailable.");
@@ -855,9 +860,9 @@ export default function Player() {
                                 setForceHighRes(!forceHighRes);
                                 setQualityMenuOpen(false);
                                 try {
-                                  playerRef.current
-                                    ?.getInternalPlayer()
-                                    ?.setPlaybackQuality("hd1080");
+                                  (
+                                    playerRef.current as any
+                                  )?.setPlaybackQuality?.("hd1080");
                                 } catch (err) {}
                               }}
                               className={`border-theme-border/10 hover:bg-theme-accent/20 flex items-center justify-between border-b px-4 py-3 text-left text-xs font-bold transition-all ${forceHighRes ? "text-theme-accent bg-theme-accent/10 shadow-[inset_2px_0_0_var(--color-theme-accent)]" : "text-theme-text"}`}
@@ -880,8 +885,7 @@ export default function Player() {
                                 e.stopPropagation();
                                 setCurrentHlsLevel(-1);
                                 try {
-                                  const internal =
-                                    playerRef.current?.getInternalPlayer("hls");
+                                  const internal = playerRef.current as any;
                                   if (internal) internal.currentLevel = -1;
                                 } catch (err) {}
                                 setQualityMenuOpen(false);
@@ -897,10 +901,7 @@ export default function Player() {
                                   e.stopPropagation();
                                   setCurrentHlsLevel(idx);
                                   try {
-                                    const internal =
-                                      playerRef.current?.getInternalPlayer(
-                                        "hls",
-                                      );
+                                    const internal = playerRef.current as any;
                                     if (internal) internal.currentLevel = idx;
                                   } catch (err) {}
                                   setQualityMenuOpen(false);
