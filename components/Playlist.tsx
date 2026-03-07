@@ -252,7 +252,7 @@ export default function Playlist() {
                 <button
                   type="submit"
                   disabled={!url.trim() || isAdding}
-                  className="bg-theme-accent text-theme-bg rounded-theme flex min-w-[44px] items-center justify-center p-2.5 shadow-[var(--theme-shadow)] transition-all hover:shadow-[var(--theme-shadow-hover)] active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="bg-theme-accent text-theme-bg rounded-theme shadow-theme hover:shadow-theme-hover flex min-w-[44px] items-center justify-center p-2.5 transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
                   title="Search or Add to playlist"
                 >
                   {isAdding ? (
@@ -340,7 +340,7 @@ export default function Playlist() {
                 value={item}
                 className={`rounded-theme flex items-center border-2 p-2.5 transition-all ${
                   room.currentMediaId === item.id
-                    ? "bg-theme-accent/20 border-theme-accent shadow-[var(--theme-shadow)]"
+                    ? "bg-theme-accent/20 border-theme-accent shadow-theme"
                     : "bg-theme-bg/40 border-theme-border/30 hover:border-theme-accent hover:bg-theme-bg/60"
                 }`}
               >

@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import fscreen from "fscreen";
 import { motion } from "motion/react";
+import { formatTime, calculateDrift } from "@/lib/utils";
 
 const ReactPlayer = dynamic(() => import("react-player"), {
   ssr: false,
@@ -127,10 +128,14 @@ export default function Player() {
       if (currentMedia?.provider?.toLowerCase() === "twitch") return; // Twitch Live/VODs break on frequent programmatic seeks
 
       if (playback.status === "playing") {
-        const expectedPosition =
-          playback.basePosition +
-          ((currentServerTime - playback.baseTimestamp) / 1000) * playback.rate;
-        const currentDrift = Math.abs(expectedPosition - currentPosition);
+        const { expectedPosition, drift: currentDrift } = calculateDrift(
+          playback.status,
+          playback.basePosition,
+          playback.baseTimestamp,
+          currentServerTime,
+          currentPosition,
+          playback.rate,
+        );
         setDrift(currentDrift);
 
         if (!playing) {
@@ -148,7 +153,14 @@ export default function Player() {
           setLocalPlaybackRate(playback.rate);
         }
       } else if (playback.status === "paused") {
-        const currentDrift = Math.abs(playback.basePosition - currentPosition);
+        const { drift: currentDrift } = calculateDrift(
+          playback.status,
+          playback.basePosition,
+          playback.baseTimestamp,
+          currentServerTime,
+          currentPosition,
+          1.0,
+        );
         setDrift(currentDrift);
 
         if (playing) {
@@ -250,21 +262,13 @@ export default function Player() {
     emitCommand("next", { currentMediaId: room?.currentMediaId });
   };
 
-  const formatTime = (seconds: number) => {
-    if (!seconds || isNaN(seconds) || seconds < 0) return "0:00";
-    const totalSeconds = Math.max(0, Math.floor(seconds));
-    const hh = Math.floor(totalSeconds / 3600);
-    const mm = Math.floor((totalSeconds % 3600) / 60);
-    const ss = (totalSeconds % 60).toString().padStart(2, "0");
-    if (hh > 0) return `${hh}:${mm.toString().padStart(2, "0")}:${ss}`;
-    return `${mm}:${ss}`;
-  };
+  // formatTime is now imported from @/lib/utils
 
   if (!currentMedia) {
     return (
       <div className="font-theme relative flex h-full w-full flex-1 flex-col items-center justify-center overflow-hidden bg-transparent p-4">
         <div className="theme-panel relative z-10 flex w-full max-w-lg flex-col items-center p-8">
-          <div className="bg-theme-bg/50 border-theme-accent mb-8 flex h-24 w-24 items-center justify-center rounded-full border-2 shadow-[var(--theme-shadow)] transition-all group-hover:shadow-[var(--theme-shadow-hover)]">
+          <div className="bg-theme-bg/50 border-theme-accent shadow-theme group-hover:shadow-theme-hover mb-8 flex h-24 w-24 items-center justify-center rounded-full border-2 transition-all">
             <Play className="text-theme-accent ml-2 h-12 w-12" />
           </div>
           <h2 className="text-theme-text mb-2 text-center text-3xl font-bold tracking-widest uppercase drop-shadow-sm">
@@ -337,7 +341,7 @@ export default function Player() {
                 if (btn) btn.disabled = false;
               }}
             >
-              <div className="bg-theme-bg/50 border-theme-border/50 rounded-theme focus-within:border-theme-accent relative flex flex-col items-stretch overflow-hidden border-2 shadow-[var(--theme-shadow)] transition-all focus-within:shadow-[var(--theme-shadow-hover)] sm:flex-row">
+              <div className="bg-theme-bg/50 border-theme-border/50 rounded-theme focus-within:border-theme-accent shadow-theme focus-within:shadow-theme-hover relative flex flex-col items-stretch overflow-hidden border-2 transition-all sm:flex-row">
                 <input
                   name="urlInput"
                   type="url"
@@ -354,7 +358,7 @@ export default function Player() {
               </div>
             </form>
           ) : (
-            <div className="bg-theme-bg/50 border-theme-danger text-theme-danger font-theme rounded-theme flex items-center gap-3 border-2 px-6 py-4 text-xs tracking-wider uppercase shadow-[var(--theme-shadow)]">
+            <div className="bg-theme-bg/50 border-theme-danger text-theme-danger font-theme rounded-theme shadow-theme flex items-center gap-3 border-2 px-6 py-4 text-xs tracking-wider uppercase">
               <AlertCircle className="h-5 w-5" />
               <span>Restricted access. Command privileges required.</span>
             </div>
@@ -389,7 +393,7 @@ export default function Player() {
       className="bg-theme-bg group react-player-wrapper border-theme-border/50 font-theme relative flex h-full w-full flex-1 flex-col border-y-2 lg:border-x-2 lg:border-y-0"
     >
       {nativeInteraction && (
-        <div className="animate-in slide-in-from-top-4 fade-in absolute top-4 left-1/2 z-[60] -translate-x-1/2">
+        <div className="animate-in slide-in-from-top-4 fade-in absolute top-4 left-1/2 z-60 -translate-x-1/2">
           <button
             onClick={() => setNativeInteraction(false)}
             className="bg-theme-danger/90 hover:bg-theme-danger text-theme-bg flex items-center gap-2 rounded-full px-6 py-2 font-bold tracking-widest uppercase shadow-[0_0_20px_var(--color-theme-danger)] transition-all"
@@ -611,7 +615,7 @@ export default function Player() {
 
         {/* Thematic Scanline Overlay - Hidden for Twitch to prevent iframe visibility occlusion blocks */}
         {currentMedia.provider?.toLowerCase() !== "twitch" && (
-          <div className="pointer-events-none absolute inset-0 z-0 bg-[linear-gradient(rgba(0,0,0,0)_50%,rgba(0,0,0,0.1)_50%)] bg-[length:100%_4px] opacity-30 mix-blend-overlay" />
+          <div className="pointer-events-none absolute inset-0 z-0 bg-[linear-gradient(rgba(0,0,0,0)_50%,rgba(0,0,0,0.1)_50%)] bg-size-[100%_4px] opacity-30 mix-blend-overlay" />
         )}
 
         {/* Interaction overlay - Blocks native interaction but allows custom controls */}
@@ -660,7 +664,7 @@ export default function Player() {
           !error && (
             <div className="bg-theme-bg/80 absolute inset-0 z-20 flex flex-col items-center justify-center backdrop-blur-sm">
               <div className="border-theme-accent border-b-theme-danger mb-6 h-16 w-16 animate-spin rounded-full border-4 border-t-transparent" />
-              <div className="bg-theme-accent text-theme-bg rounded-full px-4 py-1 text-xs font-bold tracking-[0.2em] uppercase shadow-[var(--theme-shadow)]">
+              <div className="bg-theme-accent text-theme-bg shadow-theme rounded-full px-4 py-1 text-xs font-bold tracking-[0.2em] uppercase">
                 {playback?.status === "buffering" && !isBuffering
                   ? `Syncing to ${playback.updatedBy}`
                   : "Buffering Stream"}
@@ -680,7 +684,7 @@ export default function Player() {
 
       {/* Custom Controls Panel */}
       {!nativeInteraction && (
-        <div className="font-theme absolute right-0 bottom-0 left-0 z-[60] p-4 opacity-0 transition-opacity duration-300 group-hover:opacity-100 focus-within:opacity-100">
+        <div className="font-theme absolute right-0 bottom-0 left-0 z-60 p-4 opacity-0 transition-opacity duration-300 group-hover:opacity-100 focus-within:opacity-100">
           <div className="bg-theme-bg/80 border-theme-border/50 rounded-theme border-2 p-3 shadow-lg backdrop-blur-md">
             {/* Timeline */}
             <div className="mb-3 flex items-center space-x-4">
@@ -735,7 +739,7 @@ export default function Player() {
                 }}
               >
                 <motion.div
-                  className="from-theme-accent/80 to-theme-accent absolute top-0 left-0 h-full rounded-r-full bg-gradient-to-r shadow-[0_0_12px_var(--color-theme-accent)]"
+                  className="from-theme-accent/80 to-theme-accent absolute top-0 left-0 h-full rounded-r-full bg-linear-to-r shadow-[0_0_12px_var(--color-theme-accent)]"
                   style={{ width: `${played * 100}%` }}
                   layout
                   transition={{ type: "tween", ease: "linear", duration: 0.1 }}
@@ -757,7 +761,7 @@ export default function Player() {
                   disabled={!canControl}
                   className={`ring-theme-accent rounded-theme flex h-10 w-10 items-center justify-center border-2 border-inherit transition-all outline-none focus-visible:ring-2 ${
                     canControl
-                      ? "border-theme-accent text-theme-accent hover:bg-theme-accent hover:text-theme-bg shadow-[var(--theme-shadow)] active:translate-y-0.5 active:shadow-none"
+                      ? "border-theme-accent text-theme-accent hover:bg-theme-accent hover:text-theme-bg shadow-theme active:translate-y-0.5 active:shadow-none"
                       : "border-theme-border text-theme-muted cursor-not-allowed"
                   }`}
                 >

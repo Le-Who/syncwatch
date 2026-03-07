@@ -11,81 +11,69 @@ async function joinRoom(page: Page, url: string, nickname: string) {
   await handleInput.waitFor({ state: "visible", timeout: 15000 });
   await handleInput.fill(nickname);
   await page.locator("button", { hasText: "Establish Link" }).click();
-
-  // NOTE: On local Windows dev, Next.js blocks WebSocket connections from 127.0.0.1
-  // via CORS (allowedDevOrigins), which hangs the UI here. We skip these in CI/CD
-  // unless running on a proper staging domain.
 }
 
 test.describe("SyncWatch Player E2E Regressions", () => {
-  test.skip("1. Volume Slider Native Range allows partial values", async ({
+  // Use a predictable room URL for tests that don't need isolation per-test
+  const roomUrl = getTestRoomUrl();
+
+  test("1. Basic Connection and UI Mounting", async ({ page }) => {
+    await joinRoom(page, roomUrl, "Tester1");
+    // Ensure the main UI frames mount
+    await expect(page.locator("text=SyncWatch")).toBeVisible();
+    await expect(page.locator("text=Entities")).toBeVisible();
+
+    // Check if the add video input is mounted in the Player component
+    const input = page.locator(
+      'input[placeholder="Paste video stream URL..."]',
+    );
+    await expect(input).toBeVisible();
+  });
+
+  test("2. Volume Slider Native Range Allows Partial Values", async ({
     page,
   }) => {
-    await joinRoom(page, getTestRoomUrl(), "User1");
+    await joinRoom(page, getTestRoomUrl(), "VolumeTester");
+
+    // Add a basic video to mount the player
+    const urlInput = page.locator(
+      'input[placeholder="Paste video stream URL..."]',
+    );
+    await urlInput.waitFor({ state: "visible" });
+    await urlInput.fill("https://www.w3schools.com/html/mov_bbb.mp4");
+    await page.locator("button", { hasText: "Init" }).click();
+
+    // Hover the primary interaction layer to reveal controls
+    const interactionLayer = page.locator(".react-player-wrapper").first();
+    await interactionLayer.hover({ trial: true, force: true }).catch(() => {});
+
     const slider = page.locator('input[type="range"]').first();
-    await page.waitForSelector('input[type="range"]', {
-      state: "attached",
-      timeout: 15000,
-    });
+    await slider.waitFor({ state: "attached", timeout: 15000 });
+
     const stepAttribute = await slider.getAttribute("step");
     expect(stepAttribute).toBe("any");
   });
 
-  test.skip("2. Thumbnails in Playlist populates img tag", async ({ page }) => {
-    await joinRoom(page, getTestRoomUrl(), "User1");
-    const input = page.locator(
-      'input[placeholder="Paste YouTube, Twitch, or Direct link..."]',
-    );
-    await input.fill("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
-    await page.locator("button", { hasText: "Add" }).click();
-
-    const thumbnailImg = page.locator(
-      '.bg-theme-bg img, .w-16.h-12 img, [alt*="Video"]',
-    );
-    await expect(thumbnailImg.first()).toBeVisible({ timeout: 15000 });
-  });
-
-  test.skip("3 & 4. Pause Optimistic UI and Buffering Deadlock Avoidance", async ({
-    browser,
-  }) => {
+  // Note: We skip the heavy multi-page orchestration tests if they fail frequently in CI
+  // due to WebSocket CORS blocks or IP limitations on GitHub Actions / Vercel.
+  // We write them out for local development loops when NextServer is reachable.
+  test.skip("3. Multi-user Connection Sync", async ({ browser }) => {
     const context1 = await browser.newContext();
     const context2 = await browser.newContext();
     const page1 = await context1.newPage();
     const page2 = await context2.newPage();
-    const roomUrl = getTestRoomUrl();
-    await joinRoom(page1, roomUrl, "User1");
-    await joinRoom(page2, roomUrl, "User2");
+
+    const isolatedRoom = getTestRoomUrl();
+    await joinRoom(page1, isolatedRoom, "Host");
+    await joinRoom(page2, isolatedRoom, "Viewer");
+
+    // Ensure both landed on the same page
     expect(page1.url()).toBe(page2.url());
-  });
 
-  test("5. Timer Overflow & Video End (Unit Placeholder)", async ({ page }) => {
-    // Verified via unit code audits
-    expect(true).toBe(true);
-  });
-
-  test("6. Video Autoplay on Switch (Unit Placeholder)", async ({ page }) => {
-    // Verified via server state momentum inheritance logic
-    expect(true).toBe(true);
-  });
-
-  test("7. Timer 23:59:59 Epoch Underflow (Unit Placeholder)", async ({
-    page,
-  }) => {
-    // Verified via React pure math formatting override
-    expect(true).toBe(true);
-  });
-
-  test("8. Infinite BUFFERING STREAM Deadlock (Unit Placeholder)", async ({
-    page,
-  }) => {
-    // Verified via UI rendering sequence priority modification
-    expect(true).toBe(true);
-  });
-
-  test("9. Socket Disconnect Thresholds (Unit Placeholder)", async ({
-    page,
-  }) => {
-    // Verified via server initialization pingTimeout override
-    expect(true).toBe(true);
+    // Check if both users appear in the participant list
+    await expect(page1.locator("text=Host")).toBeVisible();
+    await expect(page1.locator("text=Viewer")).toBeVisible();
+    await expect(page2.locator("text=Host")).toBeVisible();
+    await expect(page2.locator("text=Viewer")).toBeVisible();
   });
 });
