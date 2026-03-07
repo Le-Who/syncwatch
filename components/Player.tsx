@@ -344,8 +344,26 @@ export default function Player() {
                 emitCommand("play", { position: getAccurateTime() });
               }
             }}
-            onPlay={() => setIsBuffering(false)}
-            onPause={() => setIsBuffering(false)}
+            onPlay={() => {
+              setIsBuffering(false);
+              if (ignoreNextPlayPauseEvent.current) {
+                ignoreNextPlayPauseEvent.current = false;
+                return;
+              }
+              if (canControl && playback?.status !== "playing") {
+                emitCommand("play", { position: getAccurateTime() });
+              }
+            }}
+            onPause={() => {
+              setIsBuffering(false);
+              if (ignoreNextPlayPauseEvent.current) {
+                ignoreNextPlayPauseEvent.current = false;
+                return;
+              }
+              if (canControl && playback?.status === "playing" && !seeking) {
+                emitCommand("pause", { position: getAccurateTime() });
+              }
+            }}
             style={{ position: "absolute", top: 0, left: 0 }}
             config={{
               youtube: { playerVars: { showinfo: 1, controls: 0 } },
@@ -359,18 +377,22 @@ export default function Player() {
           />
         )}
 
-        {/* Thematic Scanline Overlay */}
-        <div className="absolute inset-0 z-0 pointer-events-none mix-blend-overlay opacity-30 bg-[linear-gradient(rgba(0,0,0,0)_50%,rgba(0,0,0,0.1)_50%)] bg-[length:100%_4px]" />
+        {/* Thematic Scanline Overlay - Hidden for Twitch to prevent iframe visibility occlusion blocks */}
+        {currentMedia.provider !== "twitch" && (
+          <div className="absolute inset-0 z-0 pointer-events-none mix-blend-overlay opacity-30 bg-[linear-gradient(rgba(0,0,0,0)_50%,rgba(0,0,0,0.1)_50%)] bg-[length:100%_4px]" />
+        )}
 
-        {/* Interaction overlay */}
-        <div
-          className={`absolute inset-0 z-10 ${canControl ? "cursor-pointer" : "cursor-default"}`}
-          onClick={() => {
-            if (canControl) {
-              playing ? handlePause() : handlePlay();
-            }
-          }}
-        />
+        {/* Interaction overlay - Hidden for Twitch because Twitch requires native controls for volume/quality and blocks occluded autoplay */}
+        {currentMedia.provider !== "twitch" && (
+          <div
+            className={`absolute inset-0 z-10 ${canControl ? "cursor-pointer" : "cursor-default"}`}
+            onClick={() => {
+              if (canControl) {
+                playing ? handlePause() : handlePlay();
+              }
+            }}
+          />
+        )}
 
         {error && (
           <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-theme-bg/95 backdrop-blur-sm border-4 border-theme-danger shadow-[inset_0_0_50px_var(--color-theme-danger)]">
