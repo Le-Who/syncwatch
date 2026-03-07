@@ -39,6 +39,7 @@ export default function Player() {
 
   // To avoid loopbacks, track manually initiated actions vs programmatic state syncs
   const ignoreNextPlayPauseEvent = useRef(false);
+  const lastCommandEmitTimeRef = useRef<number>(0);
   const lastStateEmittedRef = useRef<{
     status: string;
     position: number;
@@ -88,6 +89,7 @@ export default function Player() {
 
   // In strict server state, we don't emit commands from native events
   const emitCommand = (type: string, payload: any) => {
+    lastCommandEmitTimeRef.current = Date.now();
     lastStateEmittedRef.current = {
       status: type,
       position: payload.position,
@@ -100,6 +102,11 @@ export default function Player() {
     if (!playback || !isReady || seeking) return;
 
     const syncPlayback = () => {
+      if (Date.now() - lastCommandEmitTimeRef.current < 1500) {
+        // Optimistic UI barrier: ignore server discrepancy immediately after manual UI action
+        return;
+      }
+
       const currentServerTime = Date.now() + serverClockOffset;
       const currentPosition = getAccurateTime();
 
@@ -120,17 +127,6 @@ export default function Player() {
           performProgrammaticSeek(expectedPosition);
         }
       } else if (playback.status === "paused") {
-        const currentDrift = Math.abs(playback.basePosition - currentPosition);
-        setDrift(currentDrift);
-
-        if (playing) {
-          setPlaying(false);
-        }
-
-        if (currentDrift > 1.0) {
-          performProgrammaticSeek(playback.basePosition);
-        }
-      } else if (playback.status === "buffering") {
         const currentDrift = Math.abs(playback.basePosition - currentPosition);
         setDrift(currentDrift);
 
@@ -229,11 +225,6 @@ export default function Player() {
     }
   };
 
-  const handleEnded = () => {
-    if (canControl) {
-      emitCommand("video_ended", { currentMediaId: room?.currentMediaId });
-    }
-  };
   const handleNext = () => {
     emitCommand("next", { currentMediaId: room?.currentMediaId });
   };
@@ -308,6 +299,7 @@ export default function Player() {
                       if (res.ok) {
                         const data = await res.json();
                         if (data.title) title = data.title;
+                        if (data.thumbnail) thumbnail = data.thumbnail;
                       }
                     } catch (err) {}
                   }
@@ -403,30 +395,17 @@ export default function Player() {
             }
           }}
           onEnded={() => {
-            if (
-              room?.settings.autoplayNext &&
-              room.playlist.length > 1 &&
-              canControl
-            ) {
-              handleNext();
+            if (canControl) {
+              emitCommand("video_ended", {
+                currentMediaId: room?.currentMediaId,
+              });
             }
           }}
           onBuffer={() => {
             setIsBuffering(true);
-            if (canControl && playback?.status !== "buffering") {
-              if (
-                !lastStateEmittedRef.current ||
-                Date.now() - lastStateEmittedRef.current.time > 1500
-              ) {
-                emitCommand("buffering", { position: getAccurateTime() });
-              }
-            }
           }}
           onBufferEnd={() => {
             setIsBuffering(false);
-            if (canControl && playback?.status === "buffering") {
-              emitCommand("play", { position: getAccurateTime() });
-            }
           }}
           onPlay={() => {
             setIsBuffering(false);
@@ -721,6 +700,7 @@ export default function Player() {
                     type="range"
                     min={0}
                     max={1}
+                    step="any"
                     onChange={(e) => {
                       setVolume(parseFloat(e.target.value));
                       if (muted && parseFloat(e.target.value) > 0) {

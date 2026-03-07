@@ -12,14 +12,20 @@ export async function GET(request: NextRequest) {
       const res = await fetch(oembed, { signal: AbortSignal.timeout(5000) });
       if (res.ok) {
         const data = await res.json();
-        return NextResponse.json({ title: data.title });
+        return NextResponse.json({
+          title: data.title,
+          thumbnail: data.thumbnail_url,
+        });
       }
     } else if (provider === "vimeo") {
       const oembed = `https://vimeo.com/api/oembed.json?url=${encodeURIComponent(url)}`;
       const res = await fetch(oembed, { signal: AbortSignal.timeout(5000) });
       if (res.ok) {
         const data = await res.json();
-        return NextResponse.json({ title: data.title });
+        return NextResponse.json({
+          title: data.title,
+          thumbnail: data.thumbnail_url,
+        });
       }
     }
 

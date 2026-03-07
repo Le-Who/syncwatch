@@ -175,6 +175,7 @@ export default function Playlist() {
     const startPosition = parseTimeFromUrl(targetUrl);
 
     let fetchedTitle = directTitle || `${check.provider} Video`;
+    let fetchedThumbnail = undefined;
     if (!directTitle) {
       try {
         const res = await fetch(
@@ -184,6 +185,9 @@ export default function Playlist() {
           const data = await res.json();
           if (data.title) {
             fetchedTitle = data.title;
+          }
+          if (data.thumbnail) {
+            fetchedThumbnail = data.thumbnail;
           }
         }
       } catch (err) {
@@ -196,6 +200,7 @@ export default function Playlist() {
       provider: check.provider,
       title: fetchedTitle,
       startPosition,
+      thumbnail: fetchedThumbnail,
     });
 
     setUrl("");
