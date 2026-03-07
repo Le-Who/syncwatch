@@ -469,6 +469,53 @@ app.prepare().then(() => {
           persistRoomState(room); // Debounced automatically
           break;
 
+        case "add_items":
+          if (!canEditPlaylist) break;
+          if (!Array.isArray((payload as any).items)) break;
+
+          let addedCount = 0;
+          for (const item of (payload as any).items) {
+            if (room.playlist.length >= 500) {
+              if (addedCount > 0) {
+                socket.emit("error", {
+                  message: "Partial add: Playlist limit reached (500 items)",
+                });
+              } else {
+                socket.emit("error", {
+                  message: "Playlist maximum limit reached (500 items)",
+                });
+              }
+              break;
+            }
+            if (typeof item.url !== "string" || !item.url.trim()) continue;
+
+            const newBulkItem: PlaylistItem = {
+              id: randomUUID(),
+              url: item.url,
+              provider: item.provider || "youtube",
+              title: item.title || "Unknown Video",
+              duration: item.duration || 0,
+              addedBy: participant.nickname,
+              startPosition: item.startPosition || 0,
+              lastPosition: 0,
+            };
+
+            room.playlist.push(newBulkItem);
+            addedCount++;
+
+            if (!room.currentMediaId) {
+              room.currentMediaId = newBulkItem.id;
+              room.playback.basePosition = newBulkItem.startPosition || 0;
+              room.playback.baseTimestamp = Date.now();
+              room.playback.status = "paused";
+            }
+          }
+          if (addedCount > 0) {
+            stateChanged = true;
+            persistRoomState(room);
+          }
+          break;
+
         case "remove_item":
           if (!canEditPlaylist) break;
           // Capture progress if removing current

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useStore } from "@/lib/store";
 import {
   Plus,
@@ -8,6 +8,8 @@ import {
   GripVertical,
   PlayCircle,
   AlertTriangle,
+  Search,
+  Loader2,
 } from "lucide-react";
 import { motion, Reorder } from "motion/react";
 import ReactPlayer from "react-player";
@@ -17,6 +19,38 @@ export default function Playlist() {
   const [url, setUrl] = useState("");
   const [isAdding, setIsAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [showDropdown, setShowDropdown] = useState(false);
+
+  // Debounced search effect
+  useEffect(() => {
+    const currentInput = url.trim();
+    if (!currentInput || currentInput.startsWith("http")) {
+      setSearchResults([]);
+      setShowDropdown(false);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setIsSearching(true);
+      try {
+        const res = await fetch(
+          `/api/youtube/search?q=${encodeURIComponent(currentInput)}`,
+        );
+        if (res.ok) {
+          const data = await res.json();
+          setSearchResults(data.videos || []);
+          setShowDropdown(true);
+        }
+      } catch (err) {
+        console.error("Search failed:", err);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [url]);
 
   if (!room) return null;
 
@@ -77,15 +111,60 @@ export default function Playlist() {
     }
   };
 
-  const handleAdd = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!url.trim() || !canEdit) return;
+  const formatTime = (seconds: number) => {
+    if (!seconds || isNaN(seconds)) return "0:00";
+    const date = new Date(seconds * 1000);
+    const hh = date.getUTCHours();
+    const mm = date.getUTCMinutes();
+    const ss = date.getUTCSeconds().toString().padStart(2, "0");
+    if (hh) return `${hh}:${mm.toString().padStart(2, "0")}:${ss}`;
+    return `${mm}:${ss}`;
+  };
+
+  const handleAdd = async (
+    e?: React.FormEvent,
+    directUrl?: string,
+    directTitle?: string,
+  ) => {
+    if (e) e.preventDefault();
+    const targetUrl = (directUrl || url).trim();
+    if (!targetUrl || !canEdit) return;
 
     setError(null);
     setIsAdding(true);
+    setShowDropdown(false);
 
-    const cleanUrl = url.trim();
-    const check = getProviderAndTitle(cleanUrl);
+    // Check if YouTube Playlist
+    if (targetUrl.includes("youtube.com") && targetUrl.includes("list=")) {
+      try {
+        const urlObj = new URL(targetUrl);
+        const listId = urlObj.searchParams.get("list");
+        if (listId) {
+          const res = await fetch(`/api/youtube/playlist?listId=${listId}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.videos && data.videos.length > 0) {
+              sendCommand("add_items", {
+                items: data.videos.map((v: any) => ({
+                  url: v.url,
+                  provider: "YouTube",
+                  title: v.title,
+                  duration: v.duration,
+                  startPosition: 0,
+                })),
+              });
+              setUrl("");
+              setIsAdding(false);
+              return;
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Playlist parse error", err);
+      }
+    }
+
+    const check = getProviderAndTitle(targetUrl);
 
     if (!check.isValid) {
       setError("This URL is not supported by the player.");
@@ -93,25 +172,27 @@ export default function Playlist() {
       return;
     }
 
-    const startPosition = parseTimeFromUrl(cleanUrl);
+    const startPosition = parseTimeFromUrl(targetUrl);
 
-    let fetchedTitle = `${check.provider} Video`;
-    try {
-      const res = await fetch(
-        `/api/metadata?url=${encodeURIComponent(cleanUrl)}`,
-      );
-      if (res.ok) {
-        const data = await res.json();
-        if (data.title) {
-          fetchedTitle = data.title;
+    let fetchedTitle = directTitle || `${check.provider} Video`;
+    if (!directTitle) {
+      try {
+        const res = await fetch(
+          `/api/metadata?url=${encodeURIComponent(targetUrl)}`,
+        );
+        if (res.ok) {
+          const data = await res.json();
+          if (data.title) {
+            fetchedTitle = data.title;
+          }
         }
+      } catch (err) {
+        console.error("Failed to fetch metadata:", err);
       }
-    } catch (err) {
-      console.error("Failed to fetch metadata:", err);
     }
 
     sendCommand("add_item", {
-      url: cleanUrl,
+      url: targetUrl,
       provider: check.provider,
       title: fetchedTitle,
       startPosition,
@@ -140,27 +221,81 @@ export default function Playlist() {
     <div className="flex flex-col h-full bg-transparent">
       {canEdit && (
         <div className="p-4 border-b border-theme-border/30 shrink-0 bg-theme-bg/50 backdrop-blur-md">
-          <form onSubmit={handleAdd} className="flex flex-col space-y-3">
-            <div className="flex space-x-2">
-              <input
-                type="url"
-                placeholder="Paste YouTube, Vimeo, Twitch, or .mp4 URL..."
-                value={url}
-                onChange={(e) => {
-                  setUrl(e.target.value);
-                  setError(null);
-                }}
-                className="flex-1 bg-theme-bg/50 backdrop-blur-sm border-2 border-theme-border/50 rounded-theme px-4 py-2.5 text-sm text-theme-text placeholder-theme-muted focus:outline-none focus:border-theme-accent focus:shadow-[0_0_15px_var(--color-theme-accent)] transition-all font-bold tracking-wide uppercase"
-                required
-              />
-              <button
-                type="submit"
-                disabled={!url.trim() || isAdding}
-                className="p-2.5 bg-theme-accent text-theme-bg hover:shadow-[var(--theme-shadow-hover)] disabled:opacity-50 disabled:cursor-not-allowed rounded-theme transition-all shadow-[var(--theme-shadow)] active:scale-95"
-                title="Add to playlist"
-              >
-                <Plus className="w-5 h-5" />
-              </button>
+          <form
+            onSubmit={(e) => handleAdd(e)}
+            className="flex flex-col space-y-3"
+          >
+            <div className="flex flex-col relative space-y-2">
+              <div className="flex space-x-2 relative">
+                <input
+                  type="text"
+                  placeholder="Search YouTube or paste any media URL..."
+                  value={url}
+                  onChange={(e) => {
+                    setUrl(e.target.value);
+                    setError(null);
+                  }}
+                  className="flex-1 bg-theme-bg/50 backdrop-blur-sm border-2 border-theme-border/50 rounded-theme px-4 py-2.5 text-sm text-theme-text placeholder-theme-muted focus:outline-none focus:border-theme-accent focus:shadow-[0_0_15px_var(--color-theme-accent)] transition-all font-bold tracking-wide pr-10"
+                  required
+                />
+                {isSearching && (
+                  <div className="absolute right-14 top-1/2 -translate-y-1/2 text-theme-accent">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  </div>
+                )}
+                <button
+                  type="submit"
+                  disabled={!url.trim() || isAdding}
+                  className="p-2.5 bg-theme-accent text-theme-bg hover:shadow-[var(--theme-shadow-hover)] disabled:opacity-50 disabled:cursor-not-allowed rounded-theme transition-all shadow-[var(--theme-shadow)] active:scale-95 flex items-center justify-center min-w-[44px]"
+                  title="Search or Add to playlist"
+                >
+                  {isAdding ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : url.startsWith("http") ? (
+                    <Plus className="w-5 h-5" />
+                  ) : (
+                    <Search className="w-5 h-5" />
+                  )}
+                </button>
+              </div>
+
+              {/* Search Dropdown */}
+              {showDropdown && searchResults.length > 0 && (
+                <div className="absolute top-12 left-0 right-12 mt-1 bg-theme-bg/95 backdrop-blur-xl border-2 border-theme-border rounded-theme shadow-xl z-50 overflow-hidden flex flex-col max-h-[300px] overflow-y-auto">
+                  <div className="px-3 py-2 border-b border-theme-border/30 bg-theme-accent/5 text-[10px] uppercase tracking-widest font-bold text-theme-muted flex items-center justify-between sticky top-0 backdrop-blur-md bg-theme-bg/90">
+                    <span>YouTube Results</span>
+                    <button
+                      type="button"
+                      onClick={() => setShowDropdown(false)}
+                      className="hover:text-theme-text"
+                    >
+                      Close
+                    </button>
+                  </div>
+                  {searchResults.map((v, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => handleAdd(undefined, v.url, v.title)}
+                      className="w-full text-left px-3 py-3 hover:bg-theme-accent/10 flex items-center space-x-3 border-b border-theme-border/10 last:border-0 transition-colors"
+                    >
+                      <img
+                        src={v.thumbnail}
+                        alt=""
+                        className="w-16 h-10 object-cover rounded-md border border-theme-border/30 shrink-0"
+                      />
+                      <div className="flex flex-col overflow-hidden">
+                        <span className="text-sm font-bold truncate text-theme-text">
+                          {v.title}
+                        </span>
+                        <span className="text-xs text-theme-muted truncate">
+                          {v.author} • {formatTime(v.duration)}
+                        </span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
             {error && (
               <div className="flex items-center space-x-2 text-xs text-red-400 bg-red-500/10 border border-red-500/20 px-3 py-2 rounded-lg backdrop-blur-md">
