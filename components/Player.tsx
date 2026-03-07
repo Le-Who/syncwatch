@@ -380,12 +380,12 @@ export default function Player() {
         )}
 
         {/* Thematic Scanline Overlay - Hidden for Twitch to prevent iframe visibility occlusion blocks */}
-        {currentMedia.provider !== "twitch" && (
+        {currentMedia.provider?.toLowerCase() !== "twitch" && (
           <div className="absolute inset-0 z-0 pointer-events-none mix-blend-overlay opacity-30 bg-[linear-gradient(rgba(0,0,0,0)_50%,rgba(0,0,0,0.1)_50%)] bg-[length:100%_4px]" />
         )}
 
         {/* Interaction overlay - Hidden for Twitch because Twitch requires native controls for volume/quality and blocks occluded autoplay */}
-        {currentMedia.provider !== "twitch" && (
+        {currentMedia.provider?.toLowerCase() !== "twitch" && (
           <div
             className={`absolute inset-0 z-10 ${canControl ? "cursor-pointer" : "cursor-default"}`}
             onClick={() => {

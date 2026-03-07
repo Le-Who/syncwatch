@@ -93,7 +93,7 @@ export default function Playlist() {
   return (
     <div className="flex flex-col h-full bg-transparent">
       {canEdit && (
-        <div className="p-4 border-b border-white/5 shrink-0 bg-black/20">
+        <div className="p-4 border-b border-theme-border/30 shrink-0 bg-theme-bg/50 backdrop-blur-md">
           <form onSubmit={handleAdd} className="flex flex-col space-y-3">
             <div className="flex space-x-2">
               <input
@@ -104,13 +104,13 @@ export default function Playlist() {
                   setUrl(e.target.value);
                   setError(null);
                 }}
-                className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500/50 focus:bg-white/10 transition-all font-light"
+                className="flex-1 bg-theme-bg/50 backdrop-blur-sm border-2 border-theme-border/50 rounded-theme px-4 py-2.5 text-sm text-theme-text placeholder-theme-muted focus:outline-none focus:border-theme-accent focus:shadow-[0_0_15px_var(--color-theme-accent)] transition-all font-bold tracking-wide uppercase"
                 required
               />
               <button
                 type="submit"
                 disabled={!url.trim() || isAdding}
-                className="p-2.5 bg-white text-black hover:bg-zinc-200 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl transition-all shadow-[0_0_15px_rgba(255,255,255,0.1)] active:scale-[0.98]"
+                className="p-2.5 bg-theme-accent text-theme-bg hover:shadow-[var(--theme-shadow-hover)] disabled:opacity-50 disabled:cursor-not-allowed rounded-theme transition-all shadow-[var(--theme-shadow)] active:scale-95"
                 title="Add to playlist"
               >
                 <Plus className="w-5 h-5" />
@@ -149,14 +149,14 @@ export default function Playlist() {
               <Reorder.Item
                 key={item.id}
                 value={item}
-                className={`flex items-center p-2.5 rounded-xl border transition-all ${
+                className={`flex items-center p-2.5 rounded-theme border-2 transition-all ${
                   room.currentMediaId === item.id
-                    ? "bg-indigo-500/10 border-indigo-500/30 shadow-[0_0_30px_rgba(99,102,241,0.1)]"
-                    : "bg-black/20 border-white/5 hover:border-white/10 hover:bg-black/40"
+                    ? "bg-theme-accent/20 border-theme-accent shadow-[var(--theme-shadow)]"
+                    : "bg-theme-bg/40 border-theme-border/30 hover:border-theme-accent hover:bg-theme-bg/60"
                 }`}
               >
                 {canEdit && (
-                  <div className="cursor-grab active:cursor-grabbing p-1.5 text-zinc-600 hover:text-zinc-400">
+                  <div className="cursor-grab active:cursor-grabbing p-1.5 text-theme-muted hover:text-theme-accent transition-colors">
                     <GripVertical className="w-4 h-4" />
                   </div>
                 )}
@@ -166,27 +166,25 @@ export default function Playlist() {
                   onClick={() => handlePlay(item.id)}
                 >
                   <p
-                    className={`text-sm font-medium truncate mb-1 transition-colors ${
+                    className={`text-sm font-bold truncate mb-1 transition-colors uppercase tracking-wide ${
                       room.currentMediaId === item.id
-                        ? "text-indigo-300"
-                        : "text-zinc-200 group-hover:text-white"
+                        ? "text-theme-accent drop-shadow-sm"
+                        : "text-theme-text group-hover:text-theme-accent"
                     }`}
                   >
                     {item.title}
                   </p>
-                  <p className="text-[11px] text-zinc-500 truncate flex items-center space-x-1.5 font-light">
-                    <span className="text-zinc-400 capitalize">
-                      {item.provider}
-                    </span>
-                    <span className="opacity-30">•</span>
-                    <span>Added by {item.addedBy}</span>
+                  <p className="text-[11px] text-theme-muted truncate flex items-center space-x-1.5 font-bold tracking-widest uppercase">
+                    <span className="text-theme-text/70">{item.provider}</span>
+                    <span className="opacity-30 border-l-2 border-theme-border/50 h-3 mx-1"></span>
+                    <span>ADDED BY // {item.addedBy}</span>
                   </p>
                 </div>
 
                 {canEdit && (
                   <button
                     onClick={() => handleRemove(item.id)}
-                    className="p-2 text-zinc-600 hover:text-red-400 hover:bg-red-500/10 transition-colors rounded-lg"
+                    className="p-2 text-theme-muted hover:text-theme-danger hover:bg-theme-danger/20 transition-colors rounded-theme border-2 border-transparent hover:border-theme-danger/50 outline-none focus-visible:ring-2 ring-theme-text"
                     title="Remove item"
                   >
                     <Trash2 className="w-4 h-4" />

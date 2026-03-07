@@ -34,9 +34,9 @@ export default function RoomSettingsDialog({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      {/* Cinematic dark overlay */}
+      {/* Cinematic overlay */}
       <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-md"
+        className="absolute inset-0 bg-theme-bg/60 backdrop-blur-md"
         onClick={onClose}
       />
 
@@ -45,15 +45,15 @@ export default function RoomSettingsDialog({
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 10 }}
         transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-        className="w-full max-w-md bg-[#0a0a0a]/90 backdrop-blur-3xl border border-white/10 rounded-3xl shadow-2xl overflow-hidden relative z-10"
+        className="w-full max-w-md bg-theme-bg/95 backdrop-blur-3xl border-2 border-theme-border rounded-theme shadow-[0_10px_40px_var(--color-theme-shadow)] overflow-hidden relative z-10 font-theme uppercase tracking-wide"
       >
-        <div className="flex items-center justify-between p-5 border-b border-white/5 bg-white/[0.02]">
-          <h2 className="text-lg font-semibold text-white tracking-wide">
-            Room Settings
+        <div className="flex items-center justify-between p-5 border-b-2 border-theme-border/30 bg-theme-bg/50">
+          <h2 className="text-lg font-bold text-theme-text tracking-wide drop-shadow-sm">
+            Terminal Settings
           </h2>
           <button
             onClick={onClose}
-            className="p-2 text-zinc-400 hover:text-white hover:bg-white/10 rounded-xl transition-all"
+            className="p-2 text-theme-muted hover:text-theme-accent hover:bg-theme-accent/10 rounded-theme transition-all"
           >
             <X className="w-5 h-5" />
           </button>
@@ -61,7 +61,7 @@ export default function RoomSettingsDialog({
 
         <div className="p-6 space-y-8">
           <div className="space-y-5">
-            <h3 className="text-xs font-semibold text-indigo-400 uppercase tracking-widest">
+            <h3 className="text-xs font-bold text-theme-accent tracking-[0.2em]">
               Permissions
             </h3>
 
@@ -77,14 +77,14 @@ export default function RoomSettingsDialog({
                       setSettings({ ...settings, controlMode: "open" })
                     }
                     disabled={!isOwnerOrMod}
-                    className="w-4 h-4 text-indigo-500 focus:ring-indigo-500/50 bg-[#111] border-white/20 focus:ring-offset-0 focus:ring-offset-transparent transition-all"
+                    className="w-4 h-4 text-theme-accent focus:ring-theme-accent/50 bg-theme-bg/50 border-theme-border focus:ring-offset-0 focus:ring-offset-transparent transition-all"
                   />
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-zinc-200 group-hover:text-white transition-colors">
+                  <p className="text-sm font-bold text-theme-text/80 group-hover:text-theme-accent transition-colors">
                     Open Room
                   </p>
-                  <p className="text-[13px] text-zinc-500 font-light mt-0.5 leading-relaxed">
+                  <p className="text-[10px] text-theme-muted font-bold tracking-widest mt-1 leading-relaxed">
                     Everyone can control playback and edit the playlist.
                   </p>
                 </div>
@@ -101,14 +101,14 @@ export default function RoomSettingsDialog({
                       setSettings({ ...settings, controlMode: "hybrid" })
                     }
                     disabled={!isOwnerOrMod}
-                    className="w-4 h-4 text-indigo-500 focus:ring-indigo-500/50 bg-[#111] border-white/20 focus:ring-offset-0 focus:ring-offset-transparent transition-all"
+                    className="w-4 h-4 text-theme-accent focus:ring-theme-accent/50 bg-theme-bg/50 border-theme-border focus:ring-offset-0 focus:ring-offset-transparent transition-all"
                   />
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-zinc-200 group-hover:text-white transition-colors">
+                  <p className="text-sm font-bold text-theme-text/80 group-hover:text-theme-accent transition-colors">
                     Hybrid Room
                   </p>
-                  <p className="text-[13px] text-zinc-500 font-light mt-0.5 leading-relaxed">
+                  <p className="text-[10px] text-theme-muted font-bold tracking-widest mt-1 leading-relaxed">
                     Everyone can play/pause, but only moderators can edit the
                     playlist.
                   </p>
@@ -126,14 +126,14 @@ export default function RoomSettingsDialog({
                       setSettings({ ...settings, controlMode: "controlled" })
                     }
                     disabled={!isOwnerOrMod}
-                    className="w-4 h-4 text-indigo-500 focus:ring-indigo-500/50 bg-[#111] border-white/20 focus:ring-offset-0 focus:ring-offset-transparent transition-all"
+                    className="w-4 h-4 text-theme-accent focus:ring-theme-accent/50 bg-theme-bg/50 border-theme-border focus:ring-offset-0 focus:ring-offset-transparent transition-all"
                   />
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-zinc-200 group-hover:text-white transition-colors">
+                  <p className="text-sm font-bold text-theme-text/80 group-hover:text-theme-accent transition-colors">
                     Controlled Room
                   </p>
-                  <p className="text-[13px] text-zinc-500 font-light mt-0.5 leading-relaxed">
+                  <p className="text-[10px] text-theme-muted font-bold tracking-widest mt-1 leading-relaxed">
                     Only moderators can control playback and edit the playlist.
                   </p>
                 </div>
@@ -141,17 +141,17 @@ export default function RoomSettingsDialog({
             </div>
           </div>
 
-          <div className="space-y-5 pt-6 border-t border-white/5">
-            <h3 className="text-xs font-semibold text-indigo-400 uppercase tracking-widest">
+          <div className="space-y-5 pt-6 border-t-2 border-theme-border/30">
+            <h3 className="text-xs font-bold text-theme-accent tracking-[0.2em]">
               Playback
             </h3>
 
             <label className="flex items-center justify-between cursor-pointer group">
               <div className="pr-4">
-                <p className="text-sm font-medium text-zinc-200 group-hover:text-white transition-colors">
+                <p className="text-sm font-bold text-theme-text/80 group-hover:text-theme-accent transition-colors">
                   Autoplay Next
                 </p>
-                <p className="text-[13px] text-zinc-500 font-light mt-0.5 leading-relaxed">
+                <p className="text-[10px] text-theme-muted font-bold tracking-widest mt-1 leading-relaxed">
                   Automatically play the next video in the playlist.
                 </p>
               </div>
@@ -162,16 +162,16 @@ export default function RoomSettingsDialog({
                   setSettings({ ...settings, autoplayNext: e.target.checked })
                 }
                 disabled={!isOwnerOrMod}
-                className="w-5 h-5 text-indigo-500 focus:ring-indigo-500/50 bg-[#111] border-white/20 rounded-md focus:ring-offset-0 transition-all"
+                className="w-5 h-5 text-theme-accent focus:ring-theme-accent/50 bg-theme-bg/50 border-theme-border rounded-md transition-all"
               />
             </label>
 
             <label className="flex items-center justify-between cursor-pointer group">
               <div className="pr-4">
-                <p className="text-sm font-medium text-zinc-200 group-hover:text-white transition-colors">
+                <p className="text-sm font-bold text-theme-text/80 group-hover:text-theme-accent transition-colors">
                   Loop Playlist
                 </p>
-                <p className="text-[13px] text-zinc-500 font-light mt-0.5 leading-relaxed">
+                <p className="text-[10px] text-theme-muted font-bold tracking-widest mt-1 leading-relaxed">
                   Restart the playlist when it ends.
                 </p>
               </div>
@@ -182,26 +182,26 @@ export default function RoomSettingsDialog({
                   setSettings({ ...settings, looping: e.target.checked })
                 }
                 disabled={!isOwnerOrMod}
-                className="w-5 h-5 text-indigo-500 focus:ring-indigo-500/50 bg-[#111] border-white/20 rounded-md focus:ring-offset-0 transition-all"
+                className="w-5 h-5 text-theme-accent focus:ring-theme-accent/50 bg-theme-bg/50 border-theme-border rounded-md transition-all"
               />
             </label>
           </div>
         </div>
 
-        <div className="p-5 border-t border-white/5 bg-black/40 flex justify-end space-x-3">
+        <div className="p-5 border-t-2 border-theme-border/30 bg-theme-bg/50 flex justify-end space-x-3">
           <button
             onClick={onClose}
-            className="px-5 py-2.5 text-sm font-bold text-zinc-400 hover:text-white hover:bg-white/10 rounded-xl transition-all"
+            className="px-5 py-2.5 text-xs font-bold tracking-widest text-theme-muted hover:text-theme-text hover:bg-theme-bg/50 rounded-theme transition-all border-2 border-transparent hover:border-theme-border"
           >
-            Cancel
+            CANCEL
           </button>
           {isOwnerOrMod && (
             <button
               onClick={handleSave}
-              className="flex items-center space-x-2 px-5 py-2.5 bg-white text-black hover:bg-zinc-200 text-sm font-bold rounded-xl transition-all shadow-[0_0_20px_rgba(255,255,255,0.1)] hover:shadow-[0_0_30px_rgba(255,255,255,0.2)] active:scale-[0.98]"
+              className="flex items-center space-x-2 px-5 py-2.5 bg-theme-accent text-theme-bg text-xs font-bold tracking-widest rounded-theme transition-all shadow-[var(--theme-shadow)] hover:shadow-[var(--theme-shadow-hover)] active:translate-y-0.5 active:shadow-none"
             >
               <Save className="w-4 h-4" />
-              <span>Save Changes</span>
+              <span>SAVE</span>
             </button>
           )}
         </div>

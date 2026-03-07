@@ -4,7 +4,7 @@ import { useStore } from "@/lib/store";
 import { User, Crown, Shield, Clock } from "lucide-react";
 
 export default function Participants() {
-  const { room, participantId } = useStore();
+  const { room, participantId, setNickname } = useStore();
 
   if (!room) return null;
 
@@ -17,25 +17,25 @@ export default function Participants() {
   });
 
   return (
-    <div className="flex flex-col h-full bg-transparent p-4 overflow-y-auto scrollbar-thin scrollbar-thumb-zinc-700/50 scrollbar-track-transparent">
+    <div className="flex flex-col h-full bg-transparent p-4 overflow-y-auto scrollbar-thin scrollbar-thumb-theme-accent/50 scrollbar-track-transparent">
       <div className="space-y-3">
         {participants.map((p) => (
           <div
             key={p.id}
-            className={`flex items-center justify-between p-3.5 rounded-2xl border transition-all ${
+            className={`flex items-center justify-between p-3.5 rounded-theme border-2 transition-all ${
               p.id === participantId
-                ? "bg-indigo-500/10 border-indigo-500/30 shadow-[0_0_20px_rgba(99,102,241,0.1)]"
-                : "bg-black/20 border-white/5 hover:bg-black/40 hover:border-white/10"
+                ? "bg-theme-accent/20 border-theme-accent shadow-[var(--theme-shadow)]"
+                : "bg-theme-bg/40 border-theme-border/30 hover:bg-theme-bg/60 hover:border-theme-accent"
             }`}
           >
             <div className="flex items-center space-x-4 min-w-0">
               <div
-                className={`w-11 h-11 relative rounded-xl flex items-center justify-center shrink-0 shadow-inner ${
+                className={`w-11 h-11 relative rounded-theme flex items-center justify-center shrink-0 shadow-inner ${
                   p.role === "owner"
-                    ? "bg-gradient-to-br from-amber-500/20 to-orange-600/20 text-amber-500 border border-amber-500/20"
+                    ? "bg-amber-500/20 text-amber-500 border-2 border-amber-500/50"
                     : p.role === "moderator"
-                      ? "bg-gradient-to-br from-emerald-500/20 to-teal-600/20 text-emerald-400 border border-emerald-500/20"
-                      : "bg-gradient-to-br from-white/5 to-white/10 text-zinc-400 border border-white/5"
+                      ? "bg-emerald-500/20 text-emerald-500 border-2 border-emerald-500/50"
+                      : "bg-theme-bg/50 text-theme-text border-2 border-theme-border/50"
                 }`}
               >
                 {p.role === "owner" ? (
@@ -49,22 +49,31 @@ export default function Participants() {
                 {/* Live Presence Dot - Ping */}
                 <span className="absolute -bottom-1 -right-1 flex h-3.5 w-3.5 items-center justify-center">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500 border-2 border-[#111]"></span>
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500 border-2 border-theme-bg"></span>
                 </span>
               </div>
 
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 mb-0.5">
-                  <p className="text-[15px] font-medium text-zinc-100 truncate">
-                    {p.nickname}
-                  </p>
+                  {p.id === participantId ? (
+                    <input
+                      value={p.nickname}
+                      onChange={(e) => setNickname(e.target.value)}
+                      className="text-[15px] font-bold text-theme-text bg-transparent border-b-2 border-theme-accent/50 focus:border-theme-accent focus:outline-none truncate w-full max-w-[140px] uppercase tracking-wide py-0.5 px-1 transition-all"
+                      title="Edit your nickname"
+                    />
+                  ) : (
+                    <p className="text-[15px] font-bold text-theme-text truncate uppercase tracking-wide px-1">
+                      {p.nickname}
+                    </p>
+                  )}
                   {p.id === participantId && (
-                    <span className="text-[9px] uppercase tracking-widest bg-indigo-500/20 text-indigo-300 font-bold px-1.5 py-0.5 rounded-md border border-indigo-500/30">
+                    <span className="text-[9px] uppercase tracking-widest bg-theme-accent text-theme-bg font-bold px-1.5 py-0.5 rounded-sm border border-transparent shadow-[var(--theme-shadow)]">
                       YOU
                     </span>
                   )}
                 </div>
-                <p className="text-[11px] text-zinc-500 capitalize tracking-wide font-light flex items-center gap-1">
+                <p className="text-[11px] text-theme-muted uppercase tracking-widest font-bold flex items-center gap-1 px-1 mt-1">
                   {p.role}
                 </p>
               </div>

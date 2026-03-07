@@ -22,6 +22,8 @@ export default function RoomPage() {
     connect,
     disconnect,
     init,
+    sendCommand,
+    participantId,
   } = useStore();
 
   const [isJoining, setIsJoining] = useState(true);
@@ -31,6 +33,8 @@ export default function RoomPage() {
     "playlist",
   );
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isEditingRoomName, setIsEditingRoomName] = useState(false);
+  const [editRoomName, setEditRoomName] = useState("");
 
   useEffect(() => {
     init();
@@ -63,6 +67,17 @@ export default function RoomPage() {
     navigator.clipboard.writeText(url);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const participant = room?.participants[participantId!];
+  const canEditRoom =
+    participant?.role === "owner" || participant?.role === "moderator";
+
+  const handleRoomNameSubmit = () => {
+    if (editRoomName.trim() && editRoomName !== room?.name && canEditRoom) {
+      sendCommand("update_room_name", { name: editRoomName.trim() });
+    }
+    setIsEditingRoomName(false);
   };
 
   if (isJoining) {
@@ -160,9 +175,33 @@ export default function RoomPage() {
             <span className="text-[10px] text-theme-accent uppercase tracking-widest font-bold mb-0.5">
               Active Terminal
             </span>
-            <h2 className="font-bold text-theme-text truncate max-w-[150px] sm:max-w-xs uppercase tracking-wide">
-              {room.name}
-            </h2>
+            {isEditingRoomName ? (
+              <input
+                value={editRoomName}
+                onChange={(e) => setEditRoomName(e.target.value)}
+                onBlur={handleRoomNameSubmit}
+                onKeyDown={(e) => e.key === "Enter" && handleRoomNameSubmit()}
+                autoFocus
+                className="font-bold text-theme-text bg-transparent border-b-2 border-theme-accent focus:outline-none w-full max-w-[150px] sm:max-w-xs uppercase tracking-wide truncate"
+              />
+            ) : (
+              <h2
+                className={`font-bold text-theme-text truncate max-w-[150px] sm:max-w-xs uppercase tracking-wide ${
+                  canEditRoom
+                    ? "cursor-pointer hover:text-theme-accent transition-colors"
+                    : ""
+                }`}
+                onClick={() => {
+                  if (canEditRoom) {
+                    setEditRoomName(room.name);
+                    setIsEditingRoomName(true);
+                  }
+                }}
+                title={canEditRoom ? "Click to rename room" : ""}
+              >
+                {room.name}
+              </h2>
+            )}
           </div>
         </div>
 

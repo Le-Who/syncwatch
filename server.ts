@@ -261,8 +261,6 @@ app.prepare().then(() => {
       origin: "*",
       methods: ["GET", "POST"],
     },
-    pingInterval: 10000,
-    pingTimeout: 5000,
   });
 
   io.on("connection", (socket) => {
@@ -498,6 +496,15 @@ app.prepare().then(() => {
           room.settings = { ...room.settings, ...payload.settings };
           stateChanged = true;
           persistRoomState(room);
+          break;
+
+        case "update_room_name":
+          if (!isOwnerOrMod) break;
+          if (typeof payload.name === "string" && payload.name.trim()) {
+            room.name = payload.name.substring(0, 50);
+            stateChanged = true;
+            persistRoomState(room);
+          }
           break;
 
         case "update_nickname":
