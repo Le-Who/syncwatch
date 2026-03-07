@@ -268,7 +268,7 @@ export default function Playlist() {
               {/* Search Dropdown */}
               {showDropdown && searchResults.length > 0 && (
                 <div className="absolute top-12 left-0 right-12 mt-1 bg-theme-bg/95 backdrop-blur-xl border-2 border-theme-border rounded-theme shadow-xl z-50 overflow-hidden flex flex-col max-h-[300px] overflow-y-auto">
-                  <div className="px-3 py-2 border-b border-theme-border/30 bg-theme-accent/5 text-[10px] uppercase tracking-widest font-bold text-theme-muted flex items-center justify-between sticky top-0 backdrop-blur-md bg-theme-bg/90">
+                  <div className="px-3 py-2 border-b border-theme-border/30 text-[10px] uppercase tracking-widest font-bold text-theme-muted flex items-center justify-between sticky top-0 backdrop-blur-md bg-theme-bg/90">
                     <span>YouTube Results</span>
                     <button
                       type="button"
