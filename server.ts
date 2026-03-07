@@ -49,6 +49,7 @@ interface PlaylistItem {
   duration: number;
   addedBy: string;
   startPosition?: number;
+  lastPosition?: number;
 }
 
 interface Participant {
@@ -718,9 +719,9 @@ app.prepare().then(() => {
 
     socket.on("reaction", (payload) => {
       try {
-        if (!roomId || !participantId) return;
+        if (!currentRoomId || !currentParticipantId) return;
         // Broadcast reaction to everyone else in the room
-        socket.to(roomId).emit("reaction", payload);
+        socket.to(currentRoomId).emit("reaction", payload);
       } catch (e) {
         console.error("Error processing reaction:", e);
       }

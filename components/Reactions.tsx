@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { getSocket } from "@/lib/store";
+import { getSocket } from "@/lib/socket";
 import { Smile } from "lucide-react";
 
 interface EmojiParticle {

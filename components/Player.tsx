@@ -204,7 +204,7 @@ export default function Player() {
         }
       } else if (e.code === "KeyM") {
         e.preventDefault();
-        setMuted((m) => !m);
+        setMuted(!muted);
       }
     };
 
@@ -243,7 +243,7 @@ export default function Player() {
 
   const handleEnded = () => {
     if (canControl) {
-      emitCommand("video_ended", { currentMediaId: playback?.currentMediaId });
+      emitCommand("video_ended", { currentMediaId: room?.currentMediaId });
     }
   };
   const handleNext = () => {

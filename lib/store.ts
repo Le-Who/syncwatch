@@ -21,6 +21,7 @@ export interface PlaylistItem {
   duration: number;
   addedBy: string;
   startPosition?: number;
+  lastPosition?: number;
 }
 
 export interface Participant {
