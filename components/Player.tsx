@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import dynamic from "next/dynamic";
 import { useStore, useSettingsStore } from "@/lib/store";
+import { useShallow } from "zustand/react/shallow";
 import {
   Play,
   Pause,
@@ -28,7 +29,39 @@ const ReactPlayer = dynamic(() => import("react-player"), {
 }) as any;
 
 export default function Player() {
-  const { room, participantId, sendCommand, serverClockOffset } = useStore();
+  const participantId = useStore((s) => s.participantId);
+  const sendCommand = useStore((s) => s.sendCommand);
+  const serverClockOffset = useStore((s) => s.serverClockOffset);
+  const currentMediaId = useStore((s) => s.room?.currentMediaId);
+  const isLooping = useStore((s) => s.room?.settings.looping);
+  const autoplayNext = useStore((s) => s.room?.settings.autoplayNext);
+  const controlMode = useStore((s) => s.room?.settings.controlMode);
+
+  const myRole = useStore(
+    (s) => s.participantId && s.room?.participants[s.participantId]?.role,
+  );
+
+  const currentMedia = useStore(
+    useShallow((s) =>
+      s.room?.playlist.find((item) => item.id === s.room?.currentMediaId),
+    ),
+  );
+
+  const playback = useStore(useShallow((s) => s.room?.playback));
+
+  const participantCount = useStore((s) =>
+    s.room ? Object.keys(s.room.participants).length : 0,
+  );
+
+  const canControl =
+    controlMode === "open" ||
+    controlMode === "hybrid" ||
+    myRole === "owner" ||
+    myRole === "moderator";
+
+  const canEditPlaylist =
+    controlMode === "open" || myRole === "owner" || myRole === "moderator";
+
   const { volume, muted, theaterMode, setVolume, setMuted, toggleTheaterMode } =
     useSettingsStore();
   const playerRef = useRef<any>(null);
@@ -70,7 +103,6 @@ export default function Player() {
   // Removed ResizeObserver dimensions
 
   // To avoid loopbacks, track manually initiated actions vs programmatic state syncs
-  const ignoreNextPlayPauseEvent = useRef(false);
   const lastCommandEmitTimeRef = useRef<number>(0);
   const lastStateEmittedRef = useRef<{
     status: string;
@@ -78,28 +110,11 @@ export default function Player() {
     time: number;
   } | null>(null);
 
-  const currentMedia = room?.playlist.find(
-    (item) => item.id === room.currentMediaId,
-  );
-  const playback = room?.playback;
-
-  const canControl =
-    room?.settings.controlMode === "open" ||
-    room?.participants[participantId!]?.role === "owner" ||
-    room?.participants[participantId!]?.role === "moderator" ||
-    room?.settings.controlMode === "hybrid";
-
-  const canEditPlaylist =
-    room?.settings.controlMode === "open" ||
-    room?.participants[participantId!]?.role === "owner" ||
-    room?.participants[participantId!]?.role === "moderator";
-
   const getAccurateTime = useCallback(() => {
     return playerRef.current?.currentTime || 0;
   }, []);
 
   const performProgrammaticSeek = (position: number) => {
-    ignoreNextPlayPauseEvent.current = true; // A seek might trigger buffering/play events
     if (playerRef.current && typeof playerRef.current.seekTo === "function") {
       playerRef.current.seekTo(position, "seconds");
     } else if (playerRef.current) {
@@ -111,7 +126,7 @@ export default function Player() {
     setError(null);
     setIsReady(false);
     setIsBuffering(false);
-  }, [room?.currentMediaId]);
+  }, [currentMediaId]);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -140,10 +155,35 @@ export default function Player() {
     sendCommand(type, payload);
   };
 
-  useEffect(() => {
-    if (!playback || !isReady || seeking) return;
+  // Use refs to avoid interval dependency thrashing (Stable Timer Pattern)
+  const playbackRef = useRef(playback);
+  const isReadyRef = useRef(isReady);
+  const seekingRef = useRef(seeking);
+  const playingRef = useRef(playing);
+  const isBufferingRef = useRef(isBuffering);
+  const currentMediaProviderRef = useRef(currentMedia?.provider);
 
+  useEffect(() => {
+    playbackRef.current = playback;
+    isReadyRef.current = isReady;
+    seekingRef.current = seeking;
+    playingRef.current = playing;
+    isBufferingRef.current = isBuffering;
+    currentMediaProviderRef.current = currentMedia?.provider;
+  }, [
+    playback,
+    isReady,
+    seeking,
+    playing,
+    isBuffering,
+    currentMedia?.provider,
+  ]);
+
+  useEffect(() => {
     const syncPlayback = () => {
+      const currentPlayback = playbackRef.current;
+      if (!currentPlayback || !isReadyRef.current || seekingRef.current) return;
+
       if (Date.now() - lastCommandEmitTimeRef.current < 1500) {
         // Optimistic UI barrier: ignore server discrepancy immediately after manual UI action
         return;
@@ -152,82 +192,71 @@ export default function Player() {
       const currentServerTime = Date.now() + serverClockOffset;
       const currentPosition = getAccurateTime();
 
-      if (currentMedia?.provider?.toLowerCase() === "twitch") return; // Twitch Live/VODs break on frequent programmatic seeks
+      if (currentMediaProviderRef.current?.toLowerCase() === "twitch") return; // Twitch Live/VODs break on frequent programmatic seeks
 
-      if (playback.status === "playing") {
+      if (currentPlayback.status === "playing") {
         const { expectedPosition, drift: currentDrift } = calculateDrift(
-          playback.status,
-          playback.basePosition,
-          playback.baseTimestamp,
+          currentPlayback.status,
+          currentPlayback.basePosition,
+          currentPlayback.baseTimestamp,
           currentServerTime,
           currentPosition,
-          playback.rate,
+          currentPlayback.rate,
         );
         driftRef.current = currentDrift;
 
-        if (!playing) {
+        if (!playingRef.current) {
           setPlaying(true);
         }
 
         const isIframeProvider = ["youtube", "vimeo", "twitch"].includes(
-          currentMedia?.provider?.toLowerCase() || "",
+          currentMediaProviderRef.current?.toLowerCase() || "",
         );
 
-        // Increase the deadzone from 0.5s to 1.0s to stop aggressive audio resampling (tearing).
-        // If drift > 3.0s (or > 1.5s for restrictive iFrames), force a programmatic seek
         if (
           (currentDrift > 3.0 || (isIframeProvider && currentDrift > 1.5)) &&
-          !isBuffering
+          !isBufferingRef.current
         ) {
           performProgrammaticSeek(expectedPosition);
-          setLocalPlaybackRate(playback.rate);
-        }
-        // If drift is between 1.0s and 3.0s, gently correct it (1.05x or 0.95x) to preserve audio fidelity for native videos
-        else if (currentDrift > 1.0 && !isBuffering && !isIframeProvider) {
+          setLocalPlaybackRate(currentPlayback.rate);
+        } else if (
+          currentDrift > 1.0 &&
+          !isBufferingRef.current &&
+          !isIframeProvider
+        ) {
           const rateAdjustment =
             currentPosition < expectedPosition ? 1.05 : 0.95;
-          setLocalPlaybackRate(playback.rate * rateAdjustment);
+          setLocalPlaybackRate(currentPlayback.rate * rateAdjustment);
         } else {
-          // Inside the deadzone, trust local playback rate entirely.
-          setLocalPlaybackRate(playback.rate);
+          setLocalPlaybackRate(currentPlayback.rate);
         }
-      } else if (playback.status === "paused") {
+      } else if (currentPlayback.status === "paused") {
         const { drift: currentDrift } = calculateDrift(
-          playback.status,
-          playback.basePosition,
-          playback.baseTimestamp,
+          currentPlayback.status,
+          currentPlayback.basePosition,
+          currentPlayback.baseTimestamp,
           currentServerTime,
           currentPosition,
           1.0,
         );
         driftRef.current = currentDrift;
 
-        if (playing) {
+        if (playingRef.current) {
           setPlaying(false);
         }
 
-        if (currentDrift > 1.0 && !isBuffering) {
-          performProgrammaticSeek(playback.basePosition);
+        if (currentDrift > 1.0 && !isBufferingRef.current) {
+          performProgrammaticSeek(currentPlayback.basePosition);
         }
       }
     };
 
-    syncPlayback();
     const interval = setInterval(syncPlayback, 1000);
     return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    playback,
-    isReady,
-    seeking,
-    isBuffering,
-    playing,
-    getAccurateTime,
-    serverClockOffset,
-  ]);
+  }, [getAccurateTime, serverClockOffset]);
 
   const handlePlay = () => {
-    if (!room || !participantId || !canControl) return;
+    if (!currentMediaId || !participantId || !canControl) return;
     setPlaying(true);
     let pos = getAccurateTime();
     if (pos === 0 && playback && playback.basePosition > 2) {
@@ -237,7 +266,7 @@ export default function Player() {
   };
 
   const handlePause = () => {
-    if (!room || !participantId || !canControl) return;
+    if (!currentMediaId || !participantId || !canControl) return;
     setPlaying(false);
     emitCommand("pause", { position: getAccurateTime() });
   };
@@ -271,25 +300,24 @@ export default function Player() {
   };
 
   const handleNext = () => {
-    emitCommand("next", { currentMediaId: room?.currentMediaId });
+    emitCommand("next", { currentMediaId });
   };
 
   // formatTime is now imported from @/lib/utils
 
-  const currentIndex =
-    room?.playlist.findIndex((i) => i.id === currentMedia?.id) ?? -1;
-  let nextItem = null;
-  if (currentIndex !== -1 && room) {
-    nextItem = room.playlist[currentIndex + 1];
-    if (!nextItem && room.settings.looping) {
-      nextItem = room.playlist[0];
-    }
-  }
+  const nextItem = useStore((s) => {
+    if (!s.room || !currentMediaId) return null;
+    const idx = s.room.playlist.findIndex((i) => i.id === currentMediaId);
+    if (idx === -1) return null;
+    let n = s.room.playlist[idx + 1];
+    if (!n && s.room.settings.looping) n = s.room.playlist[0];
+    return n;
+  });
 
   const [upNextState, setUpNextState] = useState({ show: false, remaining: 0 });
 
   useEffect(() => {
-    if (!room?.settings.autoplayNext || !canControl || duration === 0) return;
+    if (!autoplayNext || !canControl || duration === 0) return;
 
     const interval = setInterval(() => {
       const remaining = duration - getAccurateTime();
@@ -307,13 +335,7 @@ export default function Player() {
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [
-    duration,
-    getAccurateTime,
-    room?.settings.autoplayNext,
-    canControl,
-    playing,
-  ]);
+  }, [duration, getAccurateTime, autoplayNext, canControl, playing]);
 
   if (!currentMedia) {
     return (
@@ -329,8 +351,7 @@ export default function Player() {
             System ready. Awaiting media input...
           </p>
 
-          {canEditPlaylist ||
-          Object.keys(room?.participants || {}).length <= 1 ? (
+          {canEditPlaylist || participantCount <= 1 ? (
             <form
               className="relative w-full"
               onSubmit={async (e) => {
@@ -428,7 +449,6 @@ export default function Player() {
               volume={volume}
               muted={userJoined ? muted : true}
               playbackRate={localPlaybackRate}
-              progressInterval={500}
               onReady={() => {
                 setIsReady(true);
                 setError(null);
@@ -478,9 +498,9 @@ export default function Player() {
                   e?.duration ||
                   0;
                 setDuration(dur);
-                if (canControl && room && room.currentMediaId) {
+                if (canControl && currentMediaId) {
                   emitCommand("update_duration", {
-                    itemId: room.currentMediaId,
+                    itemId: currentMediaId,
                     duration: dur,
                   });
                 }
@@ -488,7 +508,7 @@ export default function Player() {
               onEnded={() => {
                 if (canControl) {
                   emitCommand("video_ended", {
-                    currentMediaId: room?.currentMediaId,
+                    currentMediaId,
                   });
                 }
               }}
@@ -501,11 +521,14 @@ export default function Player() {
               onPlay={() => {
                 setIsBuffering(false);
                 setPlaying(true);
-                if (ignoreNextPlayPauseEvent.current) {
-                  ignoreNextPlayPauseEvent.current = false;
-                  return;
-                }
-                if (canControl && playback?.status !== "playing") {
+                // CLIENT-SIDE GUARD: Only emit command from native HTML/YouTube play events
+                // IF the user explicitly entered Native Interaction mode.
+                // Otherwise, ignore them entirely to prevent programmatic seek echo loops.
+                if (
+                  canControl &&
+                  nativeInteraction &&
+                  playback?.status !== "playing"
+                ) {
                   let pos = getAccurateTime();
                   if (pos === 0 && playback && playback.basePosition > 2) {
                     pos = playback.basePosition;
@@ -516,11 +539,12 @@ export default function Player() {
               onPause={() => {
                 setIsBuffering(false);
                 setPlaying(false);
-                if (ignoreNextPlayPauseEvent.current) {
-                  ignoreNextPlayPauseEvent.current = false;
-                  return;
-                }
-                if (canControl && playback?.status === "playing" && !seeking) {
+                if (
+                  canControl &&
+                  nativeInteraction &&
+                  playback?.status === "playing" &&
+                  !seeking
+                ) {
                   emitCommand("pause", { position: getAccurateTime() });
                 }
               }}
@@ -921,10 +945,12 @@ export default function Player() {
                 </div>
 
                 {/* Sync Status Badge */}
+                {/* eslint-disable-next-line react-hooks/refs */}
                 {driftRef.current >= 0.5 && (
                   <div className="bg-theme-bg/80 border-theme-border/50 rounded-theme animate-in fade-in mr-2 hidden min-w-[120px] items-center justify-center space-x-2 border px-3 py-1.5 text-[10px] font-bold uppercase shadow-sm md:flex">
                     <div
                       className={`h-2 w-2 rounded-full ${
+                        // eslint-disable-next-line react-hooks/refs
                         driftRef.current < 2
                           ? "bg-theme-danger shadow-[0_0_8px_var(--color-theme-danger)]"
                           : "bg-red-500 shadow-[0_0_8px_rgb(239,68,68)]"
@@ -932,11 +958,13 @@ export default function Player() {
                     />
                     <span
                       className={`hidden sm:inline-block ${
+                        // eslint-disable-next-line react-hooks/refs
                         driftRef.current < 2
                           ? "text-theme-danger"
                           : "text-red-500"
                       }`}
                     >
+                      {/* eslint-disable-next-line react-hooks/refs */}
                       {driftRef.current < 2 ? "Sync: Locking" : "Sync: Lost"}
                     </span>
                   </div>

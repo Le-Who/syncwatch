@@ -53,11 +53,14 @@ describe("Player Component", () => {
       toggleTheaterMode: vi.fn(),
     });
 
-    (useStore as any).mockReturnValue({
-      room: null,
-      participantId: "user1",
-      sendCommand: mockSendCommand,
-      serverClockOffset: 0,
+    (useStore as any).mockImplementation((selector: any) => {
+      const state = {
+        room: null,
+        participantId: "user1",
+        sendCommand: mockSendCommand,
+        serverClockOffset: 0,
+      };
+      return selector ? selector(state) : state;
     });
   });
 
@@ -67,25 +70,28 @@ describe("Player Component", () => {
   });
 
   it("should render the player when media is present", () => {
-    (useStore as any).mockReturnValue({
-      room: {
-        currentMediaId: "1",
-        playlist: [
-          {
-            id: "1",
-            url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-            provider: "youtube",
-            title: "Test Video",
+    (useStore as any).mockImplementation((selector: any) => {
+      const state = {
+        room: {
+          currentMediaId: "1",
+          playlist: [
+            {
+              id: "1",
+              url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+              provider: "youtube",
+              title: "Test Video",
+            },
+          ],
+          settings: { controlMode: "open" },
+          participants: {
+            user1: { role: "guest" },
           },
-        ],
-        settings: { controlMode: "open" },
-        participants: {
-          user1: { role: "guest" },
         },
-      },
-      participantId: "user1",
-      sendCommand: mockSendCommand,
-      serverClockOffset: 0,
+        participantId: "user1",
+        sendCommand: mockSendCommand,
+        serverClockOffset: 0,
+      };
+      return selector ? selector(state) : state;
     });
 
     render(<Player />);
@@ -93,37 +99,54 @@ describe("Player Component", () => {
   });
 
   it("should allow play/pause interactions if user has control", () => {
-    (useStore as any).mockReturnValue({
-      room: {
-        currentMediaId: "1",
-        playlist: [
-          {
-            id: "1",
-            url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-            provider: "youtube",
+    (useStore as any).mockImplementation((selector: any) => {
+      const state = {
+        room: {
+          currentMediaId: "1",
+          playlist: [
+            {
+              id: "1",
+              url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+              provider: "youtube",
+            },
+          ],
+          settings: { controlMode: "open" },
+          playback: {
+            status: "paused",
+            basePosition: 0,
+            baseTimestamp: 0,
+            rate: 1,
           },
-        ],
-        settings: { controlMode: "open" },
-        playback: {
-          status: "paused",
-          basePosition: 0,
-          baseTimestamp: 0,
-          rate: 1,
+          participants: {
+            user1: { role: "guest" },
+          },
         },
-        participants: {
-          user1: { role: "guest" },
-        },
-      },
-      participantId: "user1",
-      sendCommand: mockSendCommand,
-      serverClockOffset: 0,
+        participantId: "user1",
+        sendCommand: mockSendCommand,
+        serverClockOffset: 0,
+      };
+      return selector ? selector(state) : state;
     });
 
     render(<Player />);
 
-    // Since playing=false by default in local state, it should show pause overlay with a Play button
-    // But we mocked ReactPlayer. Let's trigger play event
-    fireEvent.click(screen.getByTestId("play-event"));
+    // To test the strict one-way data flow, we must interact with the Custom Controls,
+    // not the underlying mock ReactPlayer events (unless nativeInteraction is true).
+
+    // First, user must join the room manually to dismiss "Initialize Stream Sync"
+    fireEvent.click(screen.getByText(/Initialize Stream Sync/i));
+
+    // The play button is inside the custom controls. It toggles playing state.
+    // It's a button containing the Play icon. We can find it by its role or wait for it.
+    // Let's use getByRole button but there are multiple buttons.
+    // We can just find the SVG with lucide-play
+    const playButtonIcon = document.querySelector(".lucide-play");
+    expect(playButtonIcon).toBeInTheDocument();
+
+    // The parent button of the icon is what has the onClick handler
+    if (playButtonIcon && playButtonIcon.parentElement) {
+      fireEvent.click(playButtonIcon.parentElement);
+    }
 
     // Should emit "play" command
     expect(mockSendCommand).toHaveBeenCalledWith("play", expect.any(Object));
