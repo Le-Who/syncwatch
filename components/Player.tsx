@@ -132,6 +132,8 @@ export default function Player() {
   } | null>(null);
 
   const lastProgrammaticSeekRef = useRef<number>(0);
+  const lastServerStateChangeRef = useRef<number>(0);
+  const pauseDebounceRef = useRef<NodeJS.Timeout | null>(null);
 
   const getAccurateTime = useCallback(() => {
     return playerRef.current?.currentTime || 0;
@@ -190,8 +192,6 @@ export default function Player() {
     const currentServerTime = Date.now() + serverClockOffset;
     const currentPosition = getAccurateTime();
 
-    if (currentMedia?.provider?.toLowerCase() === "twitch") return; // Twitch Live/VODs break on frequent programmatic seeks
-
     if (playback.status === "playing") {
       const { expectedPosition, drift: currentDrift } = calculateDrift(
         playback.status,
@@ -204,16 +204,19 @@ export default function Player() {
       driftRef.current = currentDrift;
 
       if (!playing) {
+        lastServerStateChangeRef.current = Date.now();
         setPlaying(true);
       }
 
       const isIframeProvider = ["youtube", "vimeo", "twitch"].includes(
         currentMedia?.provider?.toLowerCase() || "",
       );
+      const isTwitch = currentMedia?.provider?.toLowerCase() === "twitch";
 
       if (
         (currentDrift > 3.0 || (isIframeProvider && currentDrift > 1.5)) &&
-        !isBuffering
+        !isBuffering &&
+        !isTwitch
       ) {
         performProgrammaticSeek(expectedPosition);
         setLocalPlaybackRate(playback.rate);
@@ -240,6 +243,7 @@ export default function Player() {
       driftRef.current = currentDrift;
 
       if (playing) {
+        lastServerStateChangeRef.current = Date.now();
         setPlaying(false);
       }
 
@@ -268,6 +272,40 @@ export default function Player() {
     if (!currentMediaId || !participantId || !canControl) return;
     setPlaying(false);
     emitCommand("pause", { position: getAccurateTime() });
+  };
+
+  const handleNativePlay = () => {
+    if (pauseDebounceRef.current) {
+      clearTimeout(pauseDebounceRef.current);
+      pauseDebounceRef.current = null;
+    }
+    setIsBuffering(false);
+    setPlaying(true);
+    if (
+      canControl &&
+      playback?.status !== "playing" &&
+      Date.now() - lastCommandEmitTimeRef.current > 500 &&
+      Date.now() - lastServerStateChangeRef.current > 1500
+    ) {
+      emitCommand("play", { position: getAccurateTime() });
+    }
+  };
+
+  const handleNativePause = () => {
+    setIsBuffering(false);
+    setPlaying(false);
+    if (pauseDebounceRef.current) clearTimeout(pauseDebounceRef.current);
+
+    pauseDebounceRef.current = setTimeout(() => {
+      if (
+        canControl &&
+        playback?.status !== "paused" &&
+        Date.now() - lastCommandEmitTimeRef.current > 500 &&
+        Date.now() - lastServerStateChangeRef.current > 1500
+      ) {
+        emitCommand("pause", { position: getAccurateTime() });
+      }
+    }, 400);
   };
 
   usePlayerShortcuts({
@@ -449,27 +487,11 @@ export default function Player() {
                       twitchEl.dataset.proxyAttached = "true";
                       twitchEl.addEventListener("playing", () => {
                         console.log("[TWITCH PROXY] playing event fired");
-                        if (
-                          canControl &&
-                          playback?.status !== "playing" &&
-                          Date.now() - lastCommandEmitTimeRef.current > 500
-                        ) {
-                          emitCommand("play", { position: getAccurateTime() });
-                        }
-                        setPlaying(true);
-                        setIsBuffering(false);
+                        handleNativePlay();
                       });
                       twitchEl.addEventListener("pause", () => {
                         console.log("[TWITCH PROXY] pause event fired");
-                        if (
-                          canControl &&
-                          playback?.status !== "paused" &&
-                          Date.now() - lastCommandEmitTimeRef.current > 500
-                        ) {
-                          emitCommand("pause", { position: getAccurateTime() });
-                        }
-                        setPlaying(false);
-                        setIsBuffering(false);
+                        handleNativePause();
                       });
                     }
                   } catch (e) {
@@ -510,9 +532,8 @@ export default function Player() {
 
                 if (canControl) {
                   emitCommand("seek", { position: seconds });
-                  if (playing) {
-                    emitCommand("play", { position: seconds });
-                  }
+                  // We do NOT emit "play" here! The native player will resume naturally,
+                  // firing onPlay, which is safely debounced and resolved by handleNativePlay.
                 }
               }}
               onSeeked={(e: any) => {
@@ -551,16 +572,7 @@ export default function Player() {
                   canControl,
                   timeDelta: Date.now() - lastCommandEmitTimeRef.current,
                 });
-                setIsBuffering(false);
-                setPlaying(true);
-                // IF this was a native interaction while server thinks we are paused:
-                if (
-                  canControl &&
-                  playback?.status !== "playing" &&
-                  Date.now() - lastCommandEmitTimeRef.current > 500
-                ) {
-                  emitCommand("play", { position: getAccurateTime() });
-                }
+                handleNativePlay();
               }}
               onPause={() => {
                 console.log("[REACT_PLAYER DEBUG] onPause fired!", {
@@ -568,16 +580,7 @@ export default function Player() {
                   canControl,
                   timeDelta: Date.now() - lastCommandEmitTimeRef.current,
                 });
-                setIsBuffering(false);
-                setPlaying(false);
-                // IF this was a native interaction while server thinks we are playing/buffering:
-                if (
-                  canControl &&
-                  playback?.status !== "paused" &&
-                  Date.now() - lastCommandEmitTimeRef.current > 500
-                ) {
-                  emitCommand("pause", { position: getAccurateTime() });
-                }
+                handleNativePause();
               }}
               style={{ position: "absolute", top: 0, left: 0 }}
               config={{
