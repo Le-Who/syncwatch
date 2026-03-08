@@ -6,6 +6,8 @@ import {
   setRedisRoomCAS,
   setRedisRoom,
 } from "../../lib/redis-actor";
+import { pushSlowCommand } from "../../lib/redis-queue";
+import { processQueueForRoom } from "../../lib/redis-queue-worker";
 import { randomUUID } from "node:crypto";
 
 // We require a real Redis instance (like the one in .env.local) to test Lua scripts.
@@ -86,5 +88,68 @@ describe("Redis Actor & Queue Integration Tests", () => {
     const current = await getRedisRoom(roomId);
     expect(current.version).toBe(2);
     expect(current.data).toBe("second");
+  });
+
+  it("3. pushSlowCommand & processQueueForRoom: should process queued commands properly", async () => {
+    if (!redis) return;
+    const roomId = `queue_test_${TEST_RUN_ID}`;
+    const participantId = `user_${TEST_RUN_ID}`;
+
+    // Create an initial room with an owner
+    const initialState = {
+      id: roomId,
+      name: "Queue Test Room",
+      settings: { controlMode: "open", autoplayNext: true, looping: false },
+      participants: {
+        [participantId]: {
+          id: participantId,
+          nickname: "Owner",
+          role: "owner",
+          lastSeen: Date.now(),
+        },
+      },
+      playlist: [],
+      currentMediaId: null,
+      playback: {
+        status: "paused",
+        basePosition: 0,
+        baseTimestamp: Date.now(),
+        rate: 1,
+        updatedBy: participantId,
+      },
+      version: 1,
+      sequence: 1,
+      lastActivity: Date.now(),
+    };
+
+    await setRedisRoom(roomId, initialState as any);
+
+    // Push an item to the queue simulating a user adding a video
+    const payload = {
+      url: "https://www.youtube.com/watch?v=mock_video",
+      provider: "youtube",
+      title: "Mock Video from Queue",
+      duration: 180,
+    };
+
+    const pushSuccess = await pushSlowCommand(
+      roomId,
+      2,
+      "add_item",
+      payload,
+      participantId,
+      "Owner",
+    );
+    expect(pushSuccess).toBe(true);
+
+    // Process the queue synchronously for testing purposes
+    await processQueueForRoom(roomId);
+
+    // Fetch the room state to ensure the item was appended to the playlist
+    const updatedRoom = await getRedisRoom(roomId);
+    expect(updatedRoom.playlist.length).toBe(1);
+    expect(updatedRoom.playlist[0].title).toBe("Mock Video from Queue");
+    expect(updatedRoom.currentMediaId).toBe(updatedRoom.playlist[0].id); // since playlist was empty, playback should shift to it
+    expect(updatedRoom.playback.status).toBe("paused");
   });
 });
