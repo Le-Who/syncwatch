@@ -83,10 +83,12 @@ interface AppState {
   sessionToken: string | null;
   nickname: string;
   commandSequence: number;
+  occRollbackTick: number;
   setNickname: (name: string) => void;
   connect: (roomId: string, nickname: string) => Promise<void>;
   disconnect: () => void;
   sendCommand: (type: string, payload?: any) => void;
+  triggerOccRollback: () => void;
   init: () => void;
 }
 
@@ -98,6 +100,9 @@ export const useStore = create<AppState>((set, get) => ({
   sessionToken: null,
   nickname: "",
   commandSequence: 1,
+  occRollbackTick: 0,
+  triggerOccRollback: () =>
+    set((state) => ({ occRollbackTick: state.occRollbackTick + 1 })),
   init: () => {
     if (typeof window !== "undefined") {
       const storedName = localStorage.getItem("nickname") || "";

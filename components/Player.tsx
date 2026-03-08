@@ -1,6 +1,6 @@
 "use client";
 
-import "default-passive-events";
+// default-passive-events removed: Global monkey-patches are dangerous for Radix UI Sliders -> Symptom Masking
 
 import {
   useEffect,
@@ -53,6 +53,7 @@ export default function Player() {
   const sendCommand = useStore((s) => s.sendCommand);
   const serverClockOffset = useStore((s) => s.serverClockOffset);
   const currentMediaId = useStore((s) => s.room?.currentMediaId);
+  const occRollbackTick = useStore((s) => s.occRollbackTick);
   const isLooping = useStore((s) => s.room?.settings.looping);
   const autoplayNext = useStore((s) => s.room?.settings.autoplayNext);
   const controlMode = useStore((s) => s.room?.settings.controlMode);
@@ -221,6 +222,36 @@ export default function Player() {
     setIsBuffering(false);
     // Twitch is always fully managed by our UI now to prevent Unmount/Autoplay Policy breakage
   }, [currentMediaId]);
+
+  // Handle Server-Side OCC Rejections (Race Condition Flashback)
+  useEffect(() => {
+    if (occRollbackTick > 0 && playback && currentMediaId && canControl) {
+      console.warn("OCC Rollback Triggered! Reverting optimistic UI state.");
+      // The local player state (playing/paused/position) is wrong.
+      const accurateCurrentTime = getAccurateTime();
+      // Calculate where the server actually is *right now* mathematically
+      const { expectedPosition } = calculateDrift(
+        playback.status,
+        playback.basePosition,
+        playback.baseTimestamp,
+        Date.now() + serverClockOffset,
+        accurateCurrentTime,
+        playback.rate,
+      );
+
+      // Flashback animation for the user to understand they "lost the click race"
+      registerPossibleFlashback(
+        accurateCurrentTime,
+        expectedPosition,
+        currentMediaId,
+      );
+
+      // Hard apply the server truth
+      ignoreNativeEventsUntilRef.current = Date.now() + 2000;
+      setPlaying(playback.status === "playing");
+      performProgrammaticSeek(expectedPosition);
+    }
+  }, [occRollbackTick]);
 
   useEffect(() => {
     if (typeof window !== "undefined") {

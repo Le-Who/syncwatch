@@ -23,7 +23,6 @@
     "autoprefixer": "^10.4.21",
     "cookie": "^1.1.1",
     "cross-env": "^10.1.0",
-    "default-passive-events": "^2.0.0",
     "fscreen": "^1.2.0",
     "htmlparser2": "^10.1.0",
     "ioredis": "^5.10.0",

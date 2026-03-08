@@ -747,10 +747,17 @@ app.prepare().then(() => {
             "buffering",
             "sync_correction", // New Controlled-Room Owner sync correction
           ].includes(type);
+
           if (isFastPath) {
+            // STRICT OCC ENFORCEMENT: We use the client's provided sequence-1 as the expected version.
+            // If the client's state is stale, the Lua script will return VERSION_CONFLICT.
+            // If expected is strictly 0, we bypass (e.g., initial join sync edge cases).
+            const clientExpectedVersion =
+              sequence > 0 ? sequence - 1 : baseVersion;
+
             const result = await executeFastMutation(
               roomId,
-              baseVersion,
+              clientExpectedVersion, // Use Client's knowledge, not the Server's fresh read!
               type,
               payload,
               currentParticipantId,
@@ -774,10 +781,10 @@ app.prepare().then(() => {
 
               break; // EXIT WHILE LOOP (Success)
             } else if (result.error === "VERSION_CONFLICT") {
-              // OCC failed inside Lua -> Backoff and retry
-              await new Promise((r) => setTimeout(r, 10 + Math.random() * 20));
-              occRetries--;
-              continue;
+              // ROOT CAUSE FIX: The client acted on stale data. Do NOT retry blindly.
+              // Inform the client so it can trigger visual Flashback UX and rollback.
+              socket.emit("error", { message: "VERSION_CONFLICT" });
+              break;
             } else if (result.error === "UNAUTHORIZED") {
               socket.emit("error", { message: "Unauthorized operation." });
               break;

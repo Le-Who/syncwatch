@@ -103,6 +103,19 @@ class RoomSocketService {
     socket.on("error", async (error: any) => {
       const msg = error.message || "An error occurred";
 
+      if (msg === "VERSION_CONFLICT") {
+        toast("Sync Adjustment", {
+          description:
+            "Another user changed the state first. Rolling back to server time.",
+          icon: "⏪",
+        });
+        const state = this.getState();
+        if (state.triggerOccRollback) {
+          state.triggerOccRollback();
+        }
+        return; // Don't show generic error
+      }
+
       // Avoid spamming toasts for rate limits
       if (!msg.includes("Too many") && !msg.includes("Rate limit")) {
         toast.error(msg);
