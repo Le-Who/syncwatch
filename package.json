@@ -7,8 +7,8 @@
   },
   "scripts": {
     "dev": "cross-env NODE_OPTIONS=\"--no-warnings=DeprecationWarning\" tsx server.ts",
-    "build": "next build && tsc --project tsconfig.server.json",
-    "start": "cross-env NODE_ENV=production NODE_OPTIONS=\"--no-warnings=DeprecationWarning\" node dist/server.js",
+    "build": "next build",
+    "start": "cross-env NODE_ENV=production NODE_OPTIONS=\"--no-warnings=DeprecationWarning\" npx tsx server.ts",
     "lint": "eslint .",
     "clean": "next clean",
     "format": "prettier --write .",
@@ -18,6 +18,7 @@
   "dependencies": {
     "@next/env": "^16.1.6",
     "@supabase/supabase-js": "^2.98.0",
+    "@types/node": "^25.3.5",
     "@types/uuid": "^10.0.0",
     "autoprefixer": "^10.4.21",
     "cookie": "^1.1.1",
@@ -36,6 +37,8 @@
     "react-player": "^3.4.0",
     "socket.io": "^4.8.3",
     "sonner": "^2.0.7",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
     "uuid": "^13.0.0",
     "yt-search": "^2.13.1",
     "zod": "^4.3.6",
@@ -49,7 +52,6 @@
     "@testing-library/react": "^16.3.2",
     "@types/cookie": "^0.6.0",
     "@types/fscreen": "^1.0.4",
-    "@types/node": "^25.3.5",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/redlock": "^4.0.8",
@@ -62,8 +64,6 @@
     "prettier": "^3.8.1",
     "prettier-plugin-tailwindcss": "^0.7.2",
     "socket.io-client": "^4.8.3",
-    "tsx": "^4.21.0",
-    "typescript": "5.9.3",
     "vitest": "^4.0.18"
   },
   "overrides": {
