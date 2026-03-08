@@ -497,7 +497,15 @@ export default function Player() {
               style={{ position: "absolute", top: 0, left: 0 }}
               config={{
                 youtube: {
-                  playerVars: { showinfo: 0, controls: 1, disablekb: 0 },
+                  playerVars: {
+                    controls: 1,
+                    disablekb: 0,
+                    modestbranding: 0,
+                    origin:
+                      typeof window !== "undefined"
+                        ? window.location.origin
+                        : undefined,
+                  },
                 },
                 vimeo: { playerOptions: { controls: false } },
                 twitch: {

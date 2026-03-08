@@ -1,13 +1,19 @@
-# Testing
+# Testing & Coverage
 test-results/
 playwright-report/
 playwright/.cache/
 blob-report/
 e2e/
 lib/__tests__/
+coverage/
 vitest.config.ts
+vitest.setup.ts
 playwright.config.ts
+test-zod.ts
+debug_investigation.md
 
+# Build Caches (Generated during build, not needed at runtime)
+*.tsbuildinfo
 # Custom AI Skills and Workflows
 skills/
 .gemini/
