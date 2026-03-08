@@ -201,7 +201,11 @@ const forcePersistRoom = async (room: RoomState) => {
         })),
         playback: {
           mediaItemId: room.currentMediaId,
-          status: room.playback.status,
+          status: ["playing", "paused", "buffering", "ended"].includes(
+            room.playback.status,
+          )
+            ? room.playback.status
+            : "paused",
           basePosition: room.playback.basePosition,
           baseTimestamp: room.playback.baseTimestamp,
           rate: room.playback.rate,

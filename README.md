@@ -29,6 +29,7 @@ SyncWatch is a latency-tolerant, real-time, server-authoritative watch-party app
 - **Multi-Node Phantom User Fix**: Disconnected local socket.to `participant_joined` emissions and refactored them to route globally through the Redis Pub/Sub message broker, guaranteeing UX sync across distributed node clusters.
 - **Database DDoS Protection & Memory Limits**: Sandboxed the background Database Persistence worker. Enforced hard processing limits (`LIMIT 50`) on the Redis `pending_db_syncs` ZSET and added an Exponential Request Backoff (1 minute penalty) on Supabase insertion failures, preventing Thundering Herds and catastrophic Node.js OOM crashes.
 - **Playlist Race Condition Rectification**: Rewrote the `reorder_playlist` Socket worker logic from destructive full-array-overwrites to a granular Concurrent Delta Reconciler. Video items added by peers mid-reorder are no longer lost to localized state overrides.
+- **PostgreSQL Check Constraint Alignment**: Hardened the fast-path Lua atomic mutator to strictly map unvalidated websocket `play` event payloads to the required `playing` database `playback_snapshots_status_check` constraint. Added an aggressive Type Coercion fallback in `server.ts` to neutralize malicious payload injections before Supabase RPC UPSERTs.
 
 ## Database Setup (Supabase)
 

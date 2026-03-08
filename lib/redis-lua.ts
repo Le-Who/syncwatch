@@ -37,7 +37,11 @@ const LUA_FAST_MUTATION = `
 
   if mutation_type == "play" or mutation_type == "seek" or mutation_type == "buffering" then
      if type(mutation_payload.position) == "number" and mutation_payload.position >= 0 then
-        room.playback.status = mutation_type == "seek" and room.playback.status or mutation_type
+        if mutation_type == "play" then
+           room.playback.status = "playing"
+        elseif mutation_type == "buffering" then
+           room.playback.status = "buffering"
+        end
         room.playback.basePosition = mutation_payload.position
         room.playback.baseTimestamp = now
         room.playback.updatedBy = participant_nickname
