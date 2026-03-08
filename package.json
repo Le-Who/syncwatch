@@ -8,7 +8,7 @@
   "scripts": {
     "dev": "cross-env NODE_OPTIONS=\"--no-warnings=DeprecationWarning\" tsx server.ts",
     "build": "next build && npx tsc -p tsconfig.server.json",
-    "start": "cross-env NODE_ENV=production NODE_OPTIONS=\"--no-warnings=DeprecationWarning\" node dist/server.js",
+    "start": "cross-env NODE_ENV=production NODE_OPTIONS=\"--no-warnings=DeprecationWarning\" node .next/production-server/server.js",
     "lint": "eslint .",
     "clean": "next clean",
     "format": "prettier --write .",
