@@ -23,6 +23,7 @@ class RoomSocketService {
         reconnectionAttempts: Infinity,
         reconnectionDelay: 1000,
         reconnectionDelayMax: 5000,
+        transports: ["websocket"], // Force WebSocket to bypass Playwright HTTP interception quirks
       });
 
       this.bindEvents();

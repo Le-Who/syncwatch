@@ -10,7 +10,19 @@ async function joinRoom(page: Page, url: string, nickname: string) {
   const handleInput = page.locator('input[placeholder="ENTER_HANDLE"]');
   await handleInput.waitFor({ state: "visible", timeout: 15000 });
   await handleInput.fill(nickname);
+
   await page.locator("button", { hasText: "Establish Link" }).click();
+  // Wait for the UI layout to shift from "Join Room" to the main Player UI.
+  // This proves the auth POST succeeded and React state transitioned.
+  await expect(page.locator("text=SyncWatch").first()).toBeVisible({
+    timeout: 15000,
+  });
+  // The most deterministic way to ensure Socket.io has successfully connected
+  // and the React state has hydrated the initial Room data is to wait for the
+  // "Participants" panel to visibly list the user that just joined.
+  await expect(page.locator(`text=/${nickname}/i`).first()).toBeVisible({
+    timeout: 15000,
+  });
 }
 
 test.describe("SyncWatch Player E2E Regressions", () => {
@@ -20,7 +32,6 @@ test.describe("SyncWatch Player E2E Regressions", () => {
   test("1. Basic Connection and UI Mounting", async ({ page }) => {
     await joinRoom(page, roomUrl, "Tester1");
     // Ensure the main UI frames mount
-    await expect(page.locator("text=SyncWatch")).toBeVisible();
     await expect(page.locator("text=Entities")).toBeVisible();
 
     // Check if the add video input is mounted in the Player component
@@ -66,9 +77,10 @@ test.describe("SyncWatch Player E2E Regressions", () => {
     expect(stepAttribute).toBe("any");
   });
 
-  // Note: We skip the heavy multi-page orchestration tests if they fail frequently in CI
-  // due to WebSocket CORS blocks or IP limitations on GitHub Actions / Vercel.
-  test.skip("3. Multi-user Connection Sync", async ({ browser }) => {
+  // Unskipped and stabilized using explicit waiting strategies
+  test("3. Multi-user Connection Sync and Playlist Replication", async ({
+    browser,
+  }) => {
     const context1 = await browser.newContext();
     const context2 = await browser.newContext();
     const page1 = await context1.newPage();
@@ -81,10 +93,47 @@ test.describe("SyncWatch Player E2E Regressions", () => {
     // Ensure both landed on the same page
     expect(page1.url()).toBe(page2.url());
 
-    // Check if both users appear in the participant list
-    await expect(page1.locator("text=Host")).toBeVisible();
-    await expect(page1.locator("text=Viewer")).toBeVisible();
-    await expect(page2.locator("text=Host")).toBeVisible();
-    await expect(page2.locator("text=Viewer")).toBeVisible();
+    // Check if both users appear in the participant list (Eventual consistency DOM polling)
+    await expect(page1.locator(`text=/Host/i`).first()).toBeVisible({
+      timeout: 15000,
+    });
+    await expect(page1.locator(`text=/Viewer/i`).first()).toBeVisible({
+      timeout: 15000,
+    });
+    await expect(page2.locator(`text=/Host/i`).first()).toBeVisible({
+      timeout: 15000,
+    });
+    await expect(page2.locator(`text=/Viewer/i`).first()).toBeVisible({
+      timeout: 15000,
+    });
+
+    // --- Playlist Add & Sync Test ---
+    // Host adds a video (Using a mocked local endpoint since w3schools video was throwing ECONNREFUSED)
+    const urlInput = page1.locator(
+      'input[placeholder="Paste video stream URL..."]',
+    );
+    await urlInput.waitFor({ state: "visible" });
+
+    // Intercept metadata fetching to mock the response, avoiding actual network requests
+    await page1.route("**/api/metadata?url=*", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          title: "Mocked Sync Video",
+          provider: "youtube",
+          duration: 120,
+          thumbnail: "",
+        }),
+      });
+    });
+
+    await urlInput.fill("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
+    await page1.locator("button", { hasText: "Init" }).click();
+
+    // Viewer immediately checks if the video title replicates into their local DOM flawlessly
+    await expect(page2.locator("text=Mocked Sync Video")).toBeVisible({
+      timeout: 15000,
+    });
   });
 });
