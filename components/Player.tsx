@@ -39,6 +39,8 @@ import { formatTime, calculateDrift } from "@/lib/utils";
 import { Scrubber } from "./Scrubber";
 import { MediaApiService } from "@/lib/MediaApiService";
 import { usePlayerShortcuts } from "@/hooks/usePlayerShortcuts";
+import { useFlashback } from "@/hooks/useFlashback";
+import { Undo2 } from "lucide-react";
 
 const ReactPlayer = dynamic(() => import("react-player"), {
   ssr: false,
@@ -93,6 +95,8 @@ export default function Player() {
   const [mounted, setMounted] = useState(false);
   const [localPlaybackRate, setLocalPlaybackRate] = useState<number>(1);
   const [userJoined, setUserJoined] = useState(false);
+  const { flashbacks, registerPossibleFlashback, popFlashback } =
+    useFlashback();
 
   const isDocumentVisibleRef = useRef(true);
 
@@ -210,7 +214,12 @@ export default function Player() {
       ) {
         performProgrammaticSeek(expectedPosition);
         setLocalPlaybackRate(playback.rate);
-      } else if (currentDrift > 1.0 && !isBuffering && !isIframeProvider) {
+      } else if (
+        currentDrift > 0.5 &&
+        !isBuffering &&
+        !isIframeProvider &&
+        currentMedia?.provider?.toLowerCase() !== "youtube"
+      ) {
         const rateAdjustment = currentPosition < expectedPosition ? 1.05 : 0.95;
         setLocalPlaybackRate(playback.rate * rateAdjustment);
       } else {
@@ -274,6 +283,12 @@ export default function Player() {
   const handleSeekMouseUp = (percent: number) => {
     setSeeking(false);
     const newPosition = percent * duration;
+
+    // Register flashback for large jumps
+    if (currentMediaId && canControl) {
+      registerPossibleFlashback(getAccurateTime(), newPosition, currentMediaId);
+    }
+
     if (playerRef.current) {
       playerRef.current.currentTime = newPosition;
     }
@@ -481,7 +496,9 @@ export default function Player() {
               }}
               style={{ position: "absolute", top: 0, left: 0 }}
               config={{
-                youtube: { playerVars: { showinfo: 1, controls: 0 } },
+                youtube: {
+                  playerVars: { showinfo: 0, controls: 1, disablekb: 0 },
+                },
                 vimeo: { playerOptions: { controls: false } },
                 twitch: {
                   options: {
@@ -554,31 +571,23 @@ export default function Player() {
         )}
 
         {/* Interaction overlay - Blocks native interaction but allows custom controls */}
-        {currentMedia.provider?.toLowerCase() !== "twitch" && (
-          <>
-            {/* Main click capture layer */}
-            <div
-              className={`absolute inset-0 z-10 ${canControl ? "cursor-pointer" : "cursor-default"} ${qualityMenuOpen ? "pointer-events-none" : ""}`}
-              onClick={() => {
-                if (qualityMenuOpen) {
-                  return;
-                }
-                if (canControl) {
-                  playing ? handlePause() : handlePlay();
-                }
-              }}
-            />
-
-            {/* Passthrough window for YouTube's native Gear Icon (top right usually) */}
-            {currentMedia.provider === "youtube" && (
+        {currentMedia.provider?.toLowerCase() !== "twitch" &&
+          currentMedia.provider?.toLowerCase() !== "youtube" && (
+            <>
+              {/* Main click capture layer */}
               <div
-                className="pointer-events-none absolute top-0 right-0 z-20 h-16 w-24"
-                // Actually we need the pointer events to fall straight through z-10
-                // to the iframe below (z-0). We achieve this by *not* covering it.
+                className={`absolute inset-0 z-10 ${canControl ? "cursor-pointer" : "cursor-default"} ${qualityMenuOpen ? "pointer-events-none" : ""}`}
+                onClick={() => {
+                  if (qualityMenuOpen) {
+                    return;
+                  }
+                  if (canControl) {
+                    playing ? handlePause() : handlePlay();
+                  }
+                }}
               />
-            )}
-          </>
-        )}
+            </>
+          )}
 
         {error && (
           <div className="bg-theme-bg/95 border-theme-danger absolute inset-0 z-20 flex flex-col items-center justify-center border-4 shadow-[inset_0_0_50px_var(--color-theme-danger)] backdrop-blur-sm">
@@ -636,7 +645,7 @@ export default function Player() {
       </div>
 
       {/* Custom Controls Panel */}
-      <>
+      {currentMedia.provider?.toLowerCase() !== "youtube" && (
         <div className="font-theme absolute right-0 bottom-0 left-0 z-60 p-4 opacity-0 transition-opacity duration-300 group-hover:opacity-100 focus-within:opacity-100">
           <div className="bg-theme-bg/80 border-theme-border/50 rounded-theme border-2 p-3 shadow-lg backdrop-blur-md">
             {/* Timeline */}
@@ -683,6 +692,24 @@ export default function Player() {
                 >
                   <SkipForward className="h-5 w-5 fill-current" />
                 </button>
+
+                {/* Undo Seek (Flashback) */}
+                {canControl &&
+                  flashbacks.some((f) => f.mediaId === currentMediaId) && (
+                    <button
+                      title="Undo accidental seek"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const restoredPos = popFlashback(currentMediaId!);
+                        if (restoredPos !== null) {
+                          emitCommand("seek", { position: restoredPos });
+                        }
+                      }}
+                      className="text-theme-bg bg-theme-accent hover:bg-theme-danger animate-in fade-in zoom-in ring-theme-accent rounded-full p-2 transition-all outline-none focus-visible:ring-2"
+                    >
+                      <Undo2 className="h-5 w-5" />
+                    </button>
+                  )}
 
                 {/* Playback Speed */}
                 <div className="group/speed relative flex items-center space-x-2">
@@ -1006,7 +1033,7 @@ export default function Player() {
             </div>
           </div>
         </div>
-      </>
+      )}
     </div>
   );
 }
