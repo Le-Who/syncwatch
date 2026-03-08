@@ -159,14 +159,28 @@ export async function processQueueForRoom(roomId: string) {
           case "reorder_playlist":
             if (!canEditPlaylist || !Array.isArray(payload.playlist)) break;
             const oldIds = new Set(room.playlist.map((i: any) => i.id));
-            const newIds = new Set(payload.playlist.map((i: any) => i.id));
-            if (
-              oldIds.size === newIds.size &&
-              [...oldIds].every((id) => newIds.has(id))
-            ) {
-              room.playlist = payload.playlist;
-              stateChanged = true;
+            const newOrderIds = payload.playlist.map((i: any) => i.id);
+
+            // Reconcile arrays instead of blind overwrite (Concurrency Fix)
+            const reconciledPlaylist = [];
+
+            // 1. Maintain items that exist in both, in the new order
+            for (const id of newOrderIds) {
+              const item = room.playlist.find((i: any) => i.id === id);
+              if (item) {
+                reconciledPlaylist.push(item);
+                oldIds.delete(id);
+              }
             }
+
+            // 2. Append items that were concurrently added (exist in oldIds but not in payload)
+            for (const leftoverId of oldIds) {
+              const item = room.playlist.find((i: any) => i.id === leftoverId);
+              if (item) reconciledPlaylist.push(item);
+            }
+
+            room.playlist = reconciledPlaylist;
+            stateChanged = true;
             break;
 
           case "set_media":

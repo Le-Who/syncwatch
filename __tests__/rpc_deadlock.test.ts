@@ -8,13 +8,13 @@ const SUPABASE_URL =
 const SUPABASE_SERVICE_ROLE_KEY =
   process.env.SUPABASE_SERVICE_ROLE_KEY ||
   process.env.SUPABASE_SERVICE_KEY ||
-  "";
+  "dummy";
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
 describe("RPC Deadlock Test (sync_room_state)", () => {
   it("should handle highly concurrent disjoint array updates without deadlocking", async () => {
-    if (!SUPABASE_SERVICE_ROLE_KEY) {
+    if (!SUPABASE_SERVICE_ROLE_KEY || SUPABASE_SERVICE_ROLE_KEY === "dummy") {
       console.warn(
         "Skipping DB deadlock test because no service key is available",
       );

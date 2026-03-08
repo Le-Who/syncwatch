@@ -22,6 +22,14 @@ vi.mock("http", () => {
   };
 });
 
+// Mock Redis Rate Limit & Queue to prevent hitting Redis in unit tests
+vi.mock("../lib/redis-rate-limit", () => {
+  return {
+    checkRedisRateLimit: vi.fn().mockResolvedValue(true),
+    getRedisClient: vi.fn().mockReturnValue(null),
+  };
+});
+
 // Mock Supabase
 vi.mock("@supabase/supabase-js", () => {
   return {
@@ -34,6 +42,16 @@ vi.mock("@supabase/supabase-js", () => {
       delete: vi.fn().mockReturnThis(),
       in: vi.fn().mockResolvedValue({}),
       order: vi.fn().mockReturnThis(),
+    }),
+  };
+});
+
+// Mock Redis Lua Fast Mutation
+vi.mock("../lib/redis-lua", () => {
+  return {
+    executeFastMutation: vi.fn().mockResolvedValue({
+      success: true,
+      state: { id: "mock_room", participants: {} },
     }),
   };
 });
@@ -63,6 +81,12 @@ vi.mock("socket.io", () => {
       }
       emit() {}
     },
+  };
+});
+
+vi.mock("../lib/redis-queue", () => {
+  return {
+    pushSlowCommand: vi.fn().mockResolvedValue(true),
   };
 });
 
@@ -124,9 +148,6 @@ describe("server.ts Socket Handlers", () => {
     expect(mockSocket.emit).toHaveBeenCalledWith(
       "room_state",
       expect.any(Object),
-    );
-    expect(mockSocket.to).toHaveBeenCalledWith(
-      "123e4567-e89b-12d3-a456-426614174000",
     );
 
     // Check payload of emit

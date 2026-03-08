@@ -100,8 +100,10 @@ export default function Player() {
 
   const performProgrammaticSeek = (position: number) => {
     ignoreNextPlayPauseEvent.current = true; // A seek might trigger buffering/play events
-    if (playerRef.current) {
-      playerRef.current.currentTime = position;
+    if (playerRef.current && typeof playerRef.current.seekTo === "function") {
+      playerRef.current.seekTo(position, "seconds");
+    } else if (playerRef.current) {
+      playerRef.current.currentTime = position; // Fallback
     }
   };
 
@@ -173,10 +175,10 @@ export default function Player() {
           performProgrammaticSeek(expectedPosition);
           setLocalPlaybackRate(playback.rate);
         }
-        // If drift is between 1.0s and 3.0s, gently correct it (1.02x or 0.98x) to preserve audio fidelity.
+        // If drift is between 1.0s and 3.0s, gently correct it (1.05x or 0.95x) to preserve audio fidelity.
         else if (currentDrift > 1.0 && !isBuffering) {
           const rateAdjustment =
-            currentPosition < expectedPosition ? 1.02 : 0.98;
+            currentPosition < expectedPosition ? 1.05 : 0.95;
           setLocalPlaybackRate(playback.rate * rateAdjustment);
         } else {
           // Inside the 1.0s deadzone, trust local playback rate entirely.

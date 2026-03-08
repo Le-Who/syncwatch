@@ -25,6 +25,10 @@ SyncWatch is a latency-tolerant, real-time, server-authoritative watch-party app
 - **Deterministic E2E Test Suite**: Stabilized Playwright E2E suites by isolating tests from DNS/Network unreliability. `page.route` securely mocks external MP4 streams with deterministic local `200 OK` HTTP buffers.
 - **Database UUID Validation**: Guaranteed all dynamically generated room IDs use strict 36-character UUIDv5 strings using reliable MD5 hashes, satisfying the Postgres `uuid` schema requirements and eliminating `22P02` serialization poison-pill crashes.
 - **Multi-Browser Stability**: Implemented deterministic guest ID assignments in the Socket.io `io.use` middleware. Unauthenticated connections now safely receive a `guest_` session (unblocking the UI from freezing) while state-mutating commands are explicitly rejected.
+- **Strict Pub/Sub Sanitization**: Eliminated critical Participant Session Token leaks by enforcing `sanitizeRoom` interceptors on all Redis Pub/Sub broadcast listeners before routing events to WebSockets.
+- **Multi-Node Phantom User Fix**: Disconnected local socket.to `participant_joined` emissions and refactored them to route globally through the Redis Pub/Sub message broker, guaranteeing UX sync across distributed node clusters.
+- **Database DDoS Protection & Memory Limits**: Sandboxed the background Database Persistence worker. Enforced hard processing limits (`LIMIT 50`) on the Redis `pending_db_syncs` ZSET and added an Exponential Request Backoff (1 minute penalty) on Supabase insertion failures, preventing Thundering Herds and catastrophic Node.js OOM crashes.
+- **Playlist Race Condition Rectification**: Rewrote the `reorder_playlist` Socket worker logic from destructive full-array-overwrites to a granular Concurrent Delta Reconciler. Video items added by peers mid-reorder are no longer lost to localized state overrides.
 
 ## Database Setup (Supabase)
 

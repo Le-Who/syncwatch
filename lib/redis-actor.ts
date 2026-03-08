@@ -3,6 +3,45 @@ import { getRedisClient } from "./redis-rate-limit";
 export const pubClient = getRedisClient;
 export const subClient = () => getRedisClient()?.duplicate();
 
+// LRU Cache for fallback when Redis is unavailable to prevent OOM
+class SimpleLRU {
+  private cache = new Map<string, { value: any; lastAccessed: number }>();
+  private readonly maxSize: number;
+
+  constructor(maxSize: number = 1000) {
+    this.maxSize = maxSize;
+  }
+
+  get(key: string) {
+    const item = this.cache.get(key);
+    if (item) {
+      item.lastAccessed = Date.now();
+      return JSON.parse(JSON.stringify(item.value)); // Clone to prevent mutation
+    }
+    return null;
+  }
+
+  set(key: string, value: any) {
+    if (this.cache.size >= this.maxSize && !this.cache.has(key)) {
+      // Find oldest key
+      let oldestKey: string | null = null;
+      let oldestTime = Infinity;
+      for (const [k, v] of this.cache.entries()) {
+        if (v.lastAccessed < oldestTime) {
+          oldestTime = v.lastAccessed;
+          oldestKey = k;
+        }
+      }
+      if (oldestKey) this.cache.delete(oldestKey);
+    }
+    this.cache.set(key, {
+      value: JSON.parse(JSON.stringify(value)),
+      lastAccessed: Date.now(),
+    });
+  }
+}
+const localRooms = new SimpleLRU(500);
+
 export async function withLock<T>(
   resourceId: string,
   ttl: number,
@@ -32,7 +71,11 @@ export async function withLock<T>(
   }
 
   try {
-    return await operation();
+    // Watchdog implementation: forceful reject if operation stalls longer than lock TTL to prevent Split-Brain
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("Lock operation timeout")), ttl - 500),
+    );
+    return await Promise.race([operation(), timeoutPromise]);
   } finally {
     const script = `
       if redis.call("get", KEYS[1]) == ARGV[1] then
@@ -50,16 +93,13 @@ export async function withLock<T>(
   }
 }
 
-const localRooms = new Map<string, any>();
-
 /**
  * Load room state from Redis cache
  */
 export async function getRedisRoom(roomId: string): Promise<any | null> {
   const redisClient = getRedisClient();
   if (!redisClient) {
-    const memRoom = localRooms.get(roomId);
-    return memRoom ? JSON.parse(JSON.stringify(memRoom)) : null; // Return clone to prevent reference mutations
+    return localRooms.get(roomId);
   }
   const data = await redisClient.get(`room_state:${roomId}`);
   return data ? JSON.parse(data) : null;

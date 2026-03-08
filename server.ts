@@ -1,12 +1,12 @@
 import { createServer, Server as NetServer } from "http";
 import next from "next";
 import { Server as SocketIOServer } from "socket.io";
-import { randomUUID } from "crypto";
+// Use valid RFC 4122 v5 UUID generation
+import { v5 as uuidv5 } from "uuid";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { jwtVerify } from "jose";
 import * as cookie from "cookie";
 import { checkRedisRateLimit, getRedisClient } from "./lib/redis-rate-limit";
-import { createHash } from "crypto";
 import {
   withLock,
   getRedisRoom,
@@ -20,6 +20,9 @@ import { executeFastMutation } from "./lib/redis-lua";
 import { pushSlowCommand } from "./lib/redis-queue";
 import { processQueueForRoom } from "./lib/redis-queue-worker";
 
+// Deterministic UUID namespace strictly for SyncWatch (arbitrary valid UUIDv4)
+const SYNCWATCH_NAMESPACE = "1b671a64-40d5-491e-99b0-da01ff1f3341";
+
 function getDeterministicUUID(roomId: string): string {
   if (
     roomId.length === 36 &&
@@ -29,10 +32,7 @@ function getDeterministicUUID(roomId: string): string {
   ) {
     return roomId;
   }
-  const hash = createHash("md5")
-    .update("room_" + roomId)
-    .digest("hex");
-  return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-4${hash.slice(13, 16)}-a${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
+  return uuidv5(roomId, SYNCWATCH_NAMESPACE);
 }
 
 // Load environment variables manually for the custom server
@@ -232,7 +232,7 @@ const forcePersistRoom = async (room: RoomState) => {
   }
 };
 
-// Robust Background Worker: Guaranteed at-least-once delivery to DB
+// Robust Background Worker: Guaranteed at-least-once delivery to DB (Concurrent Batched Processing)
 setInterval(async () => {
   if (!supabase) return;
 
@@ -240,50 +240,53 @@ setInterval(async () => {
   let queue: string[] = [];
 
   if (redisClient) {
-    // Fetch all pending syncs older than 5 seconds to provide debouncing,
-    // or those that have been stuck for a while.
     const cutoff = Date.now() - 5000;
-    // zrangebyscore fetches the room IDs
+    // LIMIT to 50 items per tick to prevent OOM and Event Loop blocking
     queue = await redisClient
-      .zrangebyscore("pending_db_syncs", "-inf", cutoff)
+      .zrangebyscore("pending_db_syncs", "-inf", cutoff, "LIMIT", 0, 50)
       .catch(() => []);
   } else {
     if (writeBehindQueue.size === 0) return;
-    queue = Array.from(writeBehindQueue);
-    writeBehindQueue.clear();
+    // Limit memory queue processing too
+    queue = Array.from(writeBehindQueue).slice(0, 50);
+    queue.forEach((q) => writeBehindQueue.delete(q));
   }
 
-  for (const roomId of queue) {
-    let room;
-    const roomStr = await getRedisRoom(roomId);
-    if (roomStr) room = roomStr;
+  // Chunk array into batches of 10 to prevent slamming Event Loop and PostgreSQL pool
+  const BATCH_SIZE = 10;
+  for (let i = 0; i < queue.length; i += BATCH_SIZE) {
+    const batch = queue.slice(i, i + BATCH_SIZE);
 
-    if (!room) {
-      // If room no longer exists in cache, assume we don't need to sync its active state anymore.
-      if (redisClient)
-        await redisClient.zrem("pending_db_syncs", roomId).catch(() => {});
-      continue;
-    }
+    const promises = batch.map(async (roomId) => {
+      let room;
+      const roomStr = await getRedisRoom(roomId);
+      if (roomStr) room = roomStr;
 
-    try {
-      await forcePersistRoom(room);
-      // ONLY remove from pending syncs if forcePersistRoom succeeds.
-      // If it fails, it remains in the ZSET and will be retried next tick.
-      if (redisClient) {
-        await redisClient.zrem("pending_db_syncs", roomId).catch(() => {});
+      if (!room) {
+        if (redisClient) {
+          await redisClient.zrem("pending_db_syncs", roomId).catch(() => {});
+        }
+        return;
       }
-    } catch (err) {
-      // Re-queue on transient failure for local mode
-      // Redis mode implicitly keeps it in the ZSET because we haven't ZREM'd it yet
-      // However, we update its score to push it back in the line
-      if (redisClient) {
-        await redisClient
-          .zadd("pending_db_syncs", Date.now(), roomId)
-          .catch(() => {});
-      } else {
-        writeBehindQueue.add(roomId);
+
+      try {
+        await forcePersistRoom(room);
+        if (redisClient) {
+          await redisClient.zrem("pending_db_syncs", roomId).catch(() => {});
+        }
+      } catch (err) {
+        if (redisClient) {
+          // Add Exponential Backoff (1 minute delay) on failure to prevent DB Retry Storm
+          await redisClient
+            .zadd("pending_db_syncs", Date.now() + 60000, roomId)
+            .catch(() => {});
+        } else {
+          writeBehindQueue.add(roomId);
+        }
       }
-    }
+    });
+
+    await Promise.allSettled(promises);
   }
 }, 10000); // Check every 10 seconds
 
@@ -462,10 +465,16 @@ app.prepare().then(() => {
             // If we have local clients connected to this room, emit
             // Using io.sockets.adapter.rooms.has is an efficient way to check local presence
             if (io.sockets.adapter.rooms.has(roomId)) {
+              // SECURITY FIX: Must sanitize data from PubSub before broadcasting to clients
               io.to(roomId).emit("room_state", {
-                room: data.payload,
+                room: sanitizeRoom(data.payload),
                 serverTime: Date.now(),
               });
+            }
+          } else if (data.type === "participant_joined") {
+            // Re-broadcast to all clients connected to this Node instance in the room
+            if (io.sockets.adapter.rooms.has(roomId)) {
+              io.to(roomId).emit("participant_joined", data.payload);
             }
           }
         } catch (e) {
@@ -539,18 +548,24 @@ app.prepare().then(() => {
         const pId = socket.data.participantId;
         const isFirst = Object.keys(room.participants).length === 0;
 
-        const existingParticipant = room.participants[pId];
-        if (existingParticipant) {
-          existingParticipant.lastSeen = Date.now();
-          existingParticipant.nickname =
-            nickname || existingParticipant.nickname;
-        } else {
-          room.participants[pId] = {
-            id: pId,
-            nickname: nickname || `Guest ${Math.floor(Math.random() * 1000)}`,
-            role: isFirst ? "owner" : "guest",
-            lastSeen: Date.now(),
-          };
+        const isGuest = pId.startsWith("guest_");
+
+        // If not a guest, or if it IS a guest but we want to track them anyway (optional,
+        // here we are changing it so guests ARE NOT added to the participant block to save cache)
+        if (!isGuest) {
+          const existingParticipant = room.participants[pId];
+          if (existingParticipant) {
+            existingParticipant.lastSeen = Date.now();
+            existingParticipant.nickname =
+              nickname || existingParticipant.nickname;
+          } else {
+            room.participants[pId] = {
+              id: pId,
+              nickname: nickname || `Guest ${Math.floor(Math.random() * 1000)}`,
+              role: isFirst ? "owner" : "guest",
+              lastSeen: Date.now(),
+            };
+          }
         }
 
         room.version++;
@@ -574,6 +589,7 @@ app.prepare().then(() => {
       }
 
       const pId = socket.data.participantId;
+      const isGuest = pId.startsWith("guest_");
       socket.join(roomId);
       currentRoomId = roomId;
       currentParticipantId = pId;
@@ -583,8 +599,15 @@ app.prepare().then(() => {
         serverTime: Date.now(),
       });
 
-      const joinedInfo = { ...finalRoomState.participants[pId] };
-      socket.to(roomId).emit("participant_joined", joinedInfo);
+      if (!isGuest) {
+        const joinedInfo = { ...finalRoomState.participants[pId] };
+        // Route through Redis PubSub instead of localized socket.to
+        // This solves the multi-node phantom users bug!
+        publishRoomEvent(roomId, {
+          type: "participant_joined",
+          payload: joinedInfo,
+        }).catch((e) => console.error("Failed publishing join", e));
+      }
     });
 
     socket.on("command", async (rawCommand) => {
