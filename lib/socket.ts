@@ -41,6 +41,12 @@ class RoomSocketService {
     socket.on("connect", () => {
       this.setState({ isConnected: true });
       this.syncClock();
+
+      // MASK TCP DISCONNECTS: Automatically upgrade session on background reconnects
+      const state = this.getState();
+      if (state.sessionToken) {
+        this.upgradeSession(state.sessionToken);
+      }
     });
 
     socket.on("disconnect", () => {
@@ -118,7 +124,7 @@ class RoomSocketService {
     this.isResyncing = true;
     setTimeout(() => {
       this.isResyncing = false;
-    }, 5000); // 5 sec debounce to prevent 429 loops
+    }, 60000); // Massive 60 sec debounce: If we fail to fetch token, don't spam API. Fixes 429 loops.
 
     const state = this.getState();
     if (state.room && typeof window !== "undefined") {
