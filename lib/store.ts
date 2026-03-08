@@ -11,6 +11,7 @@ export interface PlaybackState {
   baseTimestamp: number;
   rate: number;
   updatedBy: string;
+  lastActionNonce?: string; // Optional because legacy rooms might not have it yet
 }
 
 export interface PlaylistItem {
@@ -162,6 +163,20 @@ export const useStore = create<AppState>((set, get) => ({
     set({ isConnected: false, room: null });
   },
   sendCommand: (type: string, payload?: any) => {
+    const isFastPath = [
+      "play",
+      "pause",
+      "seek",
+      "update_rate",
+      "buffering",
+      "sync_correction",
+    ].includes(type);
+
+    if (isFastPath) {
+      // Inject atomic nonce for action deduplication (Anti-Echo/Rollback)
+      payload = { ...payload, nonce: crypto.randomUUID() };
+    }
+
     roomSocketService.sendCommand(type, payload);
   },
 }));

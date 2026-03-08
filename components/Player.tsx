@@ -1,5 +1,7 @@
 "use client";
 
+import "default-passive-events";
+
 import {
   useEffect,
   useRef,
@@ -176,6 +178,7 @@ export default function Player() {
     status: string;
     position: number;
     time: number;
+    nonce?: string;
   } | null>(null);
 
   const lastProgrammaticSeekRef = useRef<number>(0);
@@ -197,6 +200,10 @@ export default function Player() {
   }, []);
 
   const performProgrammaticSeek = (position: number) => {
+    // Soft Mode Guarantee: If we are in "echo protection" (last action was ours),
+    // never perform hard seeks during this interval, only drift math updates.
+    if (Date.now() < ignoreNativeEventsUntilRef.current) return;
+
     lastProgrammaticSeekRef.current = Date.now();
     if (
       realPlayerRef.current &&
@@ -233,13 +240,15 @@ export default function Player() {
     ) {
       return;
     }
+    const nonce = crypto.randomUUID(); // Manually create a nonce to track our own UI actions locally before store
     lastCommandEmitTimeRef.current = Date.now();
     lastStateEmittedRef.current = {
       status: type,
       position: payload?.position,
       time: Date.now(),
-    };
-    sendCommand(type, payload);
+      nonce,
+    } as any;
+    sendCommand(type, { ...payload, nonce });
   };
 
   const syncPlayback = useEventCallback(() => {
@@ -248,6 +257,19 @@ export default function Player() {
     if (Date.now() - lastCommandEmitTimeRef.current < 1500) {
       // Optimistic UI barrier: ignore server discrepancy immediately after manual UI action
       return;
+    }
+
+    // [Problem 1 Fix]: Nonce-based Identity (Anti-Echo Rollback)
+    const storeOpts = useStore.getState();
+    if (
+      playback.lastActionNonce &&
+      lastStateEmittedRef.current?.nonce === playback.lastActionNonce
+    ) {
+      // Server just repeated back our own recent action.
+      // Enter "Soft Mode": grant another 2 seconds of immunity against hard `seekTo` corrections
+      ignoreNativeEventsUntilRef.current = Date.now() + 2000;
+      // We clear the local tracking so we only grant immunity once per nonce resolution
+      lastStateEmittedRef.current.nonce = undefined;
     }
 
     const currentServerTime = Date.now() + serverClockOffset;
@@ -269,21 +291,33 @@ export default function Player() {
         setPlaying(true);
       }
 
+      // [Problem 5 Fix]: Owner As Oracle in Controlled Mode
+      if (controlMode === "controlled" && myRole === "owner") {
+        // The owner dictates time. If the owner's local player drifts from the server's math
+        // by more than 600ms, the owner forces the server to accept the local position.
+        if (currentDrift > 0.6) {
+          emitCommand("sync_correction", { position: currentPosition });
+          // No local seek required, we are the authority.
+          return;
+        }
+      }
+
       const isIframeProvider = ["youtube", "vimeo", "twitch"].includes(
         currentMedia?.provider?.toLowerCase() || "",
       );
       const isTwitch = currentMedia?.provider?.toLowerCase() === "twitch";
 
+      // [Problem 3 Fix]: Dual-Threshold Adaptive Rate (Hard Sink vs Smooth Rate Shift)
       if (
-        (currentDrift > 3.0 || (isIframeProvider && currentDrift > 1.5)) &&
+        (currentDrift > 3.0 || (isIframeProvider && currentDrift > 2.0)) &&
         !isBuffering &&
         !isTwitch
       ) {
+        // [THRESHOLD 1]: Massive drift (>3.0s). Requires a violent hard seek.
         let expectedClamped = expectedPosition;
         if (duration > 0 && expectedClamped > duration) {
           expectedClamped = duration;
         }
-        ignoreNativeEventsUntilRef.current = Date.now() + 1500;
         performProgrammaticSeek(expectedClamped);
         setLocalPlaybackRate(playback.rate);
       } else if (
@@ -292,9 +326,11 @@ export default function Player() {
         !isIframeProvider &&
         currentMedia?.provider?.toLowerCase() !== "youtube"
       ) {
+        // [THRESHOLD 2]: Minor drift (0.5s - 3.0s). Shift playbackRate invisibly.
         const rateAdjustment = currentPosition < expectedPosition ? 1.05 : 0.95;
         setLocalPlaybackRate(playback.rate * rateAdjustment);
       } else {
+        // PERFECT SYNC
         setLocalPlaybackRate(playback.rate);
       }
     } else if (playback.status === "paused") {
@@ -548,7 +584,17 @@ export default function Player() {
           if (qualityMenuOpen) setQualityMenuOpen(false);
         }}
       >
-        <div className="absolute top-0 left-0 h-full w-full origin-top-left transition-transform duration-700">
+        <div
+          className="absolute top-0 left-0 h-full w-full origin-top-left transition-transform duration-700"
+          style={{
+            // [Problem 7 Fix]: Twitch Embed visibility validation hack.
+            // We MUST keep the DOM element fully visible/opaque initially. We mask it with pointer-events instead
+            // of display:none or opacity:0.
+            visibility: "visible",
+            opacity: 1,
+            pointerEvents: isBuffering || !userJoined ? "none" : "auto",
+          }}
+        >
           {mounted && (
             <ReactPlayer
               ref={playerRef}
@@ -818,7 +864,7 @@ export default function Player() {
 
         {/* User Gesture Guard Overlay */}
         {!userJoined && (
-          <div className="absolute inset-0 z-40 flex flex-col items-center justify-center bg-black/80 backdrop-blur-md">
+          <div className="pointer-events-auto absolute inset-0 z-40 flex flex-col items-center justify-center bg-black/80 backdrop-blur-md">
             <button
               onClick={(e) => {
                 e.stopPropagation();

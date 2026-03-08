@@ -31,6 +31,11 @@ const LUA_FAST_MUTATION = `
      can_control = true
   end
 
+  if room.settings.controlMode == "controlled" and mutation_type == "sync_correction" then
+     if participant.role ~= "owner" then return "UNAUTHORIZED" end
+     can_control = true
+  end
+
   if not can_control then return "UNAUTHORIZED" end
 
   local changed = false
@@ -49,6 +54,7 @@ const LUA_FAST_MUTATION = `
            room.playback.basePosition = mutation_payload.position
            room.playback.baseTimestamp = now
            room.playback.updatedBy = participant_nickname
+           if mutation_payload.nonce then room.playback.lastActionNonce = mutation_payload.nonce end
            changed = true
         end
      end
@@ -59,6 +65,7 @@ const LUA_FAST_MUTATION = `
            room.playback.basePosition = mutation_payload.position
            room.playback.baseTimestamp = now
            room.playback.updatedBy = participant_nickname
+           if mutation_payload.nonce then room.playback.lastActionNonce = mutation_payload.nonce end
            changed = true
         end
      end
@@ -72,6 +79,15 @@ const LUA_FAST_MUTATION = `
         end
         room.playback.rate = new_rate
         room.playback.updatedBy = participant_nickname
+        if mutation_payload.nonce then room.playback.lastActionNonce = mutation_payload.nonce end
+        changed = true
+     end
+  elseif mutation_type == "sync_correction" then
+     if type(mutation_payload.position) == "number" and mutation_payload.position >= 0 then
+        room.playback.basePosition = mutation_payload.position
+        room.playback.baseTimestamp = now
+        -- Update the nonce but do not change the underlying playing/paused status
+        if mutation_payload.nonce then room.playback.lastActionNonce = mutation_payload.nonce end
         changed = true
      end
   end
@@ -105,17 +121,17 @@ export async function executeFastMutation(
   }
 
   try {
-    const result = (await redisClient.eval(
-      LUA_FAST_MUTATION,
-      1,
-      `room_state:${roomId}`,
-      expectedVersion.toString(),
-      mutationType,
-      JSON.stringify(payload),
-      participantId,
-      participantNickname,
-      Date.now().toString(),
-    )) as string;
+    const result = (await (redisClient as any).eval(LUA_FAST_MUTATION, {
+      keys: ["room_state:" + roomId],
+      arguments: [
+        expectedVersion.toString(),
+        mutationType,
+        JSON.stringify(payload),
+        participantId,
+        participantNickname,
+        Date.now().toString(),
+      ],
+    })) as string;
 
     if (typeof result === "string") {
       if (result.startsWith("{")) {

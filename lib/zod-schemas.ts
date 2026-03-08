@@ -7,23 +7,43 @@ export const commandSchema = z.discriminatedUnion("type", [
     payload: z.object({
       position: z.number().min(0),
       forceSeek: z.boolean().optional(),
+      nonce: z.string().optional(),
     }),
   }),
   z.object({
     type: z.literal("pause"),
-    payload: z.object({ position: z.number().min(0) }),
+    payload: z.object({
+      position: z.number().min(0),
+      nonce: z.string().optional(),
+    }),
   }),
   z.object({
     type: z.literal("seek"),
-    payload: z.object({ position: z.number().min(0) }),
+    payload: z.object({
+      position: z.number().min(0),
+      nonce: z.string().optional(),
+    }),
   }),
   z.object({
     type: z.literal("buffering"),
-    payload: z.object({ position: z.number().min(0) }),
+    payload: z.object({
+      position: z.number().min(0),
+      nonce: z.string().optional(),
+    }),
   }),
   z.object({
     type: z.literal("update_rate"),
-    payload: z.object({ rate: z.number().min(0.25).max(4.0) }),
+    payload: z.object({
+      rate: z.number().min(0.25).max(4.0),
+      nonce: z.string().optional(),
+    }),
+  }),
+  z.object({
+    type: z.literal("sync_correction"),
+    payload: z.object({
+      position: z.number().min(0),
+      nonce: z.string().optional(),
+    }),
   }),
 
   // Slow Path

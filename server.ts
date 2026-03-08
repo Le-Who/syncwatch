@@ -541,15 +541,27 @@ app.prepare().then(() => {
     let currentRoomId: string | null = null;
     let currentParticipantId: string | null = null;
 
-    // NTP-style time sync implementation
+    // NTP-style time sync implementation with Keep-Alive piggybacking
     socket.on(
       "ping_time",
-      (
+      async (
         clientTime: number,
         callback: (serverTime: number, clientTime: number) => void,
       ) => {
         // Send back immediately so client can calculate RTT and offset
         callback(Date.now(), clientTime);
+
+        // PIGGYBACK KEEP-ALIVE (Fix for Problem 6):
+        // If the user is currently in a room, refresh the room's TTL in Redis so long sessions don't expire
+        if (currentRoomId) {
+          const redisClient = getRedisClient();
+          if (redisClient) {
+            // Async fire-and-forget
+            redisClient
+              .expire(`room_state:${currentRoomId}`, 86400)
+              .catch(() => {});
+          }
+        }
       },
     );
 
@@ -733,6 +745,7 @@ app.prepare().then(() => {
             "seek",
             "update_rate",
             "buffering",
+            "sync_correction", // New Controlled-Room Owner sync correction
           ].includes(type);
           if (isFastPath) {
             const result = await executeFastMutation(
