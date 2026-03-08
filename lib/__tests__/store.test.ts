@@ -119,4 +119,17 @@ describe("useStore", () => {
     expect(result.current.isConnected).toBe(false);
     expect(result.current.room).toBeNull();
   });
+
+  it("should append a unique nonce to fast-path commands to prevent echo rollbacks (TC-101)", () => {
+    const { result } = renderHook(() => useStore());
+    act(() => {
+      useStore.setState({ isConnected: true, room: { id: "room1" } as any });
+      result.current.sendCommand("play", { position: 10 });
+    });
+
+    expect(roomSocketService.sendCommand).toHaveBeenCalledWith(
+      "play",
+      expect.objectContaining({ position: 10, nonce: expect.any(String) }),
+    );
+  });
 });

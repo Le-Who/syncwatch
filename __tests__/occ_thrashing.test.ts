@@ -65,4 +65,54 @@ describe("OCC Thrashing Simulation (Phase 1)", () => {
     const room = JSON.parse(roomStr!);
     expect(room.playlist.length).toBe(10);
   });
+
+  it("should enforce strict OCC versioning and reject stale sequence commands (TC-201)", async () => {
+    if (!redis) return;
+
+    // Set baseline
+    await setRedisRoom(roomId, {
+      id: roomId,
+      version: 5,
+      sequence: 5,
+      participants: { u1: { id: "u1", role: "owner" } },
+      settings: { controlMode: "open" },
+      playlist: [],
+      playback: {
+        status: "paused",
+        basePosition: 0,
+        baseTimestamp: Date.now(),
+        rate: 1,
+        updatedBy: "u1",
+      }, // added rate and updatedBy to satisfy types
+    } as any);
+
+    // Emulate 2 clients racing with the same sequence knowledge (e.g. sequence 5)
+    const reqA = executeFastMutation(
+      roomId,
+      5,
+      "play",
+      { position: 10 },
+      "u1",
+      "u1",
+    );
+    const reqB = executeFastMutation(
+      roomId,
+      5,
+      "seek",
+      { position: 20 },
+      "u1",
+      "u1",
+    );
+
+    const [resA, resB] = await Promise.all([reqA, reqB]);
+
+    // One must succeed, one must fail with VERSION_CONFLICT
+    const successes = [resA, resB].filter((r: any) => r.success);
+    const conflicts = [resA, resB].filter(
+      (r: any) => !r.success && r.error === "VERSION_CONFLICT",
+    );
+
+    expect(successes).toHaveLength(1);
+    expect(conflicts).toHaveLength(1);
+  });
 });

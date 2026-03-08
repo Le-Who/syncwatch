@@ -151,4 +151,34 @@ describe("Player Component", () => {
     // Should emit "play" command
     expect(mockSendCommand).toHaveBeenCalledWith("play", expect.any(Object));
   });
+
+  it("should trigger a flashback seek when OCC rollback tick increments (TC-102)", () => {
+    (useStore as any).mockImplementation((selector: any) => {
+      const state = {
+        room: {
+          currentMediaId: "1",
+          playlist: [
+            { id: "1", url: "https://example.com/video.mp4", provider: "raw" },
+          ],
+          settings: { controlMode: "open" },
+          playback: {
+            status: "playing",
+            basePosition: 10,
+            baseTimestamp: Date.now() - 5000,
+            rate: 1,
+          },
+          participants: { user1: { role: "guest" } },
+        },
+        participantId: "user1",
+        sendCommand: mockSendCommand,
+        serverClockOffset: 0,
+        occRollbackTick: 1, // trigger rollback
+      };
+      return selector ? selector(state) : state;
+    });
+
+    render(<Player />);
+
+    expect(screen.getByTestId("mock-react-player")).toBeInTheDocument();
+  });
 });
