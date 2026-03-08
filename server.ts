@@ -180,33 +180,35 @@ const forcePersistRoom = async (room: RoomState) => {
   if (!supabase) return;
   try {
     const { error } = await supabase.rpc("sync_room_state", {
-      p_room_id: getDeterministicUUID(room.id),
-      p_name: room.name,
-      p_settings: room.settings,
-      p_owner_id: getDeterministicUUID(
-        Object.values(room.participants).find((p) => p.role === "owner")?.id ||
-          room.id,
-      ),
-      p_playlist: room.playlist.map((item, index) => ({
-        id: item.id,
-        url: item.url,
-        provider: item.provider,
-        title: item.title,
-        duration: item.duration,
-        addedBy: item.addedBy,
-        position: index,
-        lastPosition: item.lastPosition || 0,
-        thumbnail: item.thumbnail,
-      })),
-      p_playback: {
-        currentMediaId: room.currentMediaId,
-        status: room.playback.status,
-        basePosition: room.playback.basePosition,
-        baseTimestamp: room.playback.baseTimestamp,
-        rate: room.playback.rate,
-        updatedBy: room.playback.updatedBy,
+      room_data: {
+        id: getDeterministicUUID(room.id),
+        name: room.name,
+        settings: room.settings,
+        owner_id: getDeterministicUUID(
+          Object.values(room.participants).find((p) => p.role === "owner")
+            ?.id || room.id,
+        ),
+        playlist: room.playlist.map((item, index) => ({
+          id: item.id,
+          url: item.url,
+          provider: item.provider,
+          title: item.title,
+          duration: item.duration,
+          addedBy: item.addedBy,
+          position: index,
+          lastPosition: item.lastPosition || 0,
+          thumbnail: item.thumbnail,
+        })),
+        playback: {
+          mediaItemId: room.currentMediaId,
+          status: room.playback.status,
+          basePosition: room.playback.basePosition,
+          baseTimestamp: room.playback.baseTimestamp,
+          rate: room.playback.rate,
+          updatedBy: room.playback.updatedBy,
+        },
+        version: room.version,
       },
-      p_version: room.version,
     });
 
     if (error) {
