@@ -95,6 +95,7 @@ export default function Player() {
   const [mounted, setMounted] = useState(false);
   const [localPlaybackRate, setLocalPlaybackRate] = useState<number>(1);
   const [userJoined, setUserJoined] = useState(false);
+  const [useNativeTwitch, setUseNativeTwitch] = useState(false);
   const { flashbacks, registerPossibleFlashback, popFlashback } =
     useFlashback();
 
@@ -152,6 +153,8 @@ export default function Player() {
     setError(null);
     setIsReady(false);
     setIsBuffering(false);
+    // When media changes, reset twitch to custom UI by default
+    setUseNativeTwitch(false);
   }, [currentMediaId]);
 
   useEffect(() => {
@@ -287,7 +290,11 @@ export default function Player() {
       Date.now() - lastCommandEmitTimeRef.current > 500 &&
       Date.now() - lastServerStateChangeRef.current > 1500
     ) {
-      emitCommand("play", { position: getAccurateTime() });
+      // Very strict lock against propagating play immediately after a media change
+      const timeSinceMediaStart = Date.now() - (playback?.baseTimestamp || 0);
+      if (timeSinceMediaStart > 3000) {
+        emitCommand("play", { position: getAccurateTime() });
+      }
     }
   };
 
@@ -295,6 +302,14 @@ export default function Player() {
     setIsBuffering(false);
     setPlaying(false);
     if (pauseDebounceRef.current) clearTimeout(pauseDebounceRef.current);
+
+    // If media just started (autoplay/skip), completely swallow native "pause"
+    // loops from YouTube/Twitch as they pre-buffer.
+    const timeSinceMediaStart = Date.now() - (playback?.baseTimestamp || 0);
+    if (timeSinceMediaStart < 3000) {
+      console.log("[NATIVE DEBUG] Ignoring pause within 3s of media start");
+      return;
+    }
 
     pauseDebounceRef.current = setTimeout(() => {
       if (
@@ -467,7 +482,8 @@ export default function Player() {
               height="100%"
               controls={
                 currentMedia.provider?.toLowerCase() === "youtube" ||
-                currentMedia.provider?.toLowerCase() === "twitch"
+                (currentMedia.provider?.toLowerCase() === "twitch" &&
+                  useNativeTwitch)
               }
               playing={userJoined ? playing : false}
               volume={volume}
@@ -663,15 +679,19 @@ export default function Player() {
           </div>
         )}
 
-        {/* Thematic Scanline Overlay - Hidden for Twitch/YouTube to prevent iframe visibility occlusion blocks */}
-        {currentMedia.provider?.toLowerCase() !== "twitch" &&
-          currentMedia.provider?.toLowerCase() !== "youtube" && (
+        {/* Thematic Scanline Overlay - Hidden when native UI is active to prevent iframe visibility occlusion blocks */}
+        {currentMedia.provider?.toLowerCase() !== "youtube" &&
+          !(
+            currentMedia.provider?.toLowerCase() === "twitch" && useNativeTwitch
+          ) && (
             <div className="pointer-events-none absolute inset-0 z-0 bg-[linear-gradient(rgba(0,0,0,0)_50%,rgba(0,0,0,0.1)_50%)] bg-size-[100%_4px] opacity-30 mix-blend-overlay" />
           )}
 
         {/* Interaction overlay - Blocks native interaction but allows custom controls */}
-        {currentMedia.provider?.toLowerCase() !== "twitch" &&
-          currentMedia.provider?.toLowerCase() !== "youtube" && (
+        {currentMedia.provider?.toLowerCase() !== "youtube" &&
+          !(
+            currentMedia.provider?.toLowerCase() === "twitch" && useNativeTwitch
+          ) && (
             <>
               {/* Main click capture layer */}
               <div
@@ -743,9 +763,31 @@ export default function Player() {
         )}
       </div>
 
+      {/* Twitch Native UI Toggle Button */}
+      {currentMedia.provider?.toLowerCase() === "twitch" && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            setUseNativeTwitch(!useNativeTwitch);
+          }}
+          className={`absolute top-4 right-4 z-50 flex items-center justify-center rounded-full p-2 transition-all ${
+            useNativeTwitch
+              ? "bg-theme-accent text-theme-bg shadow-[0_0_15px_var(--color-theme-accent)]"
+              : "bg-theme-bg/50 text-theme-muted hover:text-theme-accent border-theme-border/30 border backdrop-blur-md"
+          }`}
+          title={useNativeTwitch ? "Use SyncWatch UI" : "Use Native Twitch UI"}
+        >
+          <Settings
+            className={`h-5 w-5 ${useNativeTwitch ? "animate-spin-slow" : ""}`}
+          />
+        </button>
+      )}
+
       {/* Custom Controls Panel */}
       {currentMedia.provider?.toLowerCase() !== "youtube" &&
-        currentMedia.provider?.toLowerCase() !== "twitch" && (
+        !(
+          currentMedia.provider?.toLowerCase() === "twitch" && useNativeTwitch
+        ) && (
           <div className="font-theme absolute right-0 bottom-0 left-0 z-50 p-4 opacity-0 transition-opacity duration-300 group-hover:opacity-100 focus-within:opacity-100">
             <div className="bg-theme-bg/80 border-theme-border/50 rounded-theme border-2 p-3 shadow-lg backdrop-blur-md">
               {/* Timeline */}

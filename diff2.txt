@@ -1,0 +1,356 @@
+commit 33337d8045f705c7feaf7ac73d63cdf0a58467ad
+Author: Le-Who <danoner123@protonmail.com>
+Date:   Sun Mar 8 19:47:28 2026 +0200
+
+    fix(player): Implement native event debounce to prevent Twitch autoplay loops and extra pauses
+
+diff --git a/components/Player.tsx b/components/Player.tsx
+index 5d8af28..f8da990 100644
+--- a/components/Player.tsx
++++ b/components/Player.tsx
+@@ -132,6 +132,8 @@ export default function Player() {
+   } | null>(null);
+ 
+   const lastProgrammaticSeekRef = useRef<number>(0);
++  const lastServerStateChangeRef = useRef<number>(0);
++  const pauseDebounceRef = useRef<NodeJS.Timeout | null>(null);
+ 
+   const getAccurateTime = useCallback(() => {
+     return playerRef.current?.currentTime || 0;
+@@ -190,8 +192,6 @@ export default function Player() {
+     const currentServerTime = Date.now() + serverClockOffset;
+     const currentPosition = getAccurateTime();
+ 
+-    if (currentMedia?.provider?.toLowerCase() === "twitch") return; // Twitch Live/VODs break on frequent programmatic seeks
+-
+     if (playback.status === "playing") {
+       const { expectedPosition, drift: currentDrift } = calculateDrift(
+         playback.status,
+@@ -204,16 +204,19 @@ export default function Player() {
+       driftRef.current = currentDrift;
+ 
+       if (!playing) {
++        lastServerStateChangeRef.current = Date.now();
+         setPlaying(true);
+       }
+ 
+       const isIframeProvider = ["youtube", "vimeo", "twitch"].includes(
+         currentMedia?.provider?.toLowerCase() || "",
+       );
++      const isTwitch = currentMedia?.provider?.toLowerCase() === "twitch";
+ 
+       if (
+         (currentDrift > 3.0 || (isIframeProvider && currentDrift > 1.5)) &&
+-        !isBuffering
++        !isBuffering &&
++        !isTwitch
+       ) {
+         performProgrammaticSeek(expectedPosition);
+         setLocalPlaybackRate(playback.rate);
+@@ -240,6 +243,7 @@ export default function Player() {
+       driftRef.current = currentDrift;
+ 
+       if (playing) {
++        lastServerStateChangeRef.current = Date.now();
+         setPlaying(false);
+       }
+ 
+@@ -270,6 +274,40 @@ export default function Player() {
+     emitCommand("pause", { position: getAccurateTime() });
+   };
+ 
++  const handleNativePlay = () => {
++    if (pauseDebounceRef.current) {
++      clearTimeout(pauseDebounceRef.current);
++      pauseDebounceRef.current = null;
++    }
++    setIsBuffering(false);
++    setPlaying(true);
++    if (
++      canControl &&
++      playback?.status !== "playing" &&
++      Date.now() - lastCommandEmitTimeRef.current > 500 &&
++      Date.now() - lastServerStateChangeRef.current > 1500
++    ) {
++      emitCommand("play", { position: getAccurateTime() });
++    }
++  };
++
++  const handleNativePause = () => {
++    setIsBuffering(false);
++    setPlaying(false);
++    if (pauseDebounceRef.current) clearTimeout(pauseDebounceRef.current);
++
++    pauseDebounceRef.current = setTimeout(() => {
++      if (
++        canControl &&
++        playback?.status !== "paused" &&
++        Date.now() - lastCommandEmitTimeRef.current > 500 &&
++        Date.now() - lastServerStateChangeRef.current > 1500
++      ) {
++        emitCommand("pause", { position: getAccurateTime() });
++      }
++    }, 400);
++  };
++
+   usePlayerShortcuts({
+     canControl,
+     playing,
+@@ -449,27 +487,11 @@ export default function Player() {
+                       twitchEl.dataset.proxyAttached = "true";
+                       twitchEl.addEventListener("playing", () => {
+                         console.log("[TWITCH PROXY] playing event fired");
+-                        if (
+-                          canControl &&
+-                          playback?.status !== "playing" &&
+-                          Date.now() - lastCommandEmitTimeRef.current > 500
+-                        ) {
+-                          emitCommand("play", { position: getAccurateTime() });
+-                        }
+-                        setPlaying(true);
+-                        setIsBuffering(false);
++                        handleNativePlay();
+                       });
+                       twitchEl.addEventListener("pause", () => {
+                         console.log("[TWITCH PROXY] pause event fired");
+-                        if (
+-                          canControl &&
+-                          playback?.status !== "paused" &&
+-                          Date.now() - lastCommandEmitTimeRef.current > 500
+-                        ) {
+-                          emitCommand("pause", { position: getAccurateTime() });
+-                        }
+-                        setPlaying(false);
+-                        setIsBuffering(false);
++                        handleNativePause();
+                       });
+                     }
+                   } catch (e) {
+@@ -510,9 +532,8 @@ export default function Player() {
+ 
+                 if (canControl) {
+                   emitCommand("seek", { position: seconds });
+-                  if (playing) {
+-                    emitCommand("play", { position: seconds });
+-                  }
++                  // We do NOT emit "play" here! The native player will resume naturally,
++                  // firing onPlay, which is safely debounced and resolved by handleNativePlay.
+                 }
+               }}
+               onSeeked={(e: any) => {
+@@ -551,16 +572,7 @@ export default function Player() {
+                   canControl,
+                   timeDelta: Date.now() - lastCommandEmitTimeRef.current,
+                 });
+-                setIsBuffering(false);
+-                setPlaying(true);
+-                // IF this was a native interaction while server thinks we are paused:
+-                if (
+-                  canControl &&
+-                  playback?.status !== "playing" &&
+-                  Date.now() - lastCommandEmitTimeRef.current > 500
+-                ) {
+-                  emitCommand("play", { position: getAccurateTime() });
+-                }
++                handleNativePlay();
+               }}
+               onPause={() => {
+                 console.log("[REACT_PLAYER DEBUG] onPause fired!", {
+@@ -568,16 +580,7 @@ export default function Player() {
+                   canControl,
+                   timeDelta: Date.now() - lastCommandEmitTimeRef.current,
+                 });
+-                setIsBuffering(false);
+-                setPlaying(false);
+-                // IF this was a native interaction while server thinks we are playing/buffering:
+-                if (
+-                  canControl &&
+-                  playback?.status !== "paused" &&
+-                  Date.now() - lastCommandEmitTimeRef.current > 500
+-                ) {
+-                  emitCommand("pause", { position: getAccurateTime() });
+-                }
++                handleNativePause();
+               }}
+               style={{ position: "absolute", top: 0, left: 0 }}
+               config={{
+
+commit 650afe78eaa509dc0a65444a9f6c9a903ed4cf07
+Author: Le-Who <danoner123@protonmail.com>
+Date:   Sun Mar 8 10:04:59 2026 +0200
+
+    fix(player): Add native DOM event proxy for Twitch synchronization
+
+diff --git a/components/Player.tsx b/components/Player.tsx
+index 8074793..5d8af28 100644
+--- a/components/Player.tsx
++++ b/components/Player.tsx
+@@ -435,10 +435,48 @@ export default function Player() {
+               volume={volume}
+               muted={userJoined ? muted : true}
+               playbackRate={localPlaybackRate}
+-              onReady={() => {
++              onReady={(rPlayer: any) => {
+                 setIsReady(true);
+                 setError(null);
+ 
++                // -- TWITCH EVENT PROXY HACK --
++                // react-player @3.x fails to bubble "playing" from twitch-video-element as standard "play"
++                // So we listen explicitly on the internal DOM element.
++                if (currentMedia.provider?.toLowerCase() === "twitch") {
++                  try {
++                    const twitchEl = rPlayer.getInternalPlayer("twitch");
++                    if (twitchEl && !twitchEl.dataset.proxyAttached) {
++                      twitchEl.dataset.proxyAttached = "true";
++                      twitchEl.addEventListener("playing", () => {
++                        console.log("[TWITCH PROXY] playing event fired");
++                        if (
++                          canControl &&
++                          playback?.status !== "playing" &&
++                          Date.now() - lastCommandEmitTimeRef.current > 500
++                        ) {
++                          emitCommand("play", { position: getAccurateTime() });
++                        }
++                        setPlaying(true);
++                        setIsBuffering(false);
++                      });
++                      twitchEl.addEventListener("pause", () => {
++                        console.log("[TWITCH PROXY] pause event fired");
++                        if (
++                          canControl &&
++                          playback?.status !== "paused" &&
++                          Date.now() - lastCommandEmitTimeRef.current > 500
++                        ) {
++                          emitCommand("pause", { position: getAccurateTime() });
++                        }
++                        setPlaying(false);
++                        setIsBuffering(false);
++                      });
++                    }
++                  } catch (e) {
++                    console.error("Failed to proxy twitch events", e);
++                  }
++                }
++
+                 // Extract HLS Levels if it's a direct stream
+                 if (
+                   currentMedia.provider?.toLowerCase() !== "youtube" &&
+@@ -508,6 +546,11 @@ export default function Player() {
+                 setIsBuffering(false);
+               }}
+               onPlay={() => {
++                console.log("[REACT_PLAYER DEBUG] onPlay fired!", {
++                  status: playback?.status,
++                  canControl,
++                  timeDelta: Date.now() - lastCommandEmitTimeRef.current,
++                });
+                 setIsBuffering(false);
+                 setPlaying(true);
+                 // IF this was a native interaction while server thinks we are paused:
+@@ -520,6 +563,11 @@ export default function Player() {
+                 }
+               }}
+               onPause={() => {
++                console.log("[REACT_PLAYER DEBUG] onPause fired!", {
++                  status: playback?.status,
++                  canControl,
++                  timeDelta: Date.now() - lastCommandEmitTimeRef.current,
++                });
+                 setIsBuffering(false);
+                 setPlaying(false);
+                 // IF this was a native interaction while server thinks we are playing/buffering:
+
+commit bac03c93a396141abc9ead49ac44ab5e7e081933
+Author: Le-Who <danoner123@protonmail.com>
+Date:   Sun Mar 8 09:46:08 2026 +0200
+
+    fix(player): Restore Youtube native controls, fix Twitch SSL and Autoplay
+
+diff --git a/components/Player.tsx b/components/Player.tsx
+index 1e6574d..8074793 100644
+--- a/components/Player.tsx
++++ b/components/Player.tsx
+@@ -428,8 +428,8 @@ export default function Player() {
+               width="100%"
+               height="100%"
+               controls={
+-                currentMedia.provider === "youtube" ||
+-                currentMedia.provider === "twitch"
++                currentMedia.provider?.toLowerCase() === "youtube" ||
++                currentMedia.provider?.toLowerCase() === "twitch"
+               }
+               playing={userJoined ? playing : false}
+               volume={volume}
+@@ -441,9 +441,9 @@ export default function Player() {
+ 
+                 // Extract HLS Levels if it's a direct stream
+                 if (
+-                  currentMedia.provider !== "youtube" &&
+-                  currentMedia.provider !== "twitch" &&
+-                  currentMedia.provider !== "vimeo"
++                  currentMedia.provider?.toLowerCase() !== "youtube" &&
++                  currentMedia.provider?.toLowerCase() !== "twitch" &&
++                  currentMedia.provider?.toLowerCase() !== "vimeo"
+                 ) {
+                   try {
+                     const el = playerRef.current as any;
+@@ -854,7 +854,9 @@ export default function Player() {
+ 
+                         if (willOpen && currentMedia) {
+                           try {
+-                            if (currentMedia.provider === "youtube") {
++                            if (
++                              currentMedia.provider?.toLowerCase() === "youtube"
++                            ) {
+                               const internal = (
+                                 playerRef.current as any
+                               )?.getInternalPlayer("youtube");
+@@ -868,7 +870,9 @@ export default function Player() {
+                                   internal.getPlaybackQuality() || "auto",
+                                 );
+                               }
+-                            } else if (currentMedia.provider === "twitch") {
++                            } else if (
++                              currentMedia.provider?.toLowerCase() === "twitch"
++                            ) {
+                               const internal = (
+                                 playerRef.current as any
+                               )?.getInternalPlayer("twitch");
+@@ -914,12 +918,16 @@ export default function Player() {
+                                   setCurrentProviderQuality("auto");
+                                   setQualityMenuOpen(false);
+                                   try {
+-                                    if (currentMedia.provider === "youtube") {
++                                    if (
++                                      currentMedia.provider?.toLowerCase() ===
++                                      "youtube"
++                                    ) {
+                                       (playerRef.current as any)
+                                         ?.getInternalPlayer("youtube")
+                                         ?.setPlaybackQualityRange?.("auto");
+                                     } else if (
+-                                      currentMedia.provider === "twitch"
++                                      currentMedia.provider?.toLowerCase() ===
++                                      "twitch"
+                                     ) {
+                                       (playerRef.current as any)
+                                         ?.getInternalPlayer("twitch")
+@@ -939,12 +947,16 @@ export default function Player() {
+                                     setCurrentProviderQuality(q);
+                                     setQualityMenuOpen(false);
+                                     try {
+-                                      if (currentMedia.provider === "youtube") {
++                                      if (
++                                        currentMedia.provider?.toLowerCase() ===
++                                        "youtube"
++                                      ) {
+                                         (playerRef.current as any)
+                                           ?.getInternalPlayer("youtube")
+                                           ?.setPlaybackQualityRange?.(q, q);
+                                       } else if (
+-                                        currentMedia.provider === "twitch"
++                                        currentMedia.provider?.toLowerCase() ===
++                                        "twitch"
+                                       ) {
+                                         (playerRef.current as any)
+                                           ?.getInternalPlayer("twitch")
