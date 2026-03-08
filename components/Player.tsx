@@ -428,8 +428,8 @@ export default function Player() {
               width="100%"
               height="100%"
               controls={
-                currentMedia.provider === "youtube" ||
-                currentMedia.provider === "twitch"
+                currentMedia.provider?.toLowerCase() === "youtube" ||
+                currentMedia.provider?.toLowerCase() === "twitch"
               }
               playing={userJoined ? playing : false}
               volume={volume}
@@ -441,9 +441,9 @@ export default function Player() {
 
                 // Extract HLS Levels if it's a direct stream
                 if (
-                  currentMedia.provider !== "youtube" &&
-                  currentMedia.provider !== "twitch" &&
-                  currentMedia.provider !== "vimeo"
+                  currentMedia.provider?.toLowerCase() !== "youtube" &&
+                  currentMedia.provider?.toLowerCase() !== "twitch" &&
+                  currentMedia.provider?.toLowerCase() !== "vimeo"
                 ) {
                   try {
                     const el = playerRef.current as any;
@@ -854,7 +854,9 @@ export default function Player() {
 
                         if (willOpen && currentMedia) {
                           try {
-                            if (currentMedia.provider === "youtube") {
+                            if (
+                              currentMedia.provider?.toLowerCase() === "youtube"
+                            ) {
                               const internal = (
                                 playerRef.current as any
                               )?.getInternalPlayer("youtube");
@@ -868,7 +870,9 @@ export default function Player() {
                                   internal.getPlaybackQuality() || "auto",
                                 );
                               }
-                            } else if (currentMedia.provider === "twitch") {
+                            } else if (
+                              currentMedia.provider?.toLowerCase() === "twitch"
+                            ) {
                               const internal = (
                                 playerRef.current as any
                               )?.getInternalPlayer("twitch");
@@ -914,12 +918,16 @@ export default function Player() {
                                   setCurrentProviderQuality("auto");
                                   setQualityMenuOpen(false);
                                   try {
-                                    if (currentMedia.provider === "youtube") {
+                                    if (
+                                      currentMedia.provider?.toLowerCase() ===
+                                      "youtube"
+                                    ) {
                                       (playerRef.current as any)
                                         ?.getInternalPlayer("youtube")
                                         ?.setPlaybackQualityRange?.("auto");
                                     } else if (
-                                      currentMedia.provider === "twitch"
+                                      currentMedia.provider?.toLowerCase() ===
+                                      "twitch"
                                     ) {
                                       (playerRef.current as any)
                                         ?.getInternalPlayer("twitch")
@@ -939,12 +947,16 @@ export default function Player() {
                                     setCurrentProviderQuality(q);
                                     setQualityMenuOpen(false);
                                     try {
-                                      if (currentMedia.provider === "youtube") {
+                                      if (
+                                        currentMedia.provider?.toLowerCase() ===
+                                        "youtube"
+                                      ) {
                                         (playerRef.current as any)
                                           ?.getInternalPlayer("youtube")
                                           ?.setPlaybackQualityRange?.(q, q);
                                       } else if (
-                                        currentMedia.provider === "twitch"
+                                        currentMedia.provider?.toLowerCase() ===
+                                        "twitch"
                                       ) {
                                         (playerRef.current as any)
                                           ?.getInternalPlayer("twitch")
