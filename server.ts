@@ -180,14 +180,14 @@ const forcePersistRoom = async (room: RoomState) => {
   if (!supabase) return;
   try {
     const { error } = await supabase.rpc("sync_room_state", {
-      room_data: {
-        id: getDeterministicUUID(room.id),
+      p_room_id: getDeterministicUUID(room.id),
+      p_owner_id: getDeterministicUUID(
+        Object.values(room.participants).find((p) => p.role === "owner")?.id ||
+          room.id,
+      ),
+      p_state: {
         name: room.name,
         settings: room.settings,
-        owner_id: getDeterministicUUID(
-          Object.values(room.participants).find((p) => p.role === "owner")
-            ?.id || room.id,
-        ),
         playlist: room.playlist.map((item, index) => ({
           id: item.id,
           url: item.url,

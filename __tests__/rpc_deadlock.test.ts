@@ -28,19 +28,21 @@ describe("RPC Deadlock Test (sync_room_state)", () => {
     // Initial base state
     await supabase.rpc("sync_room_state", {
       p_room_id: roomId,
-      p_name: "Deadlock Room",
-      p_settings: { controlMode: "open" },
       p_owner_id: ownerId,
-      p_playlist: [],
-      p_playback: {
-        currentMediaId: null,
-        status: "paused",
-        basePosition: 0,
-        baseTimestamp: Date.now(),
-        rate: 1,
-        updatedBy: "system",
+      p_state: {
+        name: "Deadlock Room",
+        settings: { controlMode: "open" },
+        playlist: [],
+        playback: {
+          mediaItemId: null,
+          status: "paused",
+          basePosition: 0,
+          baseTimestamp: Date.now(),
+          rate: 1,
+          updatedBy: "system",
+        },
+        version: 1,
       },
-      p_version: 1,
     });
 
     // Create 10 concurrent requests that try to insert/update the exact same videos in completely DIFFERENT orders.
@@ -48,10 +50,8 @@ describe("RPC Deadlock Test (sync_room_state)", () => {
     const tasks = Array.from({ length: 10 }).map((_, i) => {
       const shuffledVids = [...vids].sort(() => Math.random() - 0.5);
 
-      const payload = {
-        id: roomId,
+      const stateObj = {
         name: `Room Update ${i}`,
-        owner_id: ownerId,
         settings: { controlMode: "open" },
         playlist: shuffledVids.map((id, idx) => ({
           id,
@@ -74,7 +74,11 @@ describe("RPC Deadlock Test (sync_room_state)", () => {
         version: i + 2,
       };
 
-      return supabase.rpc("sync_room_state", { room_data: payload });
+      return supabase.rpc("sync_room_state", {
+        p_room_id: roomId,
+        p_owner_id: ownerId,
+        p_state: stateObj,
+      });
     });
 
     const results = await Promise.allSettled(tasks);
