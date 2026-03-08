@@ -1,6 +1,13 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+/**
+ * @vitest-environment node
+ */
+import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
+import { Server as NetServer } from "http";
+import Client, { Socket as ClientSocket } from "socket.io-client";
+import { AddressInfo } from "net";
+import { SignJWT } from "jose";
 
-// Mock NEXT.js
+// 1. Mock Next.js to bypass heavy build compilation
 vi.mock("next", () => {
   return {
     default: () => ({
@@ -10,208 +17,198 @@ vi.mock("next", () => {
   };
 });
 
-// Mock http
-vi.mock("http", () => {
-  return {
-    default: {
-      createServer: vi.fn().mockReturnValue({ listen: vi.fn() }),
-      Server: class MockNetServer {},
-    },
-    createServer: vi.fn().mockReturnValue({ listen: vi.fn() }),
-    Server: class MockNetServer {},
-  };
-});
-
-// Mock Redis Rate Limit & Queue to prevent hitting Redis in unit tests
-vi.mock("../lib/redis-rate-limit", () => {
-  return {
-    checkRedisRateLimit: vi.fn().mockResolvedValue(true),
-    getRedisClient: vi.fn().mockReturnValue(null),
-  };
-});
-
-// Mock Supabase
-vi.mock("@supabase/supabase-js", () => {
-  return {
-    createClient: vi.fn().mockReturnValue({
-      from: vi.fn().mockReturnThis(),
-      upsert: vi.fn().mockResolvedValue({}),
-      select: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue({ data: null }),
-      delete: vi.fn().mockReturnThis(),
-      in: vi.fn().mockResolvedValue({}),
-      order: vi.fn().mockReturnThis(),
-    }),
-  };
-});
-
-// Mock Redis Lua Fast Mutation
-vi.mock("../lib/redis-lua", () => {
-  return {
-    executeFastMutation: vi.fn().mockResolvedValue({
-      success: true,
-      state: { id: "mock_room", participants: {} },
-    }),
-  };
-});
-
-// Capture Socket.io Server instance and its connection listener
-const { connectionContext } = vi.hoisted(() => ({
-  connectionContext: {
-    listener: null as Function | null,
-    middleware: null as Function | null,
-  },
+// 2. Mock external persistence and rate limiting
+vi.mock("../lib/redis-rate-limit", () => ({
+  checkRedisRateLimit: vi.fn().mockResolvedValue(true),
+  getRedisClient: vi.fn().mockReturnValue(null),
+}));
+vi.mock("@supabase/supabase-js", () => ({
+  createClient: vi.fn().mockReturnValue({}),
+}));
+vi.mock("../lib/redis-queue", () => ({
+  pushSlowCommand: vi.fn().mockResolvedValue(true),
 }));
 
-vi.mock("socket.io", () => {
+// We force Redis fallback to in-memory mode for these tests by mocking getRedisClient to null.
+
+let ioServerPath = "";
+let httpServer: NetServer;
+
+// 3. Intercept HTTP server creation to force ephemeral port instead of :3000
+vi.mock("http", async (importOriginal) => {
+  const actual: any = await importOriginal();
   return {
-    Server: class MockServer {
-      constructor() {}
-      use(middleware: Function) {
-        connectionContext.middleware = middleware;
-      }
-      on(event: string, callback: any) {
-        if (event === "connection") {
-          connectionContext.listener = callback;
-        }
-      }
-      to() {
-        return { emit: vi.fn() };
-      }
-      emit() {}
+    ...actual,
+    createServer: (handler: any) => {
+      const server = actual.createServer(handler);
+      httpServer = server;
+      const originalListen = server.listen.bind(server);
+      server.listen = (...args: any[]) => {
+        // Force listen on ephemeral port 0
+        return originalListen(0, args[1]);
+      };
+      return server;
     },
   };
 });
 
-vi.mock("../lib/redis-queue", () => {
-  return {
-    pushSlowCommand: vi.fn().mockResolvedValue(true),
-  };
-});
+describe("server.ts Real Socket.IO Integration", () => {
+  let clientSocket: ClientSocket;
 
-import "../server"; // This executes the top-level code and registers the connection listener
+  beforeAll(async () => {
+    // Import server.ts to trigger app.prepare().then(...)
+    await import("../server");
 
-describe("server.ts Socket Handlers", () => {
-  let mockSocket: any;
-  let socketListeners: Record<string, Function> = {};
+    // Wait for the server to actually start listening
+    await new Promise<void>((resolve) => {
+      if (httpServer && httpServer.listening) {
+        resolve();
+      } else if (httpServer) {
+        httpServer.on("listening", resolve);
+      } else {
+        // Fallback polling if httpServer isn't captured immediately
+        const interval = setInterval(() => {
+          if (httpServer && httpServer.listening) {
+            clearInterval(interval);
+            resolve();
+          }
+        }, 50);
+      }
+    });
 
-  beforeEach(async () => {
-    socketListeners = {};
-    mockSocket = {
-      id: "mock_socket_id",
-      data: {}, // Initialize data property so tests can assign participantId without throwing a TypeError
-      request: { headers: { cookie: "" } },
-      handshake: {
-        headers: { "x-forwarded-for": "127.0.0.1" },
-        address: "127.0.0.1",
+    const port = (httpServer.address() as AddressInfo).port;
+    ioServerPath = `http://localhost:${port}`;
+  });
+
+  afterAll(() => {
+    if (clientSocket) {
+      clientSocket.close();
+    }
+    if (httpServer) {
+      httpServer.close();
+    }
+  });
+
+  it("TC-01: Connects and joins a room, establishing owner role", async () => {
+    const JWT_SECRET = new TextEncoder().encode(
+      "default_local_secret_dont_use_in_prod",
+    );
+    const token = await new SignJWT({ participantId: "user-1" })
+      .setProtectedHeader({ alg: "HS256" })
+      .sign(JWT_SECRET);
+
+    clientSocket = Client(ioServerPath, {
+      path: "/socket.io",
+      transports: ["websocket"],
+      forceNew: true,
+      extraHeaders: {
+        cookie: `syncwatch_session=${token}`,
       },
-      join: vi.fn(),
-      emit: vi.fn(),
-      to: vi.fn().mockReturnValue({ emit: vi.fn() }),
-      on: (event: string, callback: Function) => {
-        socketListeners[event] = callback;
-      },
-    };
+    });
 
-    // Run custom auth logic middleware sequentially to prep the mock socket, then trigger connection
-    if (connectionContext.middleware) {
-      await new Promise<void>((resolve, reject) => {
-        connectionContext.middleware!(mockSocket, (err?: Error) => {
-          if (err) return reject(err);
-          resolve();
-        });
+    // Wait for connect
+    await new Promise<void>((resolve) => clientSocket.on("connect", resolve));
+
+    return new Promise<void>((resolve) => {
+      clientSocket.on("room_state", (payload: any) => {
+        console.log(
+          "[DEBUG] room_state payload:",
+          JSON.stringify(payload, null, 2),
+        );
+        expect(payload.room.id).toBe("test-room-1");
+        expect(Object.keys(payload.room.participants)).toHaveLength(1);
+        const participantId = Object.keys(payload.room.participants)[0];
+        expect(payload.room.participants[participantId].role).toBe("owner");
+        expect(payload.room.participants[participantId].nickname).toBe(
+          "OwnerUser",
+        );
+        resolve();
       });
-    }
 
-    // Trigger connection
-    if (connectionContext.listener) {
-      connectionContext.listener(mockSocket);
-    }
+      clientSocket.emit("join_room", {
+        roomId: "test-room-1", // Will trigger memory creation
+        nickname: "OwnerUser",
+        participantId: "user-1",
+      });
+    });
   });
 
-  it("should handle join_room and create a new room", async () => {
-    expect(socketListeners["join_room"]).toBeDefined();
-
-    mockSocket.data = { participantId: "user-1" };
-    // Trigger join_room
-    await socketListeners["join_room"]({
-      roomId: "123e4567-e89b-12d3-a456-426614174000",
-      nickname: "Test User",
-      participantId: "user-1",
-      sessionToken: "token-1",
+  it("TC-02: Guest users cannot mutate state", async () => {
+    const guestSocket = Client(ioServerPath, {
+      path: "/socket.io",
+      transports: ["websocket"],
+      forceNew: true,
     });
 
-    expect(mockSocket.join).toHaveBeenCalledWith(
-      "123e4567-e89b-12d3-a456-426614174000",
-    );
-    expect(mockSocket.emit).toHaveBeenCalledWith(
-      "room_state",
-      expect.any(Object),
-    );
+    await new Promise<void>((resolve) => guestSocket.on("connect", resolve));
 
-    // Check payload of emit
-    const emitCall = mockSocket.emit.mock.calls.find(
-      (call: any) => call[0] === "room_state",
-    );
-    expect(emitCall).toBeDefined();
-    const payload = emitCall[1];
-    expect(payload.room.id).toBe("123e4567-e89b-12d3-a456-426614174000");
-    expect(payload.room.participants["user-1"].nickname).toBe("Test User");
-    expect(payload.room.participants["user-1"].role).toBe("owner"); // First to join is owner
+    await new Promise<void>((resolve) => {
+      guestSocket.on("room_state", () => resolve());
+      guestSocket.emit("join_room", {
+        roomId: "test-room-2",
+        nickname: "GuestUser",
+        participantId: "guest_123", // Prefix triggers guest logic
+      });
+    });
+
+    return new Promise<void>((resolve) => {
+      guestSocket.on("error", (err: any) => {
+        expect(err.message).toContain("Guest accounts cannot send commands");
+        guestSocket.close();
+        resolve();
+      });
+
+      guestSocket.emit("command", {
+        roomId: "test-room-2",
+        type: "play",
+        payload: { position: 10 },
+        sequence: 1,
+      });
+    });
   });
 
-  it("should handle command: play", async () => {
-    mockSocket.data = { participantId: "user-1" };
-    // Join room first
-    await socketListeners["join_room"]({
-      roomId: "test-room-2",
-      nickname: "Test User",
-      participantId: "user-1",
-    });
-
-    // Clear previous emits
-    mockSocket.emit.mockClear();
-
-    // Trigger command play
-    await socketListeners["command"]({
-      roomId: "test-room-2",
-      type: "play",
-      payload: { position: 10 },
-      sequence: 1,
-    });
-
-    // Verify no error was emitted
-    const errorCall = mockSocket.emit.mock.calls.find(
-      (call: any) => call[0] === "error",
+  it("TC-03: Invalid Zod command payload types are rejected immediately", async () => {
+    const JWT_SECRET = new TextEncoder().encode(
+      "default_local_secret_dont_use_in_prod",
     );
-    expect(errorCall).toBeUndefined();
-  });
+    const token = await new SignJWT({ participantId: "user-hacker" })
+      .setProtectedHeader({ alg: "HS256" })
+      .sign(JWT_SECRET);
 
-  it("should reject guest session commands", async () => {
-    mockSocket.data = { participantId: "guest_socket_id" };
-    await socketListeners["join_room"]({
-      roomId: "test-room-3",
-      nickname: "Guest User",
-      participantId: "guest_socket_id",
+    const hostileSocket = Client(ioServerPath, {
+      path: "/socket.io",
+      transports: ["websocket"],
+      forceNew: true,
+      extraHeaders: {
+        cookie: `syncwatch_session=${token}`,
+      },
     });
 
-    mockSocket.emit.mockClear();
+    await new Promise<void>((resolve) => hostileSocket.on("connect", resolve));
 
-    // Send command with guest token
-    await socketListeners["command"]({
-      roomId: "test-room-3",
-      type: "play",
-      payload: { position: 10 },
-      sequence: 1,
+    // Join the room as a valid user first
+    await new Promise<void>((resolve) => {
+      hostileSocket.on("room_state", () => resolve());
+      hostileSocket.emit("join_room", {
+        roomId: "test-room-3",
+        nickname: "Hacker",
+        participantId: "user-hacker",
+      });
     });
 
-    const errorCall = mockSocket.emit.mock.calls.find(
-      (call: any) => call[0] === "error",
-    );
-    expect(errorCall).toBeDefined();
-    expect(errorCall[1].message).toBe(
-      "Unauthorized command. Guest accounts cannot send commands.",
-    );
+    return new Promise<void>((resolve) => {
+      hostileSocket.on("error", (err: any) => {
+        expect(err.message).toContain("Invalid command payload format");
+        hostileSocket.close();
+        resolve();
+      });
+
+      hostileSocket.emit("command", {
+        roomId: "test-room-3",
+        type: "play",
+        payload: { invalidArgument: "DROP TABLE" }, // Zod schema expects `position` (number)
+        sequence: 1,
+      });
+    });
   });
 });

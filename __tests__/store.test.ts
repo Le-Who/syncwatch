@@ -74,7 +74,7 @@ describe("Zustand Store & OCC Flashback", () => {
     expect(stateAfter.occRollbackTick).toBe(1);
   });
 
-  it("TC-01: Should inject nonce for fast-path mutations", () => {
+  it("TC-03: Should inject nonce for fast-path mutations", () => {
     const { sendCommand } = useStore.getState();
 
     sendCommand("play", { position: 10 });
@@ -85,7 +85,7 @@ describe("Zustand Store & OCC Flashback", () => {
     );
   });
 
-  it("TC-01: Should NOT inject nonce for slow-path mutations", () => {
+  it("TC-04: Should NOT inject nonce for slow-path mutations", () => {
     const { sendCommand } = useStore.getState();
 
     sendCommand("add_item", { url: "https://example.com/video" });
@@ -93,5 +93,39 @@ describe("Zustand Store & OCC Flashback", () => {
     const call = vi.mocked(roomSocketService.sendCommand).mock.calls[0];
     expect(call[0]).toBe("add_item");
     expect(call[1]).not.toHaveProperty("nonce");
+  });
+
+  it("TC-05: Should update nickname and notify server if connected", () => {
+    const { init } = useStore.getState();
+    init();
+
+    // Not connected initially
+    useStore.getState().setNickname("NewName");
+    expect(useStore.getState().nickname).toBe("NewName");
+    expect(localStorage.getItem("nickname")).toBe("NewName");
+    expect(roomSocketService.sendCommand).not.toHaveBeenCalled();
+
+    // Fake connected state and room
+    useStore.setState({ isConnected: true, room: { id: "test" } as any });
+
+    useStore.getState().setNickname("ConnectedName");
+    expect(useStore.getState().nickname).toBe("ConnectedName");
+    expect(roomSocketService.sendCommand).toHaveBeenCalledWith(
+      "update_nickname",
+      { nickname: "ConnectedName" },
+    );
+  });
+
+  it("TC-06: Should clear room state on disconnect", () => {
+    const { init } = useStore.getState();
+    init();
+
+    useStore.setState({ isConnected: true, room: { id: "test" } as any });
+
+    useStore.getState().disconnect();
+
+    expect(roomSocketService.disconnect).toHaveBeenCalled();
+    expect(useStore.getState().isConnected).toBe(false);
+    expect(useStore.getState().room).toBeNull();
   });
 });

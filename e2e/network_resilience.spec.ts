@@ -29,19 +29,8 @@ test.describe("Network Resilience (TC-302)", () => {
       page.locator('input[value="DropoutUser"]').first(),
     ).toBeVisible({ timeout: 15000 });
 
-    // Manually disconnect the WebSocket from the client side by dropping socket
-    await page.evaluate(() => {
-      // @ts-ignore - reaching into the global if we exposed it, or just closing all sockets
-      // Fortunately, the app's socket resides in `roomSocketService`.
-      if (typeof window !== "undefined") {
-        // Since we didn't expose it, we fake offline mode to drop TCP
-        window.dispatchEvent(new Event("offline"));
-        // Then we can dispatch offline to socketio if possible.
-        // An easier Playwright method is setting the network offline
-      }
-    });
-
-    // Emulate browser physical network drop
+    // Emulate browser physical network drop via Playwright native API
+    // This is much more accurate than window.dispatchEvent as it drops all active WebSockets
     const context = page.context();
     await context.setOffline(true);
 

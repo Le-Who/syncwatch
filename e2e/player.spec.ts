@@ -7,11 +7,11 @@ function getTestRoomUrl() {
 
 async function joinRoom(page: Page, url: string, nickname: string) {
   await page.goto(url);
-  const handleInput = page.locator('input[placeholder="ENTER_HANDLE"]');
+  const handleInput = page.getByPlaceholder("ENTER_HANDLE");
   await handleInput.waitFor({ state: "visible", timeout: 15000 });
   await handleInput.fill(nickname);
 
-  await page.locator("button", { hasText: "Establish Link" }).click();
+  await page.getByRole("button", { name: "Establish Link" }).click();
   // Wait for the UI layout to shift from "Join Room" to the main Player UI.
   // This proves the auth POST succeeded and React state transitioned.
   await expect(page.locator("text=SyncWatch").first()).toBeVisible({
@@ -19,7 +19,7 @@ async function joinRoom(page: Page, url: string, nickname: string) {
   });
 
   // Switch to the Participants tab to mount the nickname in the DOM
-  await page.locator("button", { hasText: /Entities/i }).click();
+  await page.getByRole("button", { name: /Entities/i }).click();
 
   // The most deterministic way to ensure Socket.io has successfully connected
   // and the React state has hydrated the initial Room data is to wait for the
@@ -37,12 +37,10 @@ test.describe("SyncWatch Player E2E Regressions", () => {
   test("1. Basic Connection and UI Mounting", async ({ page }) => {
     await joinRoom(page, roomUrl, "Tester1");
     // Ensure the main UI frames mount
-    await expect(page.locator("text=Entities")).toBeVisible();
+    await expect(page.getByText("Entities").first()).toBeVisible();
 
     // Check if the add video input is mounted in the Player component
-    const input = page.locator(
-      'input[placeholder="Paste video stream URL..."]',
-    );
+    const input = page.getByPlaceholder("Paste video stream URL...");
     await expect(input).toBeVisible();
   });
 
@@ -52,9 +50,7 @@ test.describe("SyncWatch Player E2E Regressions", () => {
     await joinRoom(page, getTestRoomUrl(), "VolumeTester");
 
     // Add a basic video to mount the player
-    const urlInput = page.locator(
-      'input[placeholder="Paste video stream URL..."]',
-    );
+    const urlInput = page.getByPlaceholder("Paste video stream URL...");
     await urlInput.waitFor({ state: "visible" });
     // Intercept and mock the external video URL to prevent DNS resolution errors/flakiness
     await page.route(
@@ -69,13 +65,13 @@ test.describe("SyncWatch Player E2E Regressions", () => {
     );
 
     await urlInput.fill("https://www.w3schools.com/html/mov_bbb.mp4");
-    await page.locator("button", { hasText: "Init" }).click();
+    await page.getByRole("button", { name: "Init" }).click();
 
     // Hover the primary interaction layer to reveal controls
     const interactionLayer = page.locator(".react-player-wrapper").first();
     await interactionLayer.hover({ trial: true, force: true }).catch(() => {});
 
-    const slider = page.locator('input[type="range"]').first();
+    const slider = page.getByRole("slider").first();
     await slider.waitFor({ state: "attached", timeout: 15000 });
 
     const stepAttribute = await slider.getAttribute("step");
@@ -117,12 +113,10 @@ test.describe("SyncWatch Player E2E Regressions", () => {
 
     // --- Playlist Add & Sync Test ---
     // Switch back to the Queue tab on Host to add a video
-    await page1.locator("button", { hasText: /Queue/i }).click();
+    await page1.getByRole("button", { name: /Queue/i }).click();
 
     // Host adds a video (Using a mocked local endpoint since w3schools video was throwing ECONNREFUSED)
-    const urlInput = page1.locator(
-      'input[placeholder="Paste video stream URL..."]',
-    );
+    const urlInput = page1.getByPlaceholder("Paste video stream URL...");
     await urlInput.waitFor({ state: "visible" });
 
     // Intercept metadata fetching to mock the response on BOTH pages, avoiding actual network requests
@@ -149,10 +143,10 @@ test.describe("SyncWatch Player E2E Regressions", () => {
     await page2.route("**/api/youtube/search*", mockYoutubeApi);
 
     await urlInput.fill("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
-    await page1.locator("button", { hasText: "Init" }).click();
+    await page1.getByRole("button", { name: "Init" }).click();
 
     // Viewer switches to Queue tab to see the replicated playlist
-    await page2.locator("button", { hasText: /Queue/i }).click();
+    await page2.getByRole("button", { name: /Queue/i }).click();
 
     // Viewer immediately checks if the video title replicates into their local DOM flawlessly
     // Note: The Redis Queue worker operates asynchronously, so under heavy test load it may take longer than 15s.
