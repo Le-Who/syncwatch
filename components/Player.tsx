@@ -115,6 +115,51 @@ export default function Player() {
     }
   }, []);
 
+  const [isSleeping, setIsSleeping] = useState(false);
+  const idleTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const wakeUp = useCallback(() => {
+    if (isSleeping) {
+      setIsSleeping(false);
+      const state = useStore.getState();
+      if (state.room && !state.isConnected) {
+        state.connect(state.room.id, state.nickname);
+      }
+    }
+  }, [isSleeping]);
+
+  useEffect(() => {
+    const handleUserActivity = () => {
+      wakeUp();
+      if (idleTimeoutRef.current) clearTimeout(idleTimeoutRef.current);
+      idleTimeoutRef.current = setTimeout(
+        () => {
+          const currentStatus = useStore.getState().room?.playback?.status;
+          if (currentStatus === "paused" || currentStatus === "ended") {
+            setIsSleeping(true);
+            useStore.getState().disconnect();
+          }
+        },
+        2 * 60 * 60 * 1000,
+      );
+    };
+
+    window.addEventListener("mousemove", handleUserActivity);
+    window.addEventListener("keydown", handleUserActivity);
+    window.addEventListener("touchstart", handleUserActivity);
+    window.addEventListener("click", handleUserActivity);
+
+    handleUserActivity();
+
+    return () => {
+      window.removeEventListener("mousemove", handleUserActivity);
+      window.removeEventListener("keydown", handleUserActivity);
+      window.removeEventListener("touchstart", handleUserActivity);
+      window.removeEventListener("click", handleUserActivity);
+      if (idleTimeoutRef.current) clearTimeout(idleTimeoutRef.current);
+    };
+  }, [wakeUp]);
+
   const [qualityMenuOpen, setQualityMenuOpen] = useState(false);
   const [providerQualities, setProviderQualities] = useState<string[]>([]);
   const [currentProviderQuality, setCurrentProviderQuality] =
@@ -221,7 +266,11 @@ export default function Player() {
         !isBuffering &&
         !isTwitch
       ) {
-        performProgrammaticSeek(expectedPosition);
+        let expectedClamped = expectedPosition;
+        if (duration > 0 && expectedClamped > duration) {
+          expectedClamped = duration;
+        }
+        performProgrammaticSeek(expectedClamped);
         setLocalPlaybackRate(playback.rate);
       } else if (
         currentDrift > 0.5 &&
@@ -284,15 +333,9 @@ export default function Player() {
     }
     setIsBuffering(false);
     setPlaying(true);
-    if (
-      canControl &&
-      playback?.status !== "playing" &&
-      Date.now() - lastCommandEmitTimeRef.current > 500 &&
-      Date.now() - lastServerStateChangeRef.current > 1500
-    ) {
-      // Very strict lock against propagating play immediately after a media change
+    if (canControl && playback?.status !== "playing") {
       const timeSinceMediaStart = Date.now() - (playback?.baseTimestamp || 0);
-      if (timeSinceMediaStart > 3000) {
+      if (timeSinceMediaStart > 2000) {
         emitCommand("play", { position: getAccurateTime() });
       }
     }
@@ -303,24 +346,16 @@ export default function Player() {
     setPlaying(false);
     if (pauseDebounceRef.current) clearTimeout(pauseDebounceRef.current);
 
-    // If media just started (autoplay/skip), completely swallow native "pause"
-    // loops from YouTube/Twitch as they pre-buffer.
     const timeSinceMediaStart = Date.now() - (playback?.baseTimestamp || 0);
-    if (timeSinceMediaStart < 3000) {
-      console.log("[NATIVE DEBUG] Ignoring pause within 3s of media start");
+    if (timeSinceMediaStart < 2000) {
       return;
     }
 
     pauseDebounceRef.current = setTimeout(() => {
-      if (
-        canControl &&
-        playback?.status !== "paused" &&
-        Date.now() - lastCommandEmitTimeRef.current > 500 &&
-        Date.now() - lastServerStateChangeRef.current > 1500
-      ) {
+      if (canControl && playback?.status !== "paused") {
         emitCommand("pause", { position: getAccurateTime() });
       }
-    }, 400);
+    }, 50);
   };
 
   usePlayerShortcuts({
@@ -758,6 +793,25 @@ export default function Player() {
             </button>
             <p className="text-theme-muted mt-6 text-xs tracking-widest uppercase">
               Browser policy requires manual activation
+            </p>
+          </div>
+        )}
+
+        {/* Smart Sleep Mode Overlay */}
+        {isSleeping && (
+          <div
+            className="absolute inset-0 z-50 flex cursor-pointer flex-col items-center justify-center bg-black/90 backdrop-blur-md"
+            onClick={wakeUp}
+          >
+            <MonitorPlay className="text-theme-muted mb-6 h-16 w-16 opacity-50" />
+            <h2 className="text-theme-text mb-2 text-2xl font-bold tracking-widest uppercase">
+              Sleep Mode
+            </h2>
+            <p className="text-theme-muted text-sm tracking-wider uppercase">
+              Connection paused to save resources.
+            </p>
+            <p className="text-theme-accent mt-6 animate-pulse text-xs font-bold tracking-widest uppercase">
+              Click anywhere to awake
             </p>
           </div>
         )}

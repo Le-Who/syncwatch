@@ -147,9 +147,18 @@ export async function processQueueForRoom(roomId: string) {
                 const newHead = room.currentMediaId
                   ? room.playlist.find((i: any) => i.id === room.currentMediaId)
                   : null;
-                room.playback.basePosition = newHead
+                let startHead = newHead
                   ? newHead.lastPosition || newHead.startPosition || 0
                   : 0;
+                if (
+                  newHead &&
+                  newHead.duration > 0 &&
+                  startHead >= newHead.duration - 5
+                ) {
+                  startHead = 0;
+                  newHead.lastPosition = 0;
+                }
+                room.playback.basePosition = startHead;
                 room.playback.baseTimestamp = Date.now();
               }
               stateChanged = true;
@@ -202,10 +211,19 @@ export async function processQueueForRoom(roomId: string) {
             );
             room.playback.status =
               room.playback.status === "playing" ? "playing" : "paused";
-            room.playback.basePosition =
+            let startSet =
               targetItemForSet?.lastPosition ||
               targetItemForSet?.startPosition ||
               0;
+            if (
+              targetItemForSet &&
+              targetItemForSet.duration > 0 &&
+              startSet >= targetItemForSet.duration - 5
+            ) {
+              startSet = 0;
+              targetItemForSet.lastPosition = 0;
+            }
+            room.playback.basePosition = startSet;
             room.playback.baseTimestamp = Date.now();
             room.playback.updatedBy = participantNickname;
             stateChanged = true;
@@ -235,8 +253,13 @@ export async function processQueueForRoom(roomId: string) {
               const nextItem = room.playlist[currentIndex + 1];
               room.currentMediaId = nextItem.id;
               room.playback.status = "playing";
-              room.playback.basePosition =
+              let startNext =
                 nextItem.lastPosition || nextItem.startPosition || 0;
+              if (nextItem.duration > 0 && startNext >= nextItem.duration - 5) {
+                startNext = 0;
+                nextItem.lastPosition = 0;
+              }
+              room.playback.basePosition = startNext;
               room.playback.baseTimestamp = Date.now();
               room.playback.updatedBy = participantNickname;
               stateChanged = true;
@@ -244,8 +267,13 @@ export async function processQueueForRoom(roomId: string) {
               const loopItem = room.playlist[0];
               room.currentMediaId = loopItem.id;
               room.playback.status = "playing";
-              room.playback.basePosition =
+              let startLoop =
                 loopItem.lastPosition || loopItem.startPosition || 0;
+              if (loopItem.duration > 0 && startLoop >= loopItem.duration - 5) {
+                startLoop = 0;
+                loopItem.lastPosition = 0;
+              }
+              room.playback.basePosition = startLoop;
               room.playback.baseTimestamp = Date.now();
               room.playback.updatedBy = participantNickname;
               stateChanged = true;

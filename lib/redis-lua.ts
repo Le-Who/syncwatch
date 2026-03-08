@@ -27,7 +27,7 @@ const LUA_FAST_MUTATION = `
   local is_owner_or_mod = participant.role == "owner" or participant.role == "moderator"
   local can_control = room.settings.controlMode == "open" or is_owner_or_mod
 
-  if room.settings.controlMode == "hybrid" and (mutation_type == "play" or mutation_type == "pause" or mutation_type == "seek" or mutation_type == "buffering") then
+  if room.settings.controlMode == "hybrid" and (mutation_type == "play" or mutation_type == "pause" or mutation_type == "seek" or mutation_type == "buffering" or mutation_type == "next" or mutation_type == "previous") then
      can_control = true
   end
 

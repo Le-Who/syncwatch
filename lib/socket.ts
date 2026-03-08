@@ -8,6 +8,9 @@ class RoomSocketService {
   public getRoomState!: () => any;
 
   private pingInterval: NodeJS.Timeout | null = null;
+  private commandQueue: any[] = [];
+  private lastCommand: any = null;
+  private isResyncing = false;
 
   init(getState: () => any, setState: (state: any) => void) {
     this.getState = getState;
@@ -87,11 +90,9 @@ class RoomSocketService {
     });
 
     socket.on("session_upgraded", ({ participantId }) => {
-      toast.success("Successfully joined the room as authenticated user");
-      this.setState({ participantId }); // Update local store with new permanent ID
+      // Silently update local store with new permanent ID without spamming toasts
+      this.setState({ participantId });
     });
-
-    let isResyncing = false;
 
     socket.on("error", async (error: any) => {
       const msg = error.message || "An error occurred";
@@ -103,34 +104,57 @@ class RoomSocketService {
 
       // If we got an unauthorized command because we are a guest, try to recreate the session
       if (msg.includes("Unauthorized") || msg.includes("Guest")) {
-        if (isResyncing) return;
-        isResyncing = true;
-        setTimeout(() => {
-          isResyncing = false;
-        }, 5000); // 5 sec debounce to prevent 429 loops
-
-        const state = this.getState();
-        if (state.room && typeof window !== "undefined") {
-          // Re-trigger the handshake
-          try {
-            const res = await fetch("/api/auth/session", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ participantId: state.participantId }),
-            });
-            if (res.ok) {
-              const data = await res.json();
-              if (data.token) {
-                this.upgradeSession(data.token);
-              }
-              toast.success("Session resynced securely.");
-            }
-          } catch (e) {
-            console.warn("Failed to resync session", e);
-          }
+        if (this.lastCommand) {
+          this.commandQueue.push(this.lastCommand);
+          this.lastCommand = null;
         }
+        this.resyncSession();
       }
     });
+  }
+
+  private async resyncSession() {
+    if (this.isResyncing) return;
+    this.isResyncing = true;
+    setTimeout(() => {
+      this.isResyncing = false;
+    }, 5000); // 5 sec debounce to prevent 429 loops
+
+    const state = this.getState();
+    if (state.room && typeof window !== "undefined") {
+      try {
+        const res = await fetch("/api/auth/session", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ participantId: state.participantId }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.token) {
+            this.upgradeSession(data.token);
+
+            // Replay queued commands transparently
+            setTimeout(() => {
+              while (this.commandQueue.length > 0) {
+                const cmd = this.commandQueue.shift();
+                if (cmd) {
+                  // Bypass the guest guard since we just upgraded
+                  this.socket?.emit("command", {
+                    roomId: state.room.id,
+                    sequence: state.commandSequence + 1,
+                    type: cmd.type,
+                    payload: cmd.payload,
+                  });
+                }
+              }
+            }, 600); // Give socket connection upgrade a moment to apply
+          }
+        }
+      } catch (e) {
+        console.warn("Failed to resync session", e);
+        this.commandQueue = []; // Flush on fatal error
+      }
+    }
   }
 
   public connect(roomId: string, nickname: string, pId: string) {
@@ -152,11 +176,14 @@ class RoomSocketService {
     const { room, commandSequence, participantId } = this.getState();
     if (!room) return;
 
-    // CLIENT-SIDE GUEST GUARD: Prevent sending commands if we are a guest
+    // CLIENT-SIDE GUEST GUARD: Attempt graceful resync instead of failing
     if (participantId && participantId.startsWith("guest_")) {
-      toast.error("Please log in to interact with the room.");
+      this.commandQueue.push({ type, payload });
+      this.resyncSession();
       return;
     }
+
+    this.lastCommand = { type, payload };
 
     this.socket.emit("command", {
       roomId: room.id,

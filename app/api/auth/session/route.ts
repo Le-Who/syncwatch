@@ -33,7 +33,7 @@ export async function POST(request: Request) {
     const token = await new SignJWT({ participantId })
       .setProtectedHeader({ alg: "HS256" })
       .setIssuedAt()
-      .setExpirationTime("24h")
+      .setExpirationTime("30d")
       .sign(secret);
 
     const response = NextResponse.json({ success: true, participantId, token });
@@ -45,7 +45,7 @@ export async function POST(request: Request) {
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
       path: "/",
-      maxAge: 60 * 60 * 24, // 24 hours
+      maxAge: 60 * 60 * 24 * 30, // 30 days
     });
 
     return response;
