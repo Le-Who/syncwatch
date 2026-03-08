@@ -28,6 +28,11 @@ BEGIN
   v_room_id := (room_data->>'id')::uuid;
   v_owner_id := (room_data->>'owner_id')::uuid;
 
+  -- 0. Row-Level FOR UPDATE Lock (AB/BA Deadlock Prevention)
+  -- This forces all concurrent RPC calls for the *same* room to queue 
+  -- up sequentially right here, instead of interleaving array inserts.
+  PERFORM 1 FROM public.rooms WHERE id = v_room_id FOR UPDATE;
+
   -- 1. Upsert Room
   INSERT INTO public.rooms (id, name, settings, owner_id)
   VALUES (
@@ -42,35 +47,32 @@ BEGIN
     owner_id = EXCLUDED.owner_id;
 
   -- 2. Sync Playlist (Delete missing, Upsert existing/new)
+  -- Bulk Single-Statement Delete
   DELETE FROM public.playlist_items
   WHERE room_id = v_room_id
   AND id NOT IN (
     SELECT (jsonb_array_elements(room_data->'playlist')->>'id')::uuid
   );
 
-  FOR v_item IN SELECT * FROM jsonb_array_elements(room_data->'playlist')
-  LOOP
-    INSERT INTO public.playlist_items (
-      id, room_id, url, provider, title, duration, added_by, position, last_position, thumbnail_url
-    )
-    VALUES (
-      (v_item->>'id')::uuid,
-      v_room_id,
-      v_item->>'url',
-      v_item->>'provider',
-      v_item->>'title',
-      (v_item->>'duration')::integer,
-      v_item->>'addedBy',
-      v_index,
-      COALESCE((v_item->>'lastPosition')::numeric, 0),
-      v_item->>'thumbnail'
-    )
-    ON CONFLICT (id) DO UPDATE SET
-      position = EXCLUDED.position,
-      last_position = EXCLUDED.last_position;
-      
-    v_index := v_index + 1;
-  END LOOP;
+  -- Bulk Single-Statement Upsert (O(1) execution plan instead of O(N) loop)
+  INSERT INTO public.playlist_items (
+    id, room_id, url, provider, title, duration, added_by, position, last_position, thumbnail_url
+  )
+  SELECT 
+    (item->>'id')::uuid,
+    v_room_id,
+    item->>'url',
+    item->>'provider',
+    item->>'title',
+    (item->>'duration')::integer,
+    item->>'addedBy',
+    idx - 1, -- 0-based indexed arrays
+    COALESCE((item->>'lastPosition')::numeric, 0),
+    item->>'thumbnail'
+  FROM jsonb_array_elements(room_data->'playlist') WITH ORDINALITY arr(item, idx)
+  ON CONFLICT (id) DO UPDATE SET
+    position = EXCLUDED.position,
+    last_position = EXCLUDED.last_position;
 
   -- 3. Sync Playback Snapshot
   INSERT INTO public.playback_snapshots (

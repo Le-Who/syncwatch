@@ -40,6 +40,18 @@ test.describe("SyncWatch Player E2E Regressions", () => {
       'input[placeholder="Paste video stream URL..."]',
     );
     await urlInput.waitFor({ state: "visible" });
+    // Intercept and mock the external video URL to prevent DNS resolution errors/flakiness
+    await page.route(
+      "https://www.w3schools.com/html/mov_bbb.mp4*",
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "video/mp4",
+          body: Buffer.from("mock video content"),
+        });
+      },
+    );
+
     await urlInput.fill("https://www.w3schools.com/html/mov_bbb.mp4");
     await page.locator("button", { hasText: "Init" }).click();
 

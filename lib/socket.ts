@@ -85,6 +85,11 @@ class RoomSocketService {
       });
     });
 
+    socket.on("session_upgraded", ({ participantId }) => {
+      toast.success("Successfully joined the room as authenticated user");
+      this.setState({ participantId }); // Update local store with new permanent ID
+    });
+
     let isResyncing = false;
 
     socket.on("error", async (error: any) => {
@@ -113,6 +118,10 @@ class RoomSocketService {
               body: JSON.stringify({ participantId: state.participantId }),
             });
             if (res.ok) {
+              const data = await res.json();
+              if (data.token) {
+                this.upgradeSession(data.token);
+              }
               toast.success("Session resynced securely.");
             }
           } catch (e) {
@@ -153,6 +162,19 @@ class RoomSocketService {
       sequence: commandSequence + 1,
       type,
       payload,
+    });
+  }
+
+  public upgradeSession(token: string) {
+    if (!this.socket || !this.socket.connected) return;
+    const { room, commandSequence } = this.getState();
+    if (!room) return;
+
+    this.socket.emit("command", {
+      roomId: room.id,
+      sequence: commandSequence + 1,
+      type: "upgrade_session",
+      payload: { token },
     });
   }
 

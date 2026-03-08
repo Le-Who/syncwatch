@@ -143,6 +143,12 @@ export const useStore = create<AppState>((set, get) => ({
       if (!res.ok) {
         toast.error("Handshake failed. Features may be restricted.");
       } else {
+        const data = await res.json();
+        if (data.token) {
+          set({ sessionToken: data.token });
+          // Hot-swap the connection immediately if it was already connected as guest
+          roomSocketService.upgradeSession(data.token);
+        }
         roomSocketService.connect(roomId, nickname, pId as string);
       }
     } catch (err) {

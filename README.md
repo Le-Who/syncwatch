@@ -18,11 +18,11 @@ SyncWatch is a latency-tolerant, real-time, server-authoritative watch-party app
 
 ## Recent Stability & Sync Improvements
 
-- **Stateless Backend Migration:** Transitioned the core `server.ts` off of fragile in-memory maps (`rooms`) to a fully stateless Node.js architecture driven entirely by Redis.
-- **Lock Contention Eradication (OCC):** Replaced simplistic Redis distributed locks (`withLock`/`redlock`) with ultra-fast Optimistic Concurrency Control using atomic Lua scripts (Check-and-Set) to prevent "System Busy" lock stampedes.
-- **Role Management UI:** Designed a premium glassmorphic dropdown menu in the Participants tab, allowing Room Owners to seamlessly transfer ownership or elevate Guests to Moderators.
-- **Audio Tearing Resolution**: Resolved Chromium audio resampling artifacts by widening the synchronization deadzone to `1.0s` and utilizing gentler `1.02x`/`0.98x` playback rate adjustments for minor drifts.
-- **Media Initialization & Throttling Guards:** Implemented an aggressive "Initialize Stream" user-gesture overlay to bypass browser auto-play blocks, and integrated the Page Visibility API (`document.hidden`) to prevent inactive background tabs from emitting false-positive pause commands when `requestAnimationFrame` is throttled by the OS.
+- **OCC Thrashing Eliminated**: Replaced naive distributed locks with highly optimized Atomic Lua Scripts for fast-path real-time playback mutations (`play`, `pause`, `seek`). Slow-path mutations (`add_items`) now serialize sequentially through a dedicated Redis List queue, preventing lock contention completely.
+- **Durable Write-Behind Queue (At-Least-Once Delivery)**: Upgraded the volatile Node.js `Set` cache to a durable Redis `ZSET` (`pending_db_syncs`) backend queue. The synchronized daemon guarantees state persistence by only acknowledging items _after_ successful RPC writes to Supabase.
+- **Transparent WebSocket Session Upgrades**: Resolved Guest Login Session Desyncs by implementing dynamic `upgrade_session` payloads in the Socket gateway. Users transitioning from unauthenticated to authenticated states have their JWT injected mid-flight without dropping socket frames.
+- **Postgres AB/BA Deadlocks Resolved**: Refactored the `sync_room_state` RPC in Supabase. Replaced iterative iterative `INSERT` loops with optimized `json_populate_recordset` queries and explicit `SELECT ... FOR UPDATE` parent row-locks, eliminating concurrent indexing deadlocks.
+- **Deterministic E2E Test Suite**: Stabilized Playwright E2E suites by isolating tests from DNS/Network unreliability. `page.route` securely mocks external MP4 streams with deterministic local `200 OK` HTTP buffers.
 - **Database UUID Validation**: Guaranteed all dynamically generated room IDs use strict 36-character UUIDv5 strings using reliable MD5 hashes, satisfying the Postgres `uuid` schema requirements and eliminating `22P02` serialization poison-pill crashes.
 - **Multi-Browser Stability**: Implemented deterministic guest ID assignments in the Socket.io `io.use` middleware. Unauthenticated connections now safely receive a `guest_` session (unblocking the UI from freezing) while state-mutating commands are explicitly rejected.
 

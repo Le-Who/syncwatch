@@ -28,7 +28,7 @@ export async function POST(request: Request) {
       .setExpirationTime("24h")
       .sign(secret);
 
-    const response = NextResponse.json({ success: true, participantId });
+    const response = NextResponse.json({ success: true, participantId, token });
 
     response.cookies.set({
       name: "syncwatch_session",

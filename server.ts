@@ -16,6 +16,9 @@ import {
   subClient,
   pubClient,
 } from "./lib/redis-actor";
+import { executeFastMutation } from "./lib/redis-lua";
+import { pushSlowCommand } from "./lib/redis-queue";
+import { processQueueForRoom } from "./lib/redis-queue-worker";
 
 function getDeterministicUUID(roomId: string): string {
   if (
@@ -146,7 +149,7 @@ function createEmptyRoom(id: string, name: string): RoomState {
 }
 
 // Security: Prevent sending sensitive tokens to other clients
-function sanitizeRoom(room: RoomState): RoomState {
+export function sanitizeRoom(room: RoomState): RoomState {
   const sanitized = { ...room, participants: { ...room.participants } };
   for (const pid in sanitized.participants) {
     sanitized.participants[pid] = { ...sanitized.participants[pid] };
@@ -156,14 +159,17 @@ function sanitizeRoom(room: RoomState): RoomState {
 }
 
 // Database sync helpers - Persistent Redis Write-Behind Queue
+// In-memory fallback if Redis is entirely unavailable
 const writeBehindQueue = new Set<string>();
 
 const persistRoomState = (room: RoomState) => {
   if (!supabase) return; // Immediately stop if we are in Ephemeral Memory Mode
   const redisClient = getRedisClient();
   if (redisClient) {
+    // Add to sorted set with current timestamp.
+    // This allows us to process oldest pending syncs first, and retry if they get stuck.
     redisClient
-      .sadd("pending_syncs", room.id)
+      .zadd("pending_db_syncs", Date.now(), room.id)
       .catch((e) => console.error("Redis queue error:", e));
   } else {
     writeBehindQueue.add(room.id);
@@ -223,7 +229,7 @@ const forcePersistRoom = async (room: RoomState) => {
   }
 };
 
-// Background worker to flush queue every 30 seconds
+// Robust Background Worker: Guaranteed at-least-once delivery to DB
 setInterval(async () => {
   if (!supabase) return;
 
@@ -231,7 +237,13 @@ setInterval(async () => {
   let queue: string[] = [];
 
   if (redisClient) {
-    queue = await redisClient.smembers("pending_syncs").catch(() => []);
+    // Fetch all pending syncs older than 5 seconds to provide debouncing,
+    // or those that have been stuck for a while.
+    const cutoff = Date.now() - 5000;
+    // zrangebyscore fetches the room IDs
+    queue = await redisClient
+      .zrangebyscore("pending_db_syncs", "-inf", cutoff)
+      .catch(() => []);
   } else {
     if (writeBehindQueue.size === 0) return;
     queue = Array.from(writeBehindQueue);
@@ -244,23 +256,33 @@ setInterval(async () => {
     if (roomStr) room = roomStr;
 
     if (!room) {
-      // If room no longer exists in cache, remove it from queue
+      // If room no longer exists in cache, assume we don't need to sync its active state anymore.
       if (redisClient)
-        await redisClient.srem("pending_syncs", roomId).catch(() => {});
+        await redisClient.zrem("pending_db_syncs", roomId).catch(() => {});
       continue;
     }
 
     try {
       await forcePersistRoom(room);
-      if (redisClient)
-        await redisClient.srem("pending_syncs", roomId).catch(() => {});
+      // ONLY remove from pending syncs if forcePersistRoom succeeds.
+      // If it fails, it remains in the ZSET and will be retried next tick.
+      if (redisClient) {
+        await redisClient.zrem("pending_db_syncs", roomId).catch(() => {});
+      }
     } catch (err) {
       // Re-queue on transient failure for local mode
-      // Redis mode implicitly keeps it in the set because we haven't SREM'd it yet
-      if (!redisClient) writeBehindQueue.add(roomId);
+      // Redis mode implicitly keeps it in the ZSET because we haven't ZREM'd it yet
+      // However, we update its score to push it back in the line
+      if (redisClient) {
+        await redisClient
+          .zadd("pending_db_syncs", Date.now(), roomId)
+          .catch(() => {});
+      } else {
+        writeBehindQueue.add(roomId);
+      }
     }
   }
-}, 30000);
+}, 10000); // Check every 10 seconds
 
 // Graceful Shutdown Sequence
 let isShuttingDown = false;
@@ -273,7 +295,10 @@ async function gracefulShutdown() {
   let queue: string[] = [];
 
   if (redisClient) {
-    queue = await redisClient.smembers("pending_syncs").catch(() => []);
+    // Flush EVERYTHING in the queue immediately during shutdown
+    queue = await redisClient
+      .zrangebyscore("pending_db_syncs", "-inf", "+inf")
+      .catch(() => []);
   } else {
     queue = Array.from(writeBehindQueue);
   }
@@ -286,7 +311,7 @@ async function gracefulShutdown() {
     if (room) {
       await forcePersistRoom(room).catch(() => {});
       if (redisClient)
-        await redisClient.srem("pending_syncs", roomId).catch(() => {});
+        await redisClient.zrem("pending_db_syncs", roomId).catch(() => {});
     }
   }
 
@@ -445,6 +470,23 @@ app.prepare().then(() => {
         }
       },
     );
+
+    // Queue processor listener
+    sClient.psubscribe("queue_wakeup:*");
+    sClient.on(
+      "pmessage",
+      (pattern: string, channel: string, message: string) => {
+        if (!channel.startsWith("queue_wakeup:")) return;
+        const roomId = channel.split(":")[1];
+        if (!roomId) return;
+
+        // Fire and forget processor trigger.
+        // The worker uses withLock internally, so multiple triggers won't race or corrupt memory.
+        processQueueForRoom(roomId).catch((e) =>
+          console.error("Worker error for", roomId, e),
+        );
+      },
+    );
   }
 
   // Disconnected/Inactive rooms are automatically garbage collected by Redis TTL (EXPIRE).
@@ -581,9 +623,13 @@ app.prepare().then(() => {
             return;
           }
 
-          // We must explicitly reject "guest_" accounts from sending commands.
+          // We must explicitly reject "guest_" accounts from sending mutations.
           // They are allowed to connect to receive state, but cannot mutate state.
-          if (currentParticipantId.startsWith("guest_")) {
+          // NOTE: "upgrade_session" is the ONLY exception allowed for guests.
+          if (
+            currentParticipantId.startsWith("guest_") &&
+            type !== "upgrade_session"
+          ) {
             socket.emit("error", {
               message:
                 "Unauthorized command. Guest accounts cannot send commands.",
@@ -607,515 +653,132 @@ app.prepare().then(() => {
 
           room.sequence++;
 
-          // Permission checks
-          const isOwnerOrMod =
-            participant.role === "owner" || participant.role === "moderator";
-          const canControlPlayback =
-            room.settings.controlMode === "open" ||
-            isOwnerOrMod ||
-            (room.settings.controlMode === "hybrid" &&
-              ["play", "pause", "seek", "buffering", "next"].includes(type));
-          const canEditPlaylist =
-            room.settings.controlMode === "open" || isOwnerOrMod;
+          // [PHASE 1] IF FAST-PATH MUTATION, ROUTE TO LUA IMMEDIATELY
+          const isFastPath = [
+            "play",
+            "pause",
+            "seek",
+            "update_rate",
+            "buffering",
+          ].includes(type);
+          if (isFastPath) {
+            const result = await executeFastMutation(
+              roomId,
+              baseVersion,
+              type,
+              payload,
+              currentParticipantId,
+              participant.nickname,
+            );
 
-          // Ensure commands are valid and authoritative
-          switch (type) {
-            case "play":
-              if (!canControlPlayback) break;
-              if (
-                typeof payload.position !== "number" ||
-                !Number.isFinite(payload.position) ||
-                payload.position < 0
-              )
-                break;
-              // Validations: verify position is reasonable
-              if (
-                room.playback.status !== "playing" ||
-                Math.abs(room.playback.basePosition - payload.position) > 2.0
-              ) {
-                room.playback.status = "playing";
-                room.playback.basePosition = payload.position;
-                room.playback.baseTimestamp = Date.now();
-                room.playback.updatedBy = participant.nickname;
-                stateChanged = true;
-              }
-              break;
-
-            case "pause":
-              if (!canControlPlayback) break;
-              if (
-                typeof payload.position !== "number" ||
-                !Number.isFinite(payload.position) ||
-                payload.position < 0
-              )
-                break;
-              // ALLOW escaping from stuck buffering state
-              if (room.playback.status !== "paused") {
-                room.playback.status = "paused";
-                room.playback.basePosition = payload.position;
-                room.playback.baseTimestamp = Date.now();
-                room.playback.updatedBy = participant.nickname;
-                stateChanged = true;
-              }
-              break;
-
-            case "seek":
-              if (!canControlPlayback) break;
-              if (
-                typeof payload.position !== "number" ||
-                !Number.isFinite(payload.position) ||
-                payload.position < 0
-              )
-                break;
-              room.playback.basePosition = payload.position;
-              room.playback.baseTimestamp = Date.now();
-              room.playback.updatedBy = participant.nickname;
-              stateChanged = true;
-              break;
-
-            case "update_rate":
-              if (!canControlPlayback) break;
-              if (
-                typeof payload.rate !== "number" ||
-                !Number.isFinite(payload.rate)
-              )
-                break;
-              // Only allow reasonable playback rates (e.g. 0.25 to 4.0)
-              if (payload.rate >= 0.25 && payload.rate <= 4.0) {
-                // Need to update basePosition to current virtual position before changing rate
-                // so we don't jump backward/forward unexpectedly
-                if (room.playback.status === "playing") {
-                  const now = Date.now();
-                  const elapsedSeconds =
-                    (now - room.playback.baseTimestamp) / 1000;
-                  const currentVirtualPosition =
-                    room.playback.basePosition +
-                    elapsedSeconds * room.playback.rate;
-                  room.playback.basePosition = currentVirtualPosition;
-                  room.playback.baseTimestamp = now;
-                }
-                room.playback.rate = payload.rate;
-                room.playback.updatedBy = participant.nickname;
-                stateChanged = true;
-                persistRoomState(room);
-              }
-              break;
-
-            case "buffering":
-              if (!canControlPlayback) break;
-              if (
-                typeof payload.position !== "number" ||
-                !Number.isFinite(payload.position) ||
-                payload.position < 0
-              )
-                break;
-              if (room.playback.status === "playing") {
-                room.playback.status = "buffering";
-                room.playback.basePosition = payload.position;
-                room.playback.baseTimestamp = Date.now();
-                room.playback.updatedBy = participant.nickname;
-                stateChanged = true;
-              }
-              break;
-
-            case "add_item":
-              if (!canEditPlaylist) break;
-              // Guard against unbounded memory exhaustion (OOM attack vector)
-              if (room.playlist.length >= 500) {
-                socket.emit("error", {
-                  message: "Playlist maximum limit reached (500 items)",
-                });
-                break;
-              }
-              const newItem: PlaylistItem = {
-                id: randomUUID(),
-                url: payload.url,
-                provider: payload.provider || "unknown", // Client sets this validation
-                title: payload.title || "Unknown Video",
-                duration: payload.duration || 0,
-                addedBy: participant.nickname,
-                startPosition: payload.startPosition || 0,
-                thumbnail: payload.thumbnail,
-              };
-              room.playlist.push(newItem);
-              if (!room.currentMediaId) {
-                room.currentMediaId = newItem.id;
-                room.playback.basePosition = newItem.startPosition || 0;
-                room.playback.baseTimestamp = Date.now();
-                // Inherit momentum, otherwise paused
-                room.playback.status =
-                  room.playback.status === "playing" ? "playing" : "paused";
-              }
-              stateChanged = true;
-              persistRoomState(room); // Debounced automatically
-              break;
-
-            case "add_items":
-              if (!canEditPlaylist) break;
-              if (!Array.isArray((payload as any).items)) break;
-
-              const availableSlots = 500 - room.playlist.length;
-              if (availableSlots <= 0) {
-                socket.emit("error", {
-                  message: "Playlist maximum limit reached (500 items)",
-                });
-                break;
-              }
-
-              // 1. Slice to available capacity explicitly to avoid iterating over 500+ items that will just fail
-              const itemsToProcess = (payload as any).items.slice(
-                0,
-                availableSlots,
-              );
-
-              // 2. Deduplicate URLs within the payload
-              const uniqueUrls = new Set<string>();
-              const dedupedItemsToProcess = [];
-
-              for (const item of itemsToProcess) {
-                if (typeof item.url !== "string" || !item.url.trim()) continue;
-                // Also dedupe against existing playlist quickly
-                const alreadyExists = room.playlist.some(
-                  (pi: any) => pi.url === item.url,
-                );
-                if (!uniqueUrls.has(item.url) && !alreadyExists) {
-                  uniqueUrls.add(item.url);
-                  dedupedItemsToProcess.push(item);
-                }
-              }
-
-              if (dedupedItemsToProcess.length === 0) {
-                if (itemsToProcess.length > 0) {
-                  socket.emit("error", {
-                    message: "All provided items are already in the playlist.",
-                  });
-                }
-                break;
-              }
-
-              let addedCount = 0;
-              let firstAddedId = null;
-
-              for (const item of dedupedItemsToProcess) {
-                const newBulkItem: PlaylistItem = {
-                  id: randomUUID(),
-                  url: item.url,
-                  provider: item.provider || "youtube",
-                  title: item.title || "Unknown Video",
-                  duration: item.duration || 0,
-                  addedBy: participant.nickname,
-                  startPosition: item.startPosition || 0,
-                  lastPosition: 0,
-                  thumbnail: item.thumbnail,
-                };
-
-                room.playlist.push(newBulkItem);
-                addedCount++;
-
-                if (!firstAddedId) firstAddedId = newBulkItem.id;
-
-                if (!room.currentMediaId) {
-                  room.currentMediaId = newBulkItem.id;
-                  room.playback.basePosition = newBulkItem.startPosition || 0;
-                  room.playback.baseTimestamp = Date.now();
-                  room.playback.status =
-                    room.playback.status === "playing" ? "playing" : "paused";
-                }
-              }
-
-              if (
-                addedCount < itemsToProcess.length &&
-                availableSlots < (payload as any).items.length
-              ) {
-                socket.emit("error", {
-                  message: `Partial add: Added ${addedCount} items. Playlist limit reached (500 items).`,
-                });
-              }
-
-              if (addedCount > 0) {
-                stateChanged = true;
-                persistRoomState(room);
-              }
-              break;
-
-            case "remove_item":
-              if (!canEditPlaylist) break;
-              // Capture progress if removing current
-              if (room.currentMediaId === payload.itemId) {
-                const currentItem = room.playlist.find(
-                  (i: any) => i.id === payload.itemId,
-                );
-                if (currentItem && room.playback.status === "playing") {
-                  const elapsed =
-                    (Date.now() - room.playback.baseTimestamp) / 1000;
-                  currentItem.lastPosition =
-                    room.playback.basePosition + elapsed * room.playback.rate;
-                }
-              }
-              room.playlist = room.playlist.filter(
-                (item: any) => item.id !== payload.itemId,
-              );
-              if (room.currentMediaId === payload.itemId) {
-                room.currentMediaId =
-                  room.playlist.length > 0 ? room.playlist[0].id : null;
-                room.playback.status =
-                  room.playback.status === "playing" ? "playing" : "paused";
-                const newHead = room.currentMediaId
-                  ? room.playlist.find((i: any) => i.id === room.currentMediaId)
-                  : null;
-                room.playback.basePosition = newHead
-                  ? newHead.lastPosition || newHead.startPosition || 0
-                  : 0;
-                room.playback.baseTimestamp = Date.now();
-              }
-              stateChanged = true;
-              persistRoomState(room);
-              break;
-
-            case "reorder_playlist":
-              if (!canEditPlaylist) break;
-              if (payload.playlist && Array.isArray(payload.playlist)) {
-                const oldIds = new Set(room.playlist.map((i: any) => i.id));
-                const newIds = new Set(payload.playlist.map((i: any) => i.id));
-                if (
-                  oldIds.size === newIds.size &&
-                  [...oldIds].every((id) => newIds.has(id))
-                ) {
-                  room.playlist = payload.playlist;
-                  stateChanged = true;
-                  persistRoomState(room);
-                }
-              }
-              break;
-
-            case "set_media":
-              if (!canControlPlayback && !canEditPlaylist) break;
-
-              // Save current progress before switching
-              const activeItemSet = room.playlist.find(
-                (i: any) => i.id === room.currentMediaId,
-              );
-              if (activeItemSet) {
-                const elapsed =
-                  room.playback.status === "playing"
-                    ? (Date.now() - room.playback.baseTimestamp) / 1000
-                    : 0;
-                activeItemSet.lastPosition =
-                  room.playback.basePosition + elapsed * room.playback.rate;
-              }
-
-              room.currentMediaId = payload.itemId;
-              const targetItemForSet = room.playlist.find(
-                (i: any) => i.id === payload.itemId,
-              );
-              room.playback.status =
-                room.playback.status === "playing" ? "playing" : "paused";
-              room.playback.basePosition =
-                targetItemForSet?.lastPosition ||
-                targetItemForSet?.startPosition ||
-                0;
-              room.playback.baseTimestamp = Date.now();
-              room.playback.updatedBy = participant.nickname;
-              stateChanged = true;
-              persistRoomState(room);
-              break;
-
-            case "next":
-              if (!canControlPlayback) break;
-              if (payload.currentMediaId !== room.currentMediaId) break;
-
-              const activeItemNext = room.playlist.find(
-                (i: any) => i.id === room.currentMediaId,
-              );
-              if (activeItemNext) {
-                const elapsed =
-                  room.playback.status === "playing"
-                    ? (Date.now() - room.playback.baseTimestamp) / 1000
-                    : 0;
-                activeItemNext.lastPosition =
-                  room.playback.basePosition + elapsed * room.playback.rate;
-              }
-
-              const currentIndex = room.playlist.findIndex(
-                (i: any) => i.id === room.currentMediaId,
-              );
-              if (
-                currentIndex !== -1 &&
-                currentIndex < room.playlist.length - 1
-              ) {
-                const nextItem = room.playlist[currentIndex + 1];
-                room.currentMediaId = nextItem.id;
-                room.playback.status = "playing"; // Auto-play next
-                room.playback.basePosition =
-                  nextItem.lastPosition || nextItem.startPosition || 0;
-                room.playback.baseTimestamp = Date.now();
-                room.playback.updatedBy = participant.nickname;
-                stateChanged = true;
-                persistRoomState(room);
-              } else if (room.settings.looping && room.playlist.length > 0) {
-                const loopItem = room.playlist[0];
-                room.currentMediaId = loopItem.id;
-                room.playback.status = "playing";
-                room.playback.basePosition =
-                  loopItem.lastPosition || loopItem.startPosition || 0;
-                room.playback.baseTimestamp = Date.now();
-                room.playback.updatedBy = participant.nickname;
-                stateChanged = true;
-                persistRoomState(room);
-              }
-              break;
-
-            case "video_ended":
-              if (!canControlPlayback) break;
-              if (payload.currentMediaId !== room.currentMediaId) break;
-
-              const activeItemEnded = room.playlist.find(
-                (i: any) => i.id === room.currentMediaId,
-              );
-              if (activeItemEnded) {
-                activeItemEnded.lastPosition = 0; // Reset progress when naturally ended
-              }
-
-              const nextIndex = room.playlist.findIndex(
-                (i: any) => i.id === room.currentMediaId,
-              );
-              if (
-                nextIndex !== -1 &&
-                nextIndex < room.playlist.length - 1 &&
-                room.settings.autoplayNext
-              ) {
-                const nextItem = room.playlist[nextIndex + 1];
-                room.currentMediaId = nextItem.id;
-                room.playback.status = "playing"; // Auto-play next
-                room.playback.basePosition =
-                  nextItem.lastPosition || nextItem.startPosition || 0;
-                room.playback.baseTimestamp = Date.now();
-                room.playback.updatedBy = participant.nickname;
-                stateChanged = true;
-                persistRoomState(room);
-              } else if (
-                room.settings.looping &&
-                room.playlist.length > 0 &&
-                room.settings.autoplayNext
-              ) {
-                const loopItem = room.playlist[0];
-                room.currentMediaId = loopItem.id;
-                room.playback.status = "playing";
-                room.playback.basePosition =
-                  loopItem.lastPosition || loopItem.startPosition || 0;
-                room.playback.baseTimestamp = Date.now();
-                room.playback.updatedBy = participant.nickname;
-                stateChanged = true;
-                persistRoomState(room);
-              } else {
-                room.playback.status = "ended";
-                room.playback.updatedBy = participant.nickname;
-                stateChanged = true;
-                persistRoomState(room);
-              }
-              break;
-
-            case "update_duration":
-              if (typeof payload.duration !== "number" || !payload.itemId)
-                break;
-              const targetItemDur = room.playlist.find(
-                (i: any) => i.id === payload.itemId,
-              );
-              if (
-                targetItemDur &&
-                targetItemDur.duration !== payload.duration
-              ) {
-                targetItemDur.duration = payload.duration;
-                stateChanged = true;
-                persistRoomState(room);
-              }
-              break;
-
-            case "update_settings":
-              if (!isOwnerOrMod) break;
-              room.settings = { ...room.settings, ...payload.settings };
-              stateChanged = true;
-              persistRoomState(room);
-              break;
-
-            case "update_room_name":
-              if (!isOwnerOrMod) break;
-              if (typeof payload.name === "string" && payload.name.trim()) {
-                room.name = payload.name.substring(0, 50);
-                stateChanged = true;
-                persistRoomState(room);
-              }
-              break;
-
-            case "update_nickname":
-              if (room.participants[currentParticipantId]) {
-                room.participants[currentParticipantId].nickname = String(
-                  payload.nickname,
-                ).substring(0, 30);
-                stateChanged = true;
-              }
-              break;
-
-            case "update_role": // New command for safe transfer
-              if (participant.role !== "owner") break;
-              const targetUser = room.participants[payload.participantId];
-              if (
-                targetUser &&
-                ["guest", "moderator", "owner"].includes(payload.role)
-              ) {
-                // Safety guard: if transferring owner, downgrade self to moderator
-                if (payload.role === "owner") {
-                  participant.role = "moderator";
-                }
-                targetUser.role = payload.role;
-                stateChanged = true;
-              }
-              break;
-
-            case "claim_host":
-              // Only allow claiming if literally NO ONE is an owner
-              const hasOwner = Object.values(room.participants).some(
-                (p: any) => p.role === "owner",
-              );
-              if (!hasOwner) {
-                participant.role = "owner";
-                stateChanged = true;
-              }
-              break;
-
-            default:
-              socket.emit("error", {
-                message: "Unknown command or permission denied",
+            if (result.success && result.state) {
+              const sanitizeFastRoom = sanitizeRoom(result.state);
+              io.to(roomId).emit("room_state", {
+                room: sanitizeFastRoom,
+                serverTime: Date.now(),
               });
+              // We successfully pushed to Redis. Now trigger DB sync asynchronously.
+              persistRoomState(result.state);
+
+              // We also publish the event to keep multi-node setups consistent if multiple socket IO servers exist
+              await publishRoomEvent(roomId, {
+                type: "state_update",
+                payload: sanitizeFastRoom,
+              });
+
+              break; // EXIT WHILE LOOP (Success)
+            } else if (result.error === "VERSION_CONFLICT") {
+              // OCC failed inside Lua -> Backoff and retry
+              await new Promise((r) => setTimeout(r, 10 + Math.random() * 20));
+              occRetries--;
+              continue;
+            } else if (result.error === "UNAUTHORIZED") {
+              socket.emit("error", { message: "Unauthorized operation." });
               break;
+            } else if (result.error === "NO_CHANGE") {
+              break; // Silent pass
+            } else {
+              // Fallback / REDIS_REQUIRED -> Let normal memory CAS loop handle it
+            }
           }
 
-          if (stateChanged) {
-            room.version = baseVersion + 1;
-            const pClient = pubClient();
-
-            if (pClient) {
-              const redisSuccess = await setRedisRoomCAS(
-                roomId,
-                room,
-                baseVersion,
+          if (type === "upgrade_session") {
+            try {
+              if (typeof payload.token !== "string")
+                throw new Error("Missing token");
+              const { payload: jwtPayload } = await jwtVerify(
+                payload.token,
+                JWT_SECRET,
               );
-              if (redisSuccess) {
+              if (jwtPayload.participantId) {
+                const newPid = jwtPayload.participantId as string;
+
+                // Transfer role or create new entry
+                const oldParticipant = room.participants[currentParticipantId];
+                const isFirst =
+                  Object.keys(room.participants).length === 1 && oldParticipant; // Only guest was here
+
+                room.participants[newPid] = {
+                  id: newPid,
+                  nickname:
+                    (jwtPayload.nickname as string) ||
+                    oldParticipant?.nickname ||
+                    `User`,
+                  role: isFirst ? "owner" : "guest",
+                  lastSeen: Date.now(),
+                };
+
+                if (oldParticipant) {
+                  // Carry over owner role just in case they were the room creator but unauthenticated
+                  if (oldParticipant.role === "owner")
+                    room.participants[newPid].role = "owner";
+                  delete room.participants[currentParticipantId];
+                }
+
+                socket.data.participantId = newPid;
+                currentParticipantId = newPid;
+                stateChanged = true;
+
+                socket.emit("session_upgraded", { participantId: newPid });
+              }
+            } catch (e) {
+              socket.emit("error", {
+                message: "Invalid session upgrade token",
+              });
+            }
+            // Skip queueing this command
+            if (stateChanged) {
+              const success = await setRedisRoomCAS(roomId, room, baseVersion);
+              if (success) {
                 finalRoomState = room;
                 break;
               }
-              // OCC conflict, backoff and retry
               await new Promise((r) => setTimeout(r, 10 + Math.random() * 20));
               occRetries--;
+              continue;
             } else {
-              // Fallback no Redis
-              finalRoomState = room;
               break;
             }
-          } else {
-            break;
           }
-        } // End of OCC while block
+
+          // [PHASE 1] SLOW-PATH REDIS QUEUE
+          // For all other commands, we enqueue them instead of computing them here.
+          // This allows the slow path (e.g., adding 500 items) to process sequentially without OCC.
+          const pushed = await pushSlowCommand(
+            roomId,
+            sequence,
+            type,
+            payload,
+            currentParticipantId,
+            participant.nickname,
+          );
+
+          if (!pushed) {
+            socket.emit("error", { message: "Failed to queue command" });
+          }
+
+          break; // Stop spinning OCC loops for slow commands
+        }
 
         if (stateChanged && !finalRoomState) {
           socket.emit("error", {
