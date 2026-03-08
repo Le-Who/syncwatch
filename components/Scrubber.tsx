@@ -41,7 +41,9 @@ export function Scrubber({
         timeDisplayRef.current
       ) {
         // Read directly from the HTML5 media element or ReactPlayer instance
-        const currentTime = playerRef.current.currentTime || 0;
+        const currentTime = playerRef.current.getCurrentTime
+          ? playerRef.current.getCurrentTime()
+          : playerRef.current.currentTime || 0;
 
         let percent = 0;
         if (duration > 0) {

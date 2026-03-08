@@ -82,7 +82,8 @@ export default function Player() {
 
   const { volume, muted, theaterMode, setVolume, setMuted, toggleTheaterMode } =
     useSettingsStore();
-  const playerRef = useRef<any>(null);
+  const playerRef = useRef<any>(null); // React component wrapper ref
+  const realPlayerRef = useRef<any>(null); // Actual ReactPlayer instance
   const containerRef = useRef<HTMLDivElement>(null);
   const [playing, setPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
@@ -189,13 +190,19 @@ export default function Player() {
   const pauseDebounceRef = useRef<NodeJS.Timeout | null>(null);
 
   const getAccurateTime = useCallback(() => {
+    if (realPlayerRef.current?.getCurrentTime) {
+      return realPlayerRef.current.getCurrentTime();
+    }
     return playerRef.current?.currentTime || 0;
   }, []);
 
   const performProgrammaticSeek = (position: number) => {
     lastProgrammaticSeekRef.current = Date.now();
-    if (playerRef.current && typeof playerRef.current.seekTo === "function") {
-      playerRef.current.seekTo(position, "seconds");
+    if (
+      realPlayerRef.current &&
+      typeof realPlayerRef.current.seekTo === "function"
+    ) {
+      realPlayerRef.current.seekTo(position, "seconds");
     } else if (playerRef.current) {
       playerRef.current.currentTime = position; // Fallback
     }
@@ -405,7 +412,15 @@ export default function Player() {
       registerPossibleFlashback(getAccurateTime(), newPosition, currentMediaId);
     }
 
-    if (playerRef.current) {
+    // **INTENT MASK**: Vital for preventing rewind rollback. Drop native buffering events caused by this manual seek.
+    ignoreNativeEventsUntilRef.current = Date.now() + 2000;
+
+    if (
+      realPlayerRef.current &&
+      typeof realPlayerRef.current.seekTo === "function"
+    ) {
+      realPlayerRef.current.seekTo(newPosition, "seconds");
+    } else if (playerRef.current) {
       playerRef.current.currentTime = newPosition;
     }
 
@@ -546,6 +561,7 @@ export default function Player() {
               muted={userJoined ? muted : true}
               playbackRate={localPlaybackRate}
               onReady={(rPlayer: any) => {
+                realPlayerRef.current = rPlayer;
                 setIsReady(true);
                 setError(null);
 
@@ -619,7 +635,7 @@ export default function Player() {
               }}
               onDurationChange={(e: any) => {
                 const dur =
-                  playerRef.current?.duration ||
+                  realPlayerRef.current?.getDuration?.() ||
                   e?.target?.duration ||
                   e?.duration ||
                   0;
@@ -747,22 +763,23 @@ export default function Player() {
         )}
 
         {/* Interaction overlay - Blocks native interaction but allows custom controls */}
-        {currentMedia.provider?.toLowerCase() !== "youtube" && (
-          <>
-            {/* Main click capture layer */}
-            <div
-              className={`absolute inset-0 z-10 ${canControl ? "cursor-pointer" : "cursor-default"} ${qualityMenuOpen ? "pointer-events-none" : ""}`}
-              onClick={() => {
-                if (qualityMenuOpen) {
-                  return;
-                }
-                if (canControl) {
-                  playing ? handlePause() : handlePlay();
-                }
-              }}
-            />
-          </>
-        )}
+        {currentMedia.provider?.toLowerCase() !== "youtube" &&
+          currentMedia.provider?.toLowerCase() !== "twitch" && (
+            <>
+              {/* Main click capture layer */}
+              <div
+                className={`absolute inset-0 z-10 ${canControl ? "cursor-pointer" : "cursor-default"} ${qualityMenuOpen ? "pointer-events-none" : ""}`}
+                onClick={() => {
+                  if (qualityMenuOpen) {
+                    return;
+                  }
+                  if (canControl) {
+                    playing ? handlePause() : handlePlay();
+                  }
+                }}
+              />
+            </>
+          )}
 
         {error && (
           <div className="bg-theme-bg/95 border-theme-danger absolute inset-0 z-20 flex flex-col items-center justify-center border-4 shadow-[inset_0_0_50px_var(--color-theme-danger)] backdrop-blur-sm">
@@ -845,7 +862,7 @@ export default function Player() {
             {/* Timeline */}
             <div className="mb-3 flex items-center space-x-4">
               <Scrubber
-                playerRef={playerRef}
+                playerRef={realPlayerRef}
                 duration={duration}
                 canControl={canControl}
                 onSeekStart={handleSeekMouseDown}
@@ -1003,7 +1020,7 @@ export default function Player() {
                             currentMedia.provider?.toLowerCase() === "youtube"
                           ) {
                             const internal = (
-                              playerRef.current as any
+                              realPlayerRef.current as any
                             )?.getInternalPlayer("youtube");
                             if (internal?.getAvailableQualityLevels) {
                               const levels =
@@ -1019,7 +1036,7 @@ export default function Player() {
                             currentMedia.provider?.toLowerCase() === "twitch"
                           ) {
                             const internal = (
-                              playerRef.current as any
+                              realPlayerRef.current as any
                             )?.getInternalPlayer("twitch");
                             if (internal?.getQualities) {
                               const levels = internal.getQualities();
@@ -1067,14 +1084,14 @@ export default function Player() {
                                     currentMedia.provider?.toLowerCase() ===
                                     "youtube"
                                   ) {
-                                    (playerRef.current as any)
+                                    (realPlayerRef.current as any)
                                       ?.getInternalPlayer("youtube")
                                       ?.setPlaybackQualityRange?.("auto");
                                   } else if (
                                     currentMedia.provider?.toLowerCase() ===
                                     "twitch"
                                   ) {
-                                    (playerRef.current as any)
+                                    (realPlayerRef.current as any)
                                       ?.getInternalPlayer("twitch")
                                       ?.setQuality?.("auto");
                                   }
@@ -1096,14 +1113,14 @@ export default function Player() {
                                       currentMedia.provider?.toLowerCase() ===
                                       "youtube"
                                     ) {
-                                      (playerRef.current as any)
+                                      (realPlayerRef.current as any)
                                         ?.getInternalPlayer("youtube")
                                         ?.setPlaybackQualityRange?.(q, q);
                                     } else if (
                                       currentMedia.provider?.toLowerCase() ===
                                       "twitch"
                                     ) {
-                                      (playerRef.current as any)
+                                      (realPlayerRef.current as any)
                                         ?.getInternalPlayer("twitch")
                                         ?.setQuality?.(q);
                                     }
