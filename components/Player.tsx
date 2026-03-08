@@ -427,6 +427,10 @@ export default function Player() {
               src={currentMedia.url}
               width="100%"
               height="100%"
+              controls={
+                currentMedia.provider === "youtube" ||
+                currentMedia.provider === "twitch"
+              }
               playing={userJoined ? playing : false}
               volume={volume}
               muted={userJoined ? muted : true}
