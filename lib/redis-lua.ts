@@ -17,7 +17,7 @@ const LUA_FAST_MUTATION = `
   
   -- If expected_version is passed explicitly, enforce OCC on the atomic level. 
   -- Otherwise, if -1, we bypass strictly for 'last-writer-wins' player synchronization
-  if expected_version ~= -1 and room.version ~= expected_version then
+  if expected_version ~= -1 and room.sequence ~= expected_version then
     return "VERSION_CONFLICT"
   end
 

@@ -609,19 +609,14 @@ export default function Player() {
       className="bg-theme-bg group react-player-wrapper border-theme-border/50 font-theme relative flex h-full w-full flex-1 flex-col border-y-2 lg:border-x-2 lg:border-y-0"
     >
       <div
-        className="relative h-full w-full flex-1"
-        style={{ containerType: "size" } as React.CSSProperties}
+        className="relative h-full min-h-[40vh] w-full flex-1 md:min-h-full"
         onClick={() => {
           if (qualityMenuOpen) setQualityMenuOpen(false);
         }}
       >
         <div
           className="absolute top-0 left-0 h-full w-full origin-top-left transition-transform duration-700"
-          style={{
-            visibility: "visible",
-            opacity: 1,
-            pointerEvents: "auto",
-          }}
+          style={{ pointerEvents: "auto" }}
         >
           {mounted &&
             (currentMedia.provider?.toLowerCase() !== "twitch" ||
