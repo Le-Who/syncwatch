@@ -1,9 +1,25 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  useCallback,
+  useLayoutEffect,
+} from "react";
 import dynamic from "next/dynamic";
 import { useStore, useSettingsStore } from "@/lib/store";
 import { useShallow } from "zustand/react/shallow";
+
+function useEventCallback<Args extends unknown[], Return>(
+  fn: (...args: Args) => Return,
+): (...args: Args) => Return {
+  const ref = useRef(fn);
+  useLayoutEffect(() => {
+    ref.current = fn;
+  });
+  return useCallback((...args: Args) => ref.current(...args), []);
+}
 import {
   Play,
   Pause,
@@ -96,7 +112,6 @@ export default function Player() {
 
   const [qualityMenuOpen, setQualityMenuOpen] = useState(false);
   const [forceHighRes, setForceHighRes] = useState(false);
-  const [nativeInteraction, setNativeInteraction] = useState(false);
   const [hlsLevels, setHlsLevels] = useState<{ height: number }[]>([]);
   const [currentHlsLevel, setCurrentHlsLevel] = useState<number>(-1);
 
@@ -155,105 +170,75 @@ export default function Player() {
     sendCommand(type, payload);
   };
 
-  // Use refs to avoid interval dependency thrashing (Stable Timer Pattern)
-  const playbackRef = useRef(playback);
-  const isReadyRef = useRef(isReady);
-  const seekingRef = useRef(seeking);
-  const playingRef = useRef(playing);
-  const isBufferingRef = useRef(isBuffering);
-  const currentMediaProviderRef = useRef(currentMedia?.provider);
+  const syncPlayback = useEventCallback(() => {
+    if (!playback || !isReady || seeking) return;
 
-  useEffect(() => {
-    playbackRef.current = playback;
-    isReadyRef.current = isReady;
-    seekingRef.current = seeking;
-    playingRef.current = playing;
-    isBufferingRef.current = isBuffering;
-    currentMediaProviderRef.current = currentMedia?.provider;
-  }, [
-    playback,
-    isReady,
-    seeking,
-    playing,
-    isBuffering,
-    currentMedia?.provider,
-  ]);
+    if (Date.now() - lastCommandEmitTimeRef.current < 1500) {
+      // Optimistic UI barrier: ignore server discrepancy immediately after manual UI action
+      return;
+    }
 
-  useEffect(() => {
-    const syncPlayback = () => {
-      const currentPlayback = playbackRef.current;
-      if (!currentPlayback || !isReadyRef.current || seekingRef.current) return;
+    const currentServerTime = Date.now() + serverClockOffset;
+    const currentPosition = getAccurateTime();
 
-      if (Date.now() - lastCommandEmitTimeRef.current < 1500) {
-        // Optimistic UI barrier: ignore server discrepancy immediately after manual UI action
-        return;
+    if (currentMedia?.provider?.toLowerCase() === "twitch") return; // Twitch Live/VODs break on frequent programmatic seeks
+
+    if (playback.status === "playing") {
+      const { expectedPosition, drift: currentDrift } = calculateDrift(
+        playback.status,
+        playback.basePosition,
+        playback.baseTimestamp,
+        currentServerTime,
+        currentPosition,
+        playback.rate,
+      );
+      driftRef.current = currentDrift;
+
+      if (!playing) {
+        setPlaying(true);
       }
 
-      const currentServerTime = Date.now() + serverClockOffset;
-      const currentPosition = getAccurateTime();
+      const isIframeProvider = ["youtube", "vimeo", "twitch"].includes(
+        currentMedia?.provider?.toLowerCase() || "",
+      );
 
-      if (currentMediaProviderRef.current?.toLowerCase() === "twitch") return; // Twitch Live/VODs break on frequent programmatic seeks
-
-      if (currentPlayback.status === "playing") {
-        const { expectedPosition, drift: currentDrift } = calculateDrift(
-          currentPlayback.status,
-          currentPlayback.basePosition,
-          currentPlayback.baseTimestamp,
-          currentServerTime,
-          currentPosition,
-          currentPlayback.rate,
-        );
-        driftRef.current = currentDrift;
-
-        if (!playingRef.current) {
-          setPlaying(true);
-        }
-
-        const isIframeProvider = ["youtube", "vimeo", "twitch"].includes(
-          currentMediaProviderRef.current?.toLowerCase() || "",
-        );
-
-        if (
-          (currentDrift > 3.0 || (isIframeProvider && currentDrift > 1.5)) &&
-          !isBufferingRef.current
-        ) {
-          performProgrammaticSeek(expectedPosition);
-          setLocalPlaybackRate(currentPlayback.rate);
-        } else if (
-          currentDrift > 1.0 &&
-          !isBufferingRef.current &&
-          !isIframeProvider
-        ) {
-          const rateAdjustment =
-            currentPosition < expectedPosition ? 1.05 : 0.95;
-          setLocalPlaybackRate(currentPlayback.rate * rateAdjustment);
-        } else {
-          setLocalPlaybackRate(currentPlayback.rate);
-        }
-      } else if (currentPlayback.status === "paused") {
-        const { drift: currentDrift } = calculateDrift(
-          currentPlayback.status,
-          currentPlayback.basePosition,
-          currentPlayback.baseTimestamp,
-          currentServerTime,
-          currentPosition,
-          1.0,
-        );
-        driftRef.current = currentDrift;
-
-        if (playingRef.current) {
-          setPlaying(false);
-        }
-
-        if (currentDrift > 1.0 && !isBufferingRef.current) {
-          performProgrammaticSeek(currentPlayback.basePosition);
-        }
+      if (
+        (currentDrift > 3.0 || (isIframeProvider && currentDrift > 1.5)) &&
+        !isBuffering
+      ) {
+        performProgrammaticSeek(expectedPosition);
+        setLocalPlaybackRate(playback.rate);
+      } else if (currentDrift > 1.0 && !isBuffering && !isIframeProvider) {
+        const rateAdjustment = currentPosition < expectedPosition ? 1.05 : 0.95;
+        setLocalPlaybackRate(playback.rate * rateAdjustment);
+      } else {
+        setLocalPlaybackRate(playback.rate);
       }
-    };
+    } else if (playback.status === "paused") {
+      const { drift: currentDrift } = calculateDrift(
+        playback.status,
+        playback.basePosition,
+        playback.baseTimestamp,
+        currentServerTime,
+        currentPosition,
+        1.0,
+      );
+      driftRef.current = currentDrift;
 
+      if (playing) {
+        setPlaying(false);
+      }
+
+      if (currentDrift > 1.0 && !isBuffering) {
+        performProgrammaticSeek(playback.basePosition);
+      }
+    }
+  });
+
+  useEffect(() => {
     const interval = setInterval(syncPlayback, 1000);
     return () => clearInterval(interval);
-  }, [getAccurateTime, serverClockOffset]);
+  }, [syncPlayback]);
 
   const handlePlay = () => {
     if (!currentMediaId || !participantId || !canControl) return;
@@ -408,18 +393,6 @@ export default function Player() {
       ref={containerRef}
       className="bg-theme-bg group react-player-wrapper border-theme-border/50 font-theme relative flex h-full w-full flex-1 flex-col border-y-2 lg:border-x-2 lg:border-y-0"
     >
-      {nativeInteraction && (
-        <div className="animate-in slide-in-from-top-4 fade-in absolute top-4 left-1/2 z-60 -translate-x-1/2">
-          <button
-            onClick={() => setNativeInteraction(false)}
-            className="bg-theme-danger/90 hover:bg-theme-danger text-theme-bg flex items-center gap-2 rounded-full px-6 py-2 font-bold tracking-widest uppercase shadow-[0_0_20px_var(--color-theme-danger)] transition-all"
-          >
-            <ExternalLink className="h-5 w-5" />
-            Exit Native Controls
-          </button>
-        </div>
-      )}
-
       <div
         className="relative h-full w-full flex-1"
         style={{ containerType: "size" } as React.CSSProperties}
@@ -479,17 +452,6 @@ export default function Player() {
               }}
               onSeeked={(e: any) => {
                 if (isBuffering) setIsBuffering(false);
-                const ct =
-                  playerRef.current?.currentTime ||
-                  e?.target?.currentTime ||
-                  e?.time ||
-                  0;
-                if (nativeInteraction && canControl) {
-                  emitCommand("seek", { position: ct });
-                  if (playing) {
-                    emitCommand("play", { position: ct });
-                  }
-                }
               }}
               onDurationChange={(e: any) => {
                 const dur =
@@ -521,32 +483,10 @@ export default function Player() {
               onPlay={() => {
                 setIsBuffering(false);
                 setPlaying(true);
-                // CLIENT-SIDE GUARD: Only emit command from native HTML/YouTube play events
-                // IF the user explicitly entered Native Interaction mode.
-                // Otherwise, ignore them entirely to prevent programmatic seek echo loops.
-                if (
-                  canControl &&
-                  nativeInteraction &&
-                  playback?.status !== "playing"
-                ) {
-                  let pos = getAccurateTime();
-                  if (pos === 0 && playback && playback.basePosition > 2) {
-                    pos = playback.basePosition;
-                  }
-                  emitCommand("play", { position: pos });
-                }
               }}
               onPause={() => {
                 setIsBuffering(false);
                 setPlaying(false);
-                if (
-                  canControl &&
-                  nativeInteraction &&
-                  playback?.status === "playing" &&
-                  !seeking
-                ) {
-                  emitCommand("pause", { position: getAccurateTime() });
-                }
               }}
               style={{ position: "absolute", top: 0, left: 0 }}
               config={{
@@ -623,32 +563,31 @@ export default function Player() {
         )}
 
         {/* Interaction overlay - Blocks native interaction but allows custom controls */}
-        {currentMedia.provider?.toLowerCase() !== "twitch" &&
-          !nativeInteraction && (
-            <>
-              {/* Main click capture layer */}
-              <div
-                className={`absolute inset-0 z-10 ${canControl ? "cursor-pointer" : "cursor-default"} ${qualityMenuOpen ? "pointer-events-none" : ""}`}
-                onClick={() => {
-                  if (qualityMenuOpen) {
-                    return;
-                  }
-                  if (canControl) {
-                    playing ? handlePause() : handlePlay();
-                  }
-                }}
-              />
+        {currentMedia.provider?.toLowerCase() !== "twitch" && (
+          <>
+            {/* Main click capture layer */}
+            <div
+              className={`absolute inset-0 z-10 ${canControl ? "cursor-pointer" : "cursor-default"} ${qualityMenuOpen ? "pointer-events-none" : ""}`}
+              onClick={() => {
+                if (qualityMenuOpen) {
+                  return;
+                }
+                if (canControl) {
+                  playing ? handlePause() : handlePlay();
+                }
+              }}
+            />
 
-              {/* Passthrough window for YouTube's native Gear Icon (top right usually) */}
-              {currentMedia.provider === "youtube" && (
-                <div
-                  className="pointer-events-none absolute top-0 right-0 z-20 h-16 w-24"
-                  // Actually we need the pointer events to fall straight through z-10
-                  // to the iframe below (z-0). We achieve this by *not* covering it.
-                />
-              )}
-            </>
-          )}
+            {/* Passthrough window for YouTube's native Gear Icon (top right usually) */}
+            {currentMedia.provider === "youtube" && (
+              <div
+                className="pointer-events-none absolute top-0 right-0 z-20 h-16 w-24"
+                // Actually we need the pointer events to fall straight through z-10
+                // to the iframe below (z-0). We achieve this by *not* covering it.
+              />
+            )}
+          </>
+        )}
 
         {error && (
           <div className="bg-theme-bg/95 border-theme-danger absolute inset-0 z-20 flex flex-col items-center justify-center border-4 shadow-[inset_0_0_50px_var(--color-theme-danger)] backdrop-blur-sm">
@@ -706,7 +645,7 @@ export default function Player() {
       </div>
 
       {/* Custom Controls Panel */}
-      {!nativeInteraction && (
+      <>
         <div className="font-theme absolute right-0 bottom-0 left-0 z-60 p-4 opacity-0 transition-opacity duration-300 group-hover:opacity-100 focus-within:opacity-100">
           <div className="bg-theme-bg/80 border-theme-border/50 rounded-theme border-2 p-3 shadow-lg backdrop-blur-md">
             {/* Timeline */}
@@ -924,21 +863,6 @@ export default function Player() {
                             ))}
                           </div>
                         )}
-
-                        {/* Native Controls Override */}
-                        <div className="bg-theme-bg/90 border-theme-border/30 mt-1 w-full border-t">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setNativeInteraction(true);
-                              setQualityMenuOpen(false);
-                            }}
-                            className="text-theme-danger hover:bg-theme-danger/20 flex w-full items-center gap-3 px-4 py-3 text-left text-xs font-bold transition-all hover:text-red-400"
-                          >
-                            <ExternalLink className="h-4 w-4 shrink-0" />
-                            <span>Unlock Native Controls</span>
-                          </button>
-                        </div>
                       </div>
                     </div>
                   )}
@@ -1012,7 +936,7 @@ export default function Player() {
             </div>
           </div>
         </div>
-      )}
+      </>
     </div>
   );
 }
