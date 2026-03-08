@@ -106,8 +106,8 @@ describe("Player Component", () => {
           playlist: [
             {
               id: "1",
-              url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-              provider: "youtube",
+              url: "https://example.com/video.mp4",
+              provider: "raw",
             },
           ],
           settings: { controlMode: "open" },

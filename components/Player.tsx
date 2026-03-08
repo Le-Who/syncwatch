@@ -131,11 +131,14 @@ export default function Player() {
     time: number;
   } | null>(null);
 
+  const lastProgrammaticSeekRef = useRef<number>(0);
+
   const getAccurateTime = useCallback(() => {
     return playerRef.current?.currentTime || 0;
   }, []);
 
   const performProgrammaticSeek = (position: number) => {
+    lastProgrammaticSeekRef.current = Date.now();
     if (playerRef.current && typeof playerRef.current.seekTo === "function") {
       playerRef.current.seekTo(position, "seconds");
     } else if (playerRef.current) {
@@ -456,6 +459,20 @@ export default function Player() {
                 setError("SYSTEM FAILURE. SIGNAL LOST.");
                 setIsBuffering(false);
               }}
+              onSeek={(seconds: number) => {
+                // If it's a programmatic seek responding to the server, ignore it.
+                if (Date.now() - lastProgrammaticSeekRef.current < 1500) return;
+
+                // If it's a local seek via scrubber, it would have already emitted
+                if (Date.now() - lastCommandEmitTimeRef.current < 1500) return;
+
+                if (canControl) {
+                  emitCommand("seek", { position: seconds });
+                  if (playing) {
+                    emitCommand("play", { position: seconds });
+                  }
+                }
+              }}
               onSeeked={(e: any) => {
                 if (isBuffering) setIsBuffering(false);
               }}
@@ -489,10 +506,26 @@ export default function Player() {
               onPlay={() => {
                 setIsBuffering(false);
                 setPlaying(true);
+                // IF this was a native interaction while server thinks we are paused:
+                if (
+                  canControl &&
+                  playback?.status !== "playing" &&
+                  Date.now() - lastCommandEmitTimeRef.current > 500
+                ) {
+                  emitCommand("play", { position: getAccurateTime() });
+                }
               }}
               onPause={() => {
                 setIsBuffering(false);
                 setPlaying(false);
+                // IF this was a native interaction while server thinks we are playing/buffering:
+                if (
+                  canControl &&
+                  playback?.status !== "paused" &&
+                  Date.now() - lastCommandEmitTimeRef.current > 500
+                ) {
+                  emitCommand("pause", { position: getAccurateTime() });
+                }
               }}
               style={{ position: "absolute", top: 0, left: 0 }}
               config={{
