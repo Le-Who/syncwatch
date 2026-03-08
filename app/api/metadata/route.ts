@@ -47,8 +47,9 @@ export async function GET(request: NextRequest) {
   }
 
   // 1. DNS Resolution & Validation against SSRF
+  let addresses: string[] = [];
   try {
-    const addresses = await dns.resolve(targetUrl.hostname);
+    addresses = await dns.resolve(targetUrl.hostname);
     if (addresses.some(isBogon)) {
       return NextResponse.json(
         { error: "Access to private network forbidden" },
@@ -92,10 +93,18 @@ export async function GET(request: NextRequest) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000);
 
-    const res = await fetch(targetUrl.toString(), {
+    // [AUDIT FIX] DNS Rebinding SSRF Prevention.
+    // We validated addresses[0] previously in dns.resolve. We MUST use this exact IP.
+    const safeIp = addresses[0].includes(":")
+      ? `[${addresses[0]}]`
+      : addresses[0];
+    const safeFetchUrl = `${targetUrl.protocol}//${safeIp}${targetUrl.pathname}${targetUrl.search}`;
+
+    const res = await fetch(safeFetchUrl, {
       headers: {
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        Host: targetUrl.host, // Crucial for virtual hosting to respond correctly
       },
       signal: controller.signal,
     });

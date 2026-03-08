@@ -254,6 +254,18 @@ setInterval(async () => {
     // Limit memory queue processing too
     queue = Array.from(writeBehindQueue).slice(0, 50);
     queue.forEach((q) => writeBehindQueue.delete(q));
+
+    // Hard cap to prevent OOM if DB is permanently unreachable in memory-fallback mode
+    if (writeBehindQueue.size > 3000) {
+      console.warn(
+        "Write-behind queue exceeded 3000 items. Dropping oldest to prevent OOM.",
+      );
+      const excess = Array.from(writeBehindQueue).slice(
+        0,
+        writeBehindQueue.size - 2000,
+      );
+      excess.forEach((q) => writeBehindQueue.delete(q));
+    }
   }
 
   // Chunk array into batches of 10 to prevent slamming Event Loop and PostgreSQL pool
@@ -274,12 +286,29 @@ setInterval(async () => {
       }
 
       try {
+        // [AUDIT FIX] Distribute processing lock to prevent Thundering Herd
+        const lockAcquired = redisClient
+          ? await redisClient.set(
+              `db_sync_lock:${roomId}`,
+              "1",
+              "PX",
+              10000,
+              "NX",
+            )
+          : "OK";
+
+        if (lockAcquired !== "OK") {
+          return; // Another node is processing this room
+        }
+
         await forcePersistRoom(room);
         if (redisClient) {
           await redisClient.zrem("pending_db_syncs", roomId).catch(() => {});
+          await redisClient.del(`db_sync_lock:${roomId}`).catch(() => {});
         }
       } catch (err) {
         if (redisClient) {
+          await redisClient.del(`db_sync_lock:${roomId}`).catch(() => {});
           // Add Exponential Backoff (1 minute delay) on failure to prevent DB Retry Storm
           await redisClient
             .zadd("pending_db_syncs", Date.now() + 60000, roomId)

@@ -37,15 +37,20 @@ const LUA_FAST_MUTATION = `
 
   if mutation_type == "play" or mutation_type == "seek" or mutation_type == "buffering" then
      if type(mutation_payload.position) == "number" and mutation_payload.position >= 0 then
-        if mutation_type == "play" then
-           room.playback.status = "playing"
-        elseif mutation_type == "buffering" then
-           room.playback.status = "buffering"
+        -- If already playing and just hitting play again, do nothing to prevent timestamp shift
+        if mutation_type == "play" and room.playback.status == "playing" and not mutation_payload.forceSeek then
+           -- strictly ignore
+        else
+           if mutation_type == "play" then
+              room.playback.status = "playing"
+           elseif mutation_type == "buffering" then
+              room.playback.status = "buffering"
+           end
+           room.playback.basePosition = mutation_payload.position
+           room.playback.baseTimestamp = now
+           room.playback.updatedBy = participant_nickname
+           changed = true
         end
-        room.playback.basePosition = mutation_payload.position
-        room.playback.baseTimestamp = now
-        room.playback.updatedBy = participant_nickname
-        changed = true
      end
   elseif mutation_type == "pause" then
      if type(mutation_payload.position) == "number" and mutation_payload.position >= 0 then

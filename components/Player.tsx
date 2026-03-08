@@ -169,19 +169,26 @@ export default function Player() {
           setPlaying(true);
         }
 
+        const isIframeProvider = ["youtube", "vimeo", "twitch"].includes(
+          currentMedia?.provider?.toLowerCase() || "",
+        );
+
         // Increase the deadzone from 0.5s to 1.0s to stop aggressive audio resampling (tearing).
-        // If drift > 3.0s, force a programmatic seek (visual skip, but catches up instantly)
-        if (currentDrift > 3.0 && !isBuffering) {
+        // If drift > 3.0s (or > 1.5s for restrictive iFrames), force a programmatic seek
+        if (
+          (currentDrift > 3.0 || (isIframeProvider && currentDrift > 1.5)) &&
+          !isBuffering
+        ) {
           performProgrammaticSeek(expectedPosition);
           setLocalPlaybackRate(playback.rate);
         }
-        // If drift is between 1.0s and 3.0s, gently correct it (1.05x or 0.95x) to preserve audio fidelity.
-        else if (currentDrift > 1.0 && !isBuffering) {
+        // If drift is between 1.0s and 3.0s, gently correct it (1.05x or 0.95x) to preserve audio fidelity for native videos
+        else if (currentDrift > 1.0 && !isBuffering && !isIframeProvider) {
           const rateAdjustment =
             currentPosition < expectedPosition ? 1.05 : 0.95;
           setLocalPlaybackRate(playback.rate * rateAdjustment);
         } else {
-          // Inside the 1.0s deadzone, trust local playback rate entirely.
+          // Inside the deadzone, trust local playback rate entirely.
           setLocalPlaybackRate(playback.rate);
         }
       } else if (playback.status === "paused") {
