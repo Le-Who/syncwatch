@@ -19,6 +19,7 @@ import {
 import { executeFastMutation } from "./lib/redis-lua";
 import { pushSlowCommand } from "./lib/redis-queue";
 import { processQueueForRoom } from "./lib/redis-queue-worker";
+import { commandSchema } from "./lib/zod-schemas";
 
 // Deterministic UUID namespace strictly for SyncWatch (arbitrary valid UUIDv4)
 const SYNCWATCH_NAMESPACE = "1b671a64-40d5-491e-99b0-da01ff1f3341";
@@ -666,6 +667,19 @@ app.prepare().then(() => {
 
       const { roomId, type, payload, sequence } = rawCommand;
       if (typeof type !== "string" || type.length > 50) return;
+
+      // [PHASE 4: ZOD VALIDATION] Block malformed commands before they reach Redis
+      const parsedCommand = commandSchema.safeParse({ type, payload });
+      if (!parsedCommand.success) {
+        console.error(
+          `[Zod] Dropped malformed command '${type}' from ${ip}:`,
+          JSON.stringify(parsedCommand.error.issues),
+          "Payload was:",
+          JSON.stringify(payload),
+        );
+        socket.emit("error", { message: "Invalid command payload format." });
+        return;
+      }
 
       try {
         let occRetries = 10;

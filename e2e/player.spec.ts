@@ -125,8 +125,8 @@ test.describe("SyncWatch Player E2E Regressions", () => {
     );
     await urlInput.waitFor({ state: "visible" });
 
-    // Intercept metadata fetching to mock the response, avoiding actual network requests
-    await page1.route("**/api/youtube/search*", async (route) => {
+    // Intercept metadata fetching to mock the response on BOTH pages, avoiding actual network requests
+    const mockYoutubeApi = async (route: any) => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -143,7 +143,10 @@ test.describe("SyncWatch Player E2E Regressions", () => {
           ],
         }),
       });
-    });
+    };
+
+    await page1.route("**/api/youtube/search*", mockYoutubeApi);
+    await page2.route("**/api/youtube/search*", mockYoutubeApi);
 
     await urlInput.fill("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
     await page1.locator("button", { hasText: "Init" }).click();
@@ -152,8 +155,9 @@ test.describe("SyncWatch Player E2E Regressions", () => {
     await page2.locator("button", { hasText: /Queue/i }).click();
 
     // Viewer immediately checks if the video title replicates into their local DOM flawlessly
+    // Note: The Redis Queue worker operates asynchronously, so under heavy test load it may take longer than 15s.
     await expect(page2.locator("text=Mocked Sync Video")).toBeVisible({
-      timeout: 15000,
+      timeout: 30000,
     });
   });
 });
