@@ -435,9 +435,47 @@ export default function Player() {
               volume={volume}
               muted={userJoined ? muted : true}
               playbackRate={localPlaybackRate}
-              onReady={() => {
+              onReady={(rPlayer: any) => {
                 setIsReady(true);
                 setError(null);
+
+                // -- TWITCH EVENT PROXY HACK --
+                // react-player @3.x fails to bubble "playing" from twitch-video-element as standard "play"
+                // So we listen explicitly on the internal DOM element.
+                if (currentMedia.provider?.toLowerCase() === "twitch") {
+                  try {
+                    const twitchEl = rPlayer.getInternalPlayer("twitch");
+                    if (twitchEl && !twitchEl.dataset.proxyAttached) {
+                      twitchEl.dataset.proxyAttached = "true";
+                      twitchEl.addEventListener("playing", () => {
+                        console.log("[TWITCH PROXY] playing event fired");
+                        if (
+                          canControl &&
+                          playback?.status !== "playing" &&
+                          Date.now() - lastCommandEmitTimeRef.current > 500
+                        ) {
+                          emitCommand("play", { position: getAccurateTime() });
+                        }
+                        setPlaying(true);
+                        setIsBuffering(false);
+                      });
+                      twitchEl.addEventListener("pause", () => {
+                        console.log("[TWITCH PROXY] pause event fired");
+                        if (
+                          canControl &&
+                          playback?.status !== "paused" &&
+                          Date.now() - lastCommandEmitTimeRef.current > 500
+                        ) {
+                          emitCommand("pause", { position: getAccurateTime() });
+                        }
+                        setPlaying(false);
+                        setIsBuffering(false);
+                      });
+                    }
+                  } catch (e) {
+                    console.error("Failed to proxy twitch events", e);
+                  }
+                }
 
                 // Extract HLS Levels if it's a direct stream
                 if (
@@ -508,6 +546,11 @@ export default function Player() {
                 setIsBuffering(false);
               }}
               onPlay={() => {
+                console.log("[REACT_PLAYER DEBUG] onPlay fired!", {
+                  status: playback?.status,
+                  canControl,
+                  timeDelta: Date.now() - lastCommandEmitTimeRef.current,
+                });
                 setIsBuffering(false);
                 setPlaying(true);
                 // IF this was a native interaction while server thinks we are paused:
@@ -520,6 +563,11 @@ export default function Player() {
                 }
               }}
               onPause={() => {
+                console.log("[REACT_PLAYER DEBUG] onPause fired!", {
+                  status: playback?.status,
+                  canControl,
+                  timeDelta: Date.now() - lastCommandEmitTimeRef.current,
+                });
                 setIsBuffering(false);
                 setPlaying(false);
                 // IF this was a native interaction while server thinks we are playing/buffering:
