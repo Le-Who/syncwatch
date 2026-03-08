@@ -618,170 +618,171 @@ export default function Player() {
         <div
           className="absolute top-0 left-0 h-full w-full origin-top-left transition-transform duration-700"
           style={{
-            // [Problem 7 Fix]: Twitch Embed visibility validation hack.
-            // We MUST keep the DOM element fully visible/opaque initially. We mask it with pointer-events instead
-            // of display:none or opacity:0.
             visibility: "visible",
             opacity: 1,
-            pointerEvents: isBuffering || !userJoined ? "none" : "auto",
+            pointerEvents: "auto",
           }}
         >
-          {mounted && (
-            <ReactPlayer
-              ref={playerRef}
-              src={currentMedia.url}
-              width="100%"
-              height="100%"
-              controls={currentMedia.provider?.toLowerCase() === "youtube"}
-              playing={userJoined ? playing : false}
-              volume={volume}
-              muted={userJoined ? muted : true}
-              playbackRate={localPlaybackRate}
-              onReady={(rPlayer: any) => {
-                realPlayerRef.current = rPlayer;
-                setIsReady(true);
-                setError(null);
+          {mounted &&
+            (currentMedia.provider?.toLowerCase() !== "twitch" ||
+              userJoined) && (
+              <ReactPlayer
+                ref={playerRef}
+                src={currentMedia.url}
+                width="100%"
+                height="100%"
+                controls={currentMedia.provider?.toLowerCase() === "youtube"}
+                playing={userJoined ? playing : false}
+                volume={volume}
+                muted={userJoined ? muted : true}
+                playbackRate={localPlaybackRate}
+                onReady={(rPlayer: any) => {
+                  realPlayerRef.current = rPlayer;
+                  setIsReady(true);
+                  setError(null);
 
-                // -- TWITCH EVENT PROXY HACK --
-                // react-player @3.x fails to bubble "playing" from twitch-video-element as standard "play"
-                // So we listen explicitly on the internal DOM element.
-                if (currentMedia.provider?.toLowerCase() === "twitch") {
-                  try {
-                    const twitchEl = rPlayer.getInternalPlayer("twitch");
-                    if (twitchEl && !twitchEl.dataset.proxyAttached) {
-                      twitchEl.dataset.proxyAttached = "true";
+                  // -- TWITCH EVENT PROXY HACK --
+                  // react-player @3.x fails to bubble "playing" from twitch-video-element as standard "play"
+                  // So we listen explicitly on the internal DOM element.
+                  if (currentMedia.provider?.toLowerCase() === "twitch") {
+                    try {
+                      const twitchEl = rPlayer.getInternalPlayer("twitch");
+                      if (twitchEl && !twitchEl.dataset.proxyAttached) {
+                        twitchEl.dataset.proxyAttached = "true";
 
-                      // Using Twitch standard DOM events
-                      twitchEl.addEventListener("play", () => {
-                        console.log("[TWITCH PROXY] play event fired");
-                        handleNativePlay();
-                      });
-                      twitchEl.addEventListener("playing", () => {
-                        console.log("[TWITCH PROXY] playing event fired");
-                        handleNativePlay();
-                      });
-                      twitchEl.addEventListener("pause", () => {
-                        console.log("[TWITCH PROXY] pause event fired");
-                        handleNativePause();
-                      });
+                        // Using Twitch standard DOM events
+                        twitchEl.addEventListener("play", () => {
+                          console.log("[TWITCH PROXY] play event fired");
+                          handleNativePlay();
+                        });
+                        twitchEl.addEventListener("playing", () => {
+                          console.log("[TWITCH PROXY] playing event fired");
+                          handleNativePlay();
+                        });
+                        twitchEl.addEventListener("pause", () => {
+                          console.log("[TWITCH PROXY] pause event fired");
+                          handleNativePause();
+                        });
+                      }
+                    } catch (e) {
+                      console.error("Failed to proxy twitch events", e);
                     }
-                  } catch (e) {
-                    console.error("Failed to proxy twitch events", e);
                   }
-                }
 
-                // Extract HLS Levels if it's a direct stream
-                if (
-                  currentMedia.provider?.toLowerCase() !== "youtube" &&
-                  currentMedia.provider?.toLowerCase() !== "twitch" &&
-                  currentMedia.provider?.toLowerCase() !== "vimeo"
-                ) {
-                  try {
-                    const el = playerRef.current as any;
-                    // In react-player v3, if using HLS, the web component might expose native properties
-                    // Just cleanly ignore it if unavailable, or try to access the underlying HLS instance.
-                    if (el && el.levels) {
-                      setHlsLevels(el.levels);
-                      setCurrentHlsLevel(el.currentLevel);
+                  // Extract HLS Levels if it's a direct stream
+                  if (
+                    currentMedia.provider?.toLowerCase() !== "youtube" &&
+                    currentMedia.provider?.toLowerCase() !== "twitch" &&
+                    currentMedia.provider?.toLowerCase() !== "vimeo"
+                  ) {
+                    try {
+                      const el = playerRef.current as any;
+                      // In react-player v3, if using HLS, the web component might expose native properties
+                      // Just cleanly ignore it if unavailable, or try to access the underlying HLS instance.
+                      if (el && el.levels) {
+                        setHlsLevels(el.levels);
+                        setCurrentHlsLevel(el.currentLevel);
+                      }
+                    } catch (e) {
+                      console.log("Not an HLS stream or levels unavailable.");
                     }
-                  } catch (e) {
-                    console.log("Not an HLS stream or levels unavailable.");
                   }
-                }
-              }}
-              onError={(e: any) => {
-                console.error("Player error:", e);
-                setError("SYSTEM FAILURE. SIGNAL LOST.");
-                setIsBuffering(false);
-              }}
-              onSeek={(seconds: number) => {
-                // If it's a programmatic seek responding to the server, ignore it.
-                if (Date.now() - lastProgrammaticSeekRef.current < 1500) return;
+                }}
+                onError={(e: any) => {
+                  console.error("Player error:", e);
+                  setError("SYSTEM FAILURE. SIGNAL LOST.");
+                  setIsBuffering(false);
+                }}
+                onSeek={(seconds: number) => {
+                  // If it's a programmatic seek responding to the server, ignore it.
+                  if (Date.now() - lastProgrammaticSeekRef.current < 1500)
+                    return;
 
-                // If it's a local seek via scrubber, it would have already emitted
-                if (Date.now() - lastCommandEmitTimeRef.current < 1500) return;
+                  // If it's a local seek via scrubber, it would have already emitted
+                  if (Date.now() - lastCommandEmitTimeRef.current < 1500)
+                    return;
 
-                if (canControl) {
-                  emitCommand("seek", { position: seconds });
-                  // We do NOT emit "play" here! The native player will resume naturally,
-                  // firing onPlay, which is safely debounced and resolved by handleNativePlay.
-                }
-              }}
-              onSeeked={(e: any) => {
-                if (isBuffering) setIsBuffering(false);
-              }}
-              onDurationChange={(e: any) => {
-                const dur =
-                  realPlayerRef.current?.getDuration?.() ||
-                  e?.target?.duration ||
-                  e?.duration ||
-                  0;
-                setDuration(dur);
-                if (canControl && currentMediaId) {
-                  emitCommand("update_duration", {
-                    itemId: currentMediaId,
-                    duration: dur,
+                  if (canControl) {
+                    emitCommand("seek", { position: seconds });
+                    // We do NOT emit "play" here! The native player will resume naturally,
+                    // firing onPlay, which is safely debounced and resolved by handleNativePlay.
+                  }
+                }}
+                onSeeked={(e: any) => {
+                  if (isBuffering) setIsBuffering(false);
+                }}
+                onDurationChange={(e: any) => {
+                  const dur =
+                    realPlayerRef.current?.getDuration?.() ||
+                    e?.target?.duration ||
+                    e?.duration ||
+                    0;
+                  setDuration(dur);
+                  if (canControl && currentMediaId) {
+                    emitCommand("update_duration", {
+                      itemId: currentMediaId,
+                      duration: dur,
+                    });
+                  }
+                }}
+                onEnded={() => {
+                  if (canControl) {
+                    emitCommand("video_ended", {
+                      currentMediaId,
+                    });
+                  }
+                }}
+                onWaiting={() => {
+                  setIsBuffering(true);
+                }}
+                onPlaying={() => {
+                  setIsBuffering(false);
+                }}
+                onPlay={() => {
+                  console.log("[REACT_PLAYER DEBUG] onPlay fired!", {
+                    status: playback?.status,
+                    canControl,
+                    timeDelta: Date.now() - lastCommandEmitTimeRef.current,
                   });
-                }
-              }}
-              onEnded={() => {
-                if (canControl) {
-                  emitCommand("video_ended", {
-                    currentMediaId,
+                  handleNativePlay();
+                }}
+                onPause={() => {
+                  console.log("[REACT_PLAYER DEBUG] onPause fired!", {
+                    status: playback?.status,
+                    canControl,
+                    timeDelta: Date.now() - lastCommandEmitTimeRef.current,
                   });
-                }
-              }}
-              onWaiting={() => {
-                setIsBuffering(true);
-              }}
-              onPlaying={() => {
-                setIsBuffering(false);
-              }}
-              onPlay={() => {
-                console.log("[REACT_PLAYER DEBUG] onPlay fired!", {
-                  status: playback?.status,
-                  canControl,
-                  timeDelta: Date.now() - lastCommandEmitTimeRef.current,
-                });
-                handleNativePlay();
-              }}
-              onPause={() => {
-                console.log("[REACT_PLAYER DEBUG] onPause fired!", {
-                  status: playback?.status,
-                  canControl,
-                  timeDelta: Date.now() - lastCommandEmitTimeRef.current,
-                });
-                handleNativePause();
-              }}
-              style={{ position: "absolute", top: 0, left: 0 }}
-              config={{
-                youtube: {
-                  playerVars: {
-                    controls: 1,
-                    disablekb: 0,
-                    modestbranding: 0,
-                    rel: 1,
-                    showinfo: 1,
-                    origin:
-                      typeof window !== "undefined"
-                        ? window.location.origin
-                        : undefined,
+                  handleNativePause();
+                }}
+                style={{ position: "absolute", top: 0, left: 0 }}
+                config={{
+                  youtube: {
+                    playerVars: {
+                      controls: 1,
+                      disablekb: 0,
+                      modestbranding: 0,
+                      rel: 1,
+                      showinfo: 1,
+                      origin:
+                        typeof window !== "undefined"
+                          ? window.location.origin
+                          : undefined,
+                    },
                   },
-                },
-                vimeo: { playerOptions: { controls: false } },
-                twitch: {
-                  options: {
-                    parent: [
-                      hostName,
-                      "localhost",
-                      "127.0.0.1",
-                      "syncwatch.example.com",
-                    ],
+                  vimeo: { playerOptions: { controls: false } },
+                  twitch: {
+                    options: {
+                      parent: [
+                        hostName,
+                        "localhost",
+                        "127.0.0.1",
+                        "syncwatch.example.com",
+                      ],
+                    },
                   },
-                },
-              }}
-            />
-          )}
+                }}
+              />
+            )}
         </div>
 
         {/* Up Next Overlay Layer */}

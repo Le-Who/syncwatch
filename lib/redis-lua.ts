@@ -121,17 +121,17 @@ export async function executeFastMutation(
   }
 
   try {
-    const result = (await (redisClient as any).eval(LUA_FAST_MUTATION, {
-      keys: ["room_state:" + roomId],
-      arguments: [
-        expectedVersion.toString(),
-        mutationType,
-        JSON.stringify(payload),
-        participantId,
-        participantNickname,
-        Date.now().toString(),
-      ],
-    })) as string;
+    const result = (await (redisClient as any).eval(
+      LUA_FAST_MUTATION,
+      1,
+      "room_state:" + roomId,
+      expectedVersion.toString(),
+      mutationType,
+      JSON.stringify(payload),
+      participantId,
+      participantNickname,
+      Date.now().toString(),
+    )) as string;
 
     if (typeof result === "string") {
       if (result.startsWith("{")) {

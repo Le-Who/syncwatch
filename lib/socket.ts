@@ -42,8 +42,20 @@ class RoomSocketService {
       this.setState({ isConnected: true });
       this.syncClock();
 
-      // MASK TCP DISCONNECTS: Automatically upgrade session on background reconnects
+      // MASK TCP DISCONNECTS: Automatically rejoin and upgrade session on background reconnects
       const state = this.getState();
+
+      // If we already had a room loaded before the drop, tell the server we're still here
+      // so the 15-second Redis GC doesn't purge our participant entity.
+      if (state.room && state.participantId) {
+        socket.emit("join_room", {
+          roomId: state.room.id,
+          nickname:
+            state.room.participants[state.participantId]?.nickname || "User",
+          participantId: state.participantId,
+        });
+      }
+
       if (state.sessionToken) {
         this.upgradeSession(state.sessionToken);
       }
