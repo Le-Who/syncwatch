@@ -183,9 +183,10 @@ const forcePersistRoom = async (room: RoomState) => {
       p_room_id: getDeterministicUUID(room.id),
       p_name: room.name,
       p_settings: room.settings,
-      p_owner_id:
+      p_owner_id: getDeterministicUUID(
         Object.values(room.participants).find((p) => p.role === "owner")?.id ||
-        room.id,
+          room.id,
+      ),
       p_playlist: room.playlist.map((item, index) => ({
         id: item.id,
         url: item.url,
