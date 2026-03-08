@@ -459,25 +459,38 @@ app.prepare().then(() => {
   io.use(async (socket, next) => {
     try {
       const cookies = cookie.parse(socket.request.headers.cookie || "");
-      const token = cookies.syncwatch_session;
+      const token = cookies.syncwatch_session || socket.handshake.auth?.token;
 
-      const redisClient = getRedisClient(); // Added this line as per instruction
+      const redisClient = getRedisClient();
 
       if (token) {
-        const { payload } = await jwtVerify(token, JWT_SECRET);
-        if (payload.participantId) {
-          socket.data.participantId = payload.participantId;
-          return next();
+        try {
+          const { payload } = await jwtVerify(token, JWT_SECRET);
+          if (payload.participantId) {
+            socket.data.participantId = payload.participantId;
+            return next();
+          }
+        } catch (jwtErr) {
+          console.error(
+            "JWT VERIFY FAILED in io.use! Token:",
+            token,
+            "Error:",
+            jwtErr,
+          );
         }
+      } else {
+        console.warn(
+          "NO TOKEN PROVIDED! Fallback to guest. cookies:",
+          cookies,
+          "auth:",
+          socket.handshake.auth,
+        );
       }
 
-      // If no token exists (e.g. fresh secondary browser), don't reject the connection immediately.
-      // Rejecting it completely breaks the UI sync loop because the frontend expects a connection.
-      // Instead, we assign a temporary guest connection ID. The frontend must be smart enough
-      // to request a real session if it needs to execute commands.
       socket.data.participantId = `guest_${socket.id}`;
       next();
     } catch (err) {
+      console.error("UNKNOWN ERROR IN IO.USE FAILED!", err);
       // Even on error, allow connection but mark as temporary guest to prevent UI freezes
       socket.data.participantId = `guest_${socket.id}`;
       next();

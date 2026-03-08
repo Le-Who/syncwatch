@@ -90,6 +90,7 @@ describe("server.ts Real Socket.IO Integration", () => {
   });
 
   it("TC-01: Connects and joins a room, establishing owner role", async () => {
+    // Arrange
     const JWT_SECRET = new TextEncoder().encode(
       "default_local_secret_dont_use_in_prod",
     );
@@ -106,15 +107,11 @@ describe("server.ts Real Socket.IO Integration", () => {
       },
     });
 
-    // Wait for connect
     await new Promise<void>((resolve) => clientSocket.on("connect", resolve));
 
+    // Act & Assert
     return new Promise<void>((resolve) => {
       clientSocket.on("room_state", (payload: any) => {
-        console.log(
-          "[DEBUG] room_state payload:",
-          JSON.stringify(payload, null, 2),
-        );
         expect(payload.room.id).toBe("test-room-1");
         expect(Object.keys(payload.room.participants)).toHaveLength(1);
         const participantId = Object.keys(payload.room.participants)[0];
@@ -122,11 +119,12 @@ describe("server.ts Real Socket.IO Integration", () => {
         expect(payload.room.participants[participantId].nickname).toBe(
           "OwnerUser",
         );
+        clientSocket.close();
         resolve();
       });
 
       clientSocket.emit("join_room", {
-        roomId: "test-room-1", // Will trigger memory creation
+        roomId: "test-room-1",
         nickname: "OwnerUser",
         participantId: "user-1",
       });
@@ -134,6 +132,7 @@ describe("server.ts Real Socket.IO Integration", () => {
   });
 
   it("TC-02: Guest users cannot mutate state", async () => {
+    // Arrange
     const guestSocket = Client(ioServerPath, {
       path: "/socket.io",
       transports: ["websocket"],
@@ -147,27 +146,30 @@ describe("server.ts Real Socket.IO Integration", () => {
       guestSocket.emit("join_room", {
         roomId: "test-room-2",
         nickname: "GuestUser",
-        participantId: "guest_123", // Prefix triggers guest logic
+        participantId: "guest_123",
       });
     });
 
+    // Act
+    guestSocket.emit("command", {
+      roomId: "test-room-2",
+      type: "play",
+      payload: { position: 10 },
+      sequence: 1,
+    });
+
+    // Assert
     return new Promise<void>((resolve) => {
       guestSocket.on("error", (err: any) => {
         expect(err.message).toContain("Guest accounts cannot send commands");
         guestSocket.close();
         resolve();
       });
-
-      guestSocket.emit("command", {
-        roomId: "test-room-2",
-        type: "play",
-        payload: { position: 10 },
-        sequence: 1,
-      });
     });
   });
 
   it("TC-03: Invalid Zod command payload types are rejected immediately", async () => {
+    // Arrange
     const JWT_SECRET = new TextEncoder().encode(
       "default_local_secret_dont_use_in_prod",
     );
@@ -186,7 +188,6 @@ describe("server.ts Real Socket.IO Integration", () => {
 
     await new Promise<void>((resolve) => hostileSocket.on("connect", resolve));
 
-    // Join the room as a valid user first
     await new Promise<void>((resolve) => {
       hostileSocket.on("room_state", () => resolve());
       hostileSocket.emit("join_room", {
@@ -196,18 +197,20 @@ describe("server.ts Real Socket.IO Integration", () => {
       });
     });
 
+    // Act
+    hostileSocket.emit("command", {
+      roomId: "test-room-3",
+      type: "play",
+      payload: { invalidArgument: "DROP TABLE" },
+      sequence: 1,
+    });
+
+    // Assert
     return new Promise<void>((resolve) => {
       hostileSocket.on("error", (err: any) => {
         expect(err.message).toContain("Invalid command payload format");
         hostileSocket.close();
         resolve();
-      });
-
-      hostileSocket.emit("command", {
-        roomId: "test-room-3",
-        type: "play",
-        payload: { invalidArgument: "DROP TABLE" }, // Zod schema expects `position` (number)
-        sequence: 1,
       });
     });
   });

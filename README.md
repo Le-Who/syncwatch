@@ -142,13 +142,19 @@ npm run dev
 
 SyncWatch comes pre-configured with a dual-layer testing environment to ensure regressions aren't shipped to production:
 
-- **E2E Testing (Playwright)**: Located in `e2e/`. Tests visual implementations, DOM integrity, and simulated multi-client websocket synchronization.
-- **Unit/Integration (Vitest)**: Located in `lib/` and configured via `vitest.config.ts`. Used for atomic functional testing of standalone logic blocks.
+- **Unit/Integration (Vitest)**: Located in `__tests__/`. Provides deeply sandboxed, mocked tests for Zustand store state transitions (`lib/store.test.ts`), atomic component rendering (`components/Player.test.tsx`), and deterministic action routing. Evaluates strict AAA (Arrange-Act-Assert) patterns.
+- **E2E Testing (Playwright)**: Located in `e2e/`. Tests visual implementations, DOM integrity, network mock interception (`api/metadata`), and simulated multi-client websocket synchronization directly against a local isolated `server.ts` build (Port 3001).
 
 ### Running Tests
 
 ```bash
-# Run all E2E Tests (Requires local Next.js server to be running or bypassed)
+# Run Unit & Integration Tests (Vitest)
+npm run test
+
+# Run Watch Mode for Unit Tests
+npm run test:watch
+
+# Run all E2E Tests (Isolated Sandbox)
 npx playwright test
 
 # Run Playwright UI for visual debugging
@@ -158,21 +164,24 @@ npx playwright test --ui
 > **Important note for CI and Headless environments:**
 > SyncWatch utilizes complex media embeds (ReactPlayer/YouTube iframe) which historically trigger WebGL rendering deadlocks in headless Chromium on Windows and standard CI workers. We have structurally patched the `playwright.config.ts` with a **hybrid configuration**:
 >
-> 1. **Native `channel: "chrome"` invocation** guarantees proprioritary H.264/AAC media codecs are available, preventing iframe pipeline freezes.
-> 2. **Forced `--use-gl=egl`** combined with aggressive headless timeouts aggressively eliminate GPU hangs during testing.
+> 1.  **Native `channel: "chrome"` invocation** guarantees proprietary H.264/AAC media codecs are available, preventing iframe pipeline freezes.
+> 2.  **Forced `--use-gl=egl`** combined with aggressive headless timeouts aggressively eliminate GPU hangs during testing.
+> 3.  **Dedicated Local Sandbox**: Playwright automatically boots `server.ts` natively on `localhost:3001` and inherits shared JWT keys from `@next/env` to perfectly mock authenticated client handshakes.
+
+---
 
 ### [Phase 5] Distributed Redis Lock Race Condition (System busy spam)
 
 **Symptom:** UI spamming "System busy acquiring room lock" toasts immediately whenever a peer enters a room. Lock evaluations failed silently due to concurrent socket event emissions (e.g. `play` + `update_duration`).
 **Root Cause:**
 
-1. The distributed Redis Mutex (`set NX` mode) was implemented as a fast-fail. Concurrent websocket events were processed in the same millisecond. Message 1 acquired the lock, Message 2 immediately threw a Lock Failed Exception because there was zero wait-retry or queueing loop logic inside `withLock`.
-2. The `process.env.REDIS_URL` evaluation inside `redis-rate-limit.ts` was executed globally at module load time (Lexical hoisting) _before_ `server.ts` executed `loadEnvConfig()`.
-   **Solution:**
-3. Converted `redisClient` to a lazy `getRedisClient()` initialization function evaluated exclusively at runtime to honor `.env.local` propagation mapping.
-4. Replaced the `withLock` fast-fail with a **Jittered Spin-Lock Backoff Queue**. `withLock` now spins up to 20 times (with 30-70ms randomized jitter) waiting for lock evaluation to complete before firing failures.
+1.  The distributed Redis Mutex (`set NX` mode) was implemented as a fast-fail. Concurrent websocket events were processed in the same millisecond. Message 1 acquired the lock, Message 2 immediately threw a Lock Failed Exception because there was zero wait-retry or queueing loop logic inside `withLock`.
+2.  The `process.env.REDIS_URL` evaluation inside `redis-rate-limit.ts` was executed globally at module load time (Lexical hoisting) _before_ `server.ts` executed `loadEnvConfig()`.
 
-_Note: The local Next.js 13+ Dev Server strictly blocks WebSocket connections originating from 127.0.0.1 (Playwright's default headless runner origin) without explicit `allowedDevOrigins` bypasses. Local E2E tests executing socket-heavy actions may be skipped locally but will run successfully in CI/CD staging environments._
+**Solution:**
+
+1.  Converted `redisClient` to a lazy `getRedisClient()` initialization function evaluated exclusively at runtime to honor `.env.local` propagation mapping.
+2.  Replaced the `withLock` fast-fail with a **Jittered Spin-Lock Backoff Queue**. `withLock` now spins up to 20 times (with 30-70ms randomized jitter) waiting for lock evaluation to complete before firing failures.
 
 ## Project Factual & Mental Map
 
@@ -194,26 +203,9 @@ _Note: The local Next.js 13+ Dev Server strictly blocks WebSocket connections or
 
 ### 3. Data Flow Pattern
 
-1. Client action (e.g., Click Play in UI).
-2. `useStore.sendCommand('play', payload)` fires the event to Socket.io.
-3. `server.ts` receives event, validates permissions/limits securely.
-4. `server.ts` mutates authoritative in-memory room state.
-5. `server.ts` emits updated `room_state` back to all connected clients in the room.
-6. Local Zustand store (`lib/store.ts`) updates; React re-renders globally.
-
-## Targeted Test Coverage Strategy
-
-Based on comprehensive systematic analysis, full coverage requires addressing the following identified gaps:
-
-1. **Unit Testing (Vitest)**:
-   - **Gaps**: `lib/store.ts` (critical state logic), `components/Player.tsx` (state mapping), `server.ts` (in-memory validation logic).
-   - **Strategy**: Implement mock-driven Vitest files focusing on the AAA pattern (Arrange, Act, Assert). E.g. mocking `getSocket()` to verify Zustand store mutations. Include edge case testing (null payloads).
-2. **Integration Testing**:
-   - **Gaps**: Core socket message throughput (e.g., testing `add_items` deduplication logic and limits in `server.ts`).
-   - **Strategy**: Set up local in-memory Socket.io server-client pairs to validate event handling boundaries safely.
-3. **E2E Testing (Playwright)**:
-   - **Current State**: Visuals and basic multi-client connect exist (`e2e/player.spec.ts`).
-   - **Gaps**: Complex sync actions (buffering pauses, playback rate modifications, malicious payload testing).
-   - **Strategy**: Extend Playwright test matrix to test specific error boundaries and UI recovery mechanisms.
-
-_(Note: The agent relies on the local `skills/syncwatch-testing/SKILL.md` custom skill to rigorously drive TDD coverage across these layers for this project.)_
+1.  Client action (e.g., Click Play in UI).
+2.  `useStore.sendCommand('play', payload)` fires the event to Socket.io.
+3.  `server.ts` receives event, validates permissions/limits securely.
+4.  `server.ts` mutates authoritative in-memory room state.
+5.  `server.ts` emits updated `room_state` back to all connected clients in the room.
+6.  Local Zustand store (`lib/store.ts`) updates; React re-renders globally.

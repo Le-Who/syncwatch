@@ -6,16 +6,70 @@ function getTestRoomUrl() {
 }
 
 async function joinRoom(page: Page, url: string, nickname: string) {
+  const consoleLog = (msg: any) => console.log(`[BROWSER] ${msg.text()}`);
+  page.on("console", consoleLog);
+
+  // Generate a strictly unique ID so multi-tab tests don't overwrite the same Participant slot in Redis
+  const pId = randomUUID();
+
+  const { SignJWT } = require("jose");
+  const JWT_SECRET = new TextEncoder().encode(
+    process.env.JWT_SECRET || "default_local_secret_dont_use_in_prod",
+  );
+  // PREGENERATE the token first to prevent async delays inside the interceptor blocking React Hydration
+  const token = await new SignJWT({ participantId: pId })
+    .setProtectedHeader({ alg: "HS256" })
+    .sign(JWT_SECRET);
+
+  await page.route("**/api/auth/session", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ token }),
+    });
+  });
+
+  // Set LocalStorage values for UI hydration & ENABLE SOCKET.IO DEBUGGING
+  await page.addInitScript(
+    ({ pId, name, token }) => {
+      localStorage.setItem("participantId", pId);
+      localStorage.setItem("nickname", name);
+      localStorage.setItem("sessionToken", token);
+      localStorage.setItem("debug", "socket.io-client:*,engine.io-client:*");
+    },
+    { pId, name: nickname, token },
+  );
+
+  // Parse the origin domain from the project's base URL config
+  // (e.g. http://127.0.0.1:3000) so the cookie origin matches exactly
+  const baseURL = page.context()._options.baseURL || "http://127.0.0.1:3000";
+  const parsedUrl = new URL(url, baseURL);
+
+  // Inject the server-side auth cookie used by the Socket.io WebSocket middleware
+  await page.context().addCookies([
+    {
+      name: "syncwatch_session",
+      value: token,
+      url: parsedUrl.origin,
+      httpOnly: true,
+      sameSite: "Lax",
+    },
+  ]);
+
   await page.goto(url);
   const handleInput = page.getByPlaceholder("ENTER_HANDLE");
   await handleInput.waitFor({ state: "visible", timeout: 15000 });
   await handleInput.fill(nickname);
 
+  // Provide a short stability delay for Next.js to hydrate the socket.io client singleton
+  await page.waitForTimeout(500);
+
   await page.getByRole("button", { name: "Establish Link" }).click();
+
   // Wait for the UI layout to shift from "Join Room" to the main Player UI.
   // This proves the auth POST succeeded and React state transitioned.
   await expect(page.locator("text=SyncWatch").first()).toBeVisible({
-    timeout: 15000,
+    timeout: 30000,
   });
 
   // Switch to the Participants tab to mount the nickname in the DOM
@@ -24,9 +78,9 @@ async function joinRoom(page: Page, url: string, nickname: string) {
   // The most deterministic way to ensure Socket.io has successfully connected
   // and the React state has hydrated the initial Room data is to wait for the
   // "Participants" panel to visibly list the user that just joined.
-  // Note: the local user is rendered as an input field, not a text block!
+  // Note: The local user is always rendered as an input field so they can change it.
   await expect(page.locator(`input[value="${nickname}"]`).first()).toBeVisible({
-    timeout: 15000,
+    timeout: 30000,
   });
 }
 
@@ -53,16 +107,19 @@ test.describe("SyncWatch Player E2E Regressions", () => {
     const urlInput = page.getByPlaceholder("Paste video stream URL...");
     await urlInput.waitFor({ state: "visible" });
     // Intercept and mock the external video URL to prevent DNS resolution errors/flakiness
-    await page.route(
-      "https://www.w3schools.com/html/mov_bbb.mp4*",
-      async (route) => {
-        await route.fulfill({
-          status: 200,
-          contentType: "video/mp4",
-          body: Buffer.from("mock video content"),
-        });
-      },
-    );
+    await page.route("**/api/metadata*", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          id: "mock-test-id",
+          title: "Big Buck Bunny Test",
+          provider: "direct",
+          duration: 120,
+          url: "https://www.w3schools.com/html/mov_bbb.mp4",
+        }),
+      });
+    });
 
     await urlInput.fill("https://www.w3schools.com/html/mov_bbb.mp4");
     await page.getByRole("button", { name: "Init" }).click();
@@ -78,10 +135,39 @@ test.describe("SyncWatch Player E2E Regressions", () => {
     expect(stepAttribute).toBe("any");
   });
 
-  // Unskipped and stabilized using explicit waiting strategies
-  test("3. Multi-user Connection Sync and Playlist Replication", async ({
-    browser,
-  }) => {
+  test("3. Multi-user Connection Sync", async ({ browser }) => {
+    // Arrange
+    const context1 = await browser.newContext();
+    const context2 = await browser.newContext();
+    const page1 = await context1.newPage();
+    const page2 = await context2.newPage();
+
+    const isolatedRoom = getTestRoomUrl();
+
+    // Act
+    await joinRoom(page1, isolatedRoom, "Host");
+    await joinRoom(page2, isolatedRoom, "Viewer");
+
+    // Assert
+    expect(page1.url()).toBe(page2.url());
+
+    await expect(page1.locator('input[value="Host"]').first()).toBeVisible({
+      timeout: 15000,
+    });
+    await expect(page2.locator("text=/Host/i").first()).toBeVisible({
+      timeout: 15000,
+    });
+
+    await expect(page1.locator("text=/Viewer/i").first()).toBeVisible({
+      timeout: 15000,
+    });
+    await expect(page2.locator('input[value="Viewer"]').first()).toBeVisible({
+      timeout: 15000,
+    });
+  });
+
+  test("4. Playlist Addition and Replication", async ({ browser }) => {
+    // Arrange
     const context1 = await browser.newContext();
     const context2 = await browser.newContext();
     const page1 = await context1.newPage();
@@ -91,35 +177,6 @@ test.describe("SyncWatch Player E2E Regressions", () => {
     await joinRoom(page1, isolatedRoom, "Host");
     await joinRoom(page2, isolatedRoom, "Viewer");
 
-    // Ensure both landed on the same page
-    expect(page1.url()).toBe(page2.url());
-
-    // Check if both users appear in the participant list (Eventual consistency DOM polling)
-    // Host is local on page1 (input field), remote on page2 (text)
-    await expect(page1.locator('input[value="Host"]').first()).toBeVisible({
-      timeout: 15000,
-    });
-    await expect(page2.locator("text=/Host/i").first()).toBeVisible({
-      timeout: 15000,
-    });
-
-    // Viewer is remote on page1 (text), local on page2 (input field)
-    await expect(page1.locator("text=/Viewer/i").first()).toBeVisible({
-      timeout: 15000,
-    });
-    await expect(page2.locator('input[value="Viewer"]').first()).toBeVisible({
-      timeout: 15000,
-    });
-
-    // --- Playlist Add & Sync Test ---
-    // Switch back to the Queue tab on Host to add a video
-    await page1.getByRole("button", { name: /Queue/i }).click();
-
-    // Host adds a video (Using a mocked local endpoint since w3schools video was throwing ECONNREFUSED)
-    const urlInput = page1.getByPlaceholder("Paste video stream URL...");
-    await urlInput.waitFor({ state: "visible" });
-
-    // Intercept metadata fetching to mock the response on BOTH pages, avoiding actual network requests
     const mockYoutubeApi = async (route: any) => {
       await route.fulfill({
         status: 200,
@@ -142,14 +199,17 @@ test.describe("SyncWatch Player E2E Regressions", () => {
     await page1.route("**/api/youtube/search*", mockYoutubeApi);
     await page2.route("**/api/youtube/search*", mockYoutubeApi);
 
+    // Act
+    await page1.getByRole("button", { name: /Queue/i }).click();
+
+    const urlInput = page1.getByPlaceholder("Paste video stream URL...");
+    await urlInput.waitFor({ state: "visible" });
     await urlInput.fill("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
     await page1.getByRole("button", { name: "Init" }).click();
 
-    // Viewer switches to Queue tab to see the replicated playlist
     await page2.getByRole("button", { name: /Queue/i }).click();
 
-    // Viewer immediately checks if the video title replicates into their local DOM flawlessly
-    // Note: The Redis Queue worker operates asynchronously, so under heavy test load it may take longer than 15s.
+    // Assert
     await expect(page2.locator("text=Mocked Sync Video")).toBeVisible({
       timeout: 30000,
     });

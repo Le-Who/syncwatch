@@ -27,6 +27,10 @@ class RoomSocketService {
         reconnectionDelay: 1000,
         reconnectionDelayMax: 5000,
         transports: ["websocket"], // Force WebSocket to bypass Playwright HTTP interception quirks
+        auth: (cb) => {
+          // Send token in handshake to bypass strict cookie limits in isolated testing environments
+          cb({ token: this.getState().sessionToken });
+        },
       });
 
       this.bindEvents();
