@@ -111,7 +111,9 @@ export default function Player() {
   }, []);
 
   const [qualityMenuOpen, setQualityMenuOpen] = useState(false);
-  const [forceHighRes, setForceHighRes] = useState(false);
+  const [providerQualities, setProviderQualities] = useState<string[]>([]);
+  const [currentProviderQuality, setCurrentProviderQuality] =
+    useState<string>("auto");
   const [hlsLevels, setHlsLevels] = useState<{ height: number }[]>([]);
   const [currentHlsLevel, setCurrentHlsLevel] = useState<number>(-1);
 
@@ -400,18 +402,7 @@ export default function Player() {
           if (qualityMenuOpen) setQualityMenuOpen(false);
         }}
       >
-        <div
-          className="absolute top-0 left-0 origin-top-left transition-transform duration-700"
-          style={
-            currentMedia.provider === "youtube" && forceHighRes
-              ? {
-                  width: 3840,
-                  height: 2160,
-                  transform: `scaleX(calc(100cqw / 3840)) scaleY(calc(100cqh / 2160))`,
-                }
-              : { width: "100%", height: "100%", transform: "none" }
-          }
-        >
+        <div className="absolute top-0 left-0 h-full w-full origin-top-left transition-transform duration-700">
           {mounted && (
             <ReactPlayer
               ref={playerRef}
@@ -782,13 +773,50 @@ export default function Player() {
                     className={`text-theme-accent hover:text-theme-danger ring-theme-accent relative rounded-full p-2 transition-transform duration-500 outline-none focus-visible:ring-2 ${qualityMenuOpen ? "text-theme-danger rotate-90" : ""}`}
                     onClick={(e) => {
                       e.stopPropagation();
-                      setQualityMenuOpen(!qualityMenuOpen);
+                      const willOpen = !qualityMenuOpen;
+                      setQualityMenuOpen(willOpen);
+
+                      if (willOpen && currentMedia) {
+                        try {
+                          if (currentMedia.provider === "youtube") {
+                            const internal = (
+                              playerRef.current as any
+                            )?.getInternalPlayer("youtube");
+                            if (internal?.getAvailableQualityLevels) {
+                              const levels =
+                                internal.getAvailableQualityLevels();
+                              setProviderQualities(
+                                levels.filter((l: string) => l !== "auto"),
+                              );
+                              setCurrentProviderQuality(
+                                internal.getPlaybackQuality() || "auto",
+                              );
+                            }
+                          } else if (currentMedia.provider === "twitch") {
+                            const internal = (
+                              playerRef.current as any
+                            )?.getInternalPlayer("twitch");
+                            if (internal?.getQualities) {
+                              const levels = internal.getQualities();
+                              setProviderQualities(
+                                levels.map((l: any) => l.group),
+                              );
+                              setCurrentProviderQuality(
+                                internal.getQuality() || "auto",
+                              );
+                            }
+                          }
+                        } catch (err) {
+                          console.error("Provider bridge API error:", err);
+                        }
+                      }
                     }}
                   >
                     <Settings className="h-5 w-5" />
-                    {forceHighRes && currentMedia.provider === "youtube" && (
-                      <div className="bg-theme-accent absolute top-1 right-1 h-2 w-2 animate-pulse rounded-full shadow-[0_0_8px_var(--color-theme-accent)]" />
-                    )}
+                    {currentProviderQuality !== "auto" &&
+                      providerQualities.length > 0 && (
+                        <div className="bg-theme-accent absolute top-1 right-1 h-2 w-2 animate-pulse rounded-full shadow-[0_0_8px_var(--color-theme-accent)]" />
+                      )}
                   </button>
 
                   {/* Quality Menu Dialog */}
@@ -799,29 +827,71 @@ export default function Player() {
                           Video Quality
                         </div>
 
-                        {currentMedia.provider === "youtube" && (
+                        {providerQualities.length > 0 && (
                           <div className="flex flex-col">
                             <div className="text-theme-muted border-theme-border/10 border-b px-4 py-2 text-[9px] tracking-widest uppercase">
-                              YouTube Override
+                              Native Core Provider
                             </div>
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                setForceHighRes(!forceHighRes);
+                                setCurrentProviderQuality("auto");
                                 setQualityMenuOpen(false);
                                 try {
-                                  (
-                                    playerRef.current as any
-                                  )?.setPlaybackQuality?.("hd1080");
+                                  if (currentMedia.provider === "youtube") {
+                                    (playerRef.current as any)
+                                      ?.getInternalPlayer("youtube")
+                                      ?.setPlaybackQualityRange?.("auto");
+                                  } else if (
+                                    currentMedia.provider === "twitch"
+                                  ) {
+                                    (playerRef.current as any)
+                                      ?.getInternalPlayer("twitch")
+                                      ?.setQuality?.("auto");
+                                  }
                                 } catch (err) {}
                               }}
-                              className={`border-theme-border/10 hover:bg-theme-accent/20 flex items-center justify-between border-b px-4 py-3 text-left text-xs font-bold transition-all ${forceHighRes ? "text-theme-accent bg-theme-accent/10 shadow-[inset_2px_0_0_var(--color-theme-accent)]" : "text-theme-text"}`}
+                              className={`border-theme-border/10 hover:bg-theme-accent/20 flex items-center justify-between border-b px-4 py-3 text-left text-xs font-bold transition-all ${currentProviderQuality === "auto" ? "text-theme-accent bg-theme-accent/10 shadow-[inset_2px_0_0_var(--color-theme-accent)]" : "text-theme-text"}`}
                             >
-                              Ultra (Force 4K)
-                              {forceHighRes && (
-                                <div className="bg-theme-accent h-2 w-2 rounded-full shadow-[0_0_5px_currentColor]"></div>
-                              )}
+                              Auto (Provider Default)
                             </button>
+                            {providerQualities.map((q) => (
+                              <button
+                                key={q}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setCurrentProviderQuality(q);
+                                  setQualityMenuOpen(false);
+                                  try {
+                                    if (currentMedia.provider === "youtube") {
+                                      (playerRef.current as any)
+                                        ?.getInternalPlayer("youtube")
+                                        ?.setPlaybackQualityRange?.(q, q);
+                                    } else if (
+                                      currentMedia.provider === "twitch"
+                                    ) {
+                                      (playerRef.current as any)
+                                        ?.getInternalPlayer("twitch")
+                                        ?.setQuality?.(q);
+                                    }
+                                  } catch (err) {}
+                                }}
+                                className={`border-theme-border/10 hover:bg-theme-accent/20 flex items-center justify-between border-b px-4 py-3 text-left text-xs font-bold transition-all ${currentProviderQuality === q ? "text-theme-accent bg-theme-accent/10 shadow-[inset_2px_0_0_var(--color-theme-accent)]" : "text-theme-text"}`}
+                              >
+                                <span
+                                  className={
+                                    q === "highres" ? "text-theme-accent" : ""
+                                  }
+                                >
+                                  {q === "highres"
+                                    ? "Target Ultra/4K"
+                                    : q.replace(/hd/, "").toUpperCase()}
+                                </span>
+                                {currentProviderQuality === q && (
+                                  <div className="bg-theme-accent h-2 w-2 rounded-full shadow-[0_0_5px_currentColor]"></div>
+                                )}
+                              </button>
+                            ))}
                           </div>
                         )}
 
