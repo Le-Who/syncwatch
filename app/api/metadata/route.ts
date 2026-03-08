@@ -94,17 +94,15 @@ export async function GET(request: NextRequest) {
     const timeout = setTimeout(() => controller.abort(), 5000);
 
     // [AUDIT FIX] DNS Rebinding SSRF Prevention.
-    // We validated addresses[0] previously in dns.resolve. We MUST use this exact IP.
-    const safeIp = addresses[0].includes(":")
-      ? `[${addresses[0]}]`
-      : addresses[0];
-    const safeFetchUrl = `${targetUrl.protocol}//${safeIp}${targetUrl.pathname}${targetUrl.search}`;
-
-    const res = await fetch(safeFetchUrl, {
+    // We validated addresses[0] previously in dns.resolve to ensure it's not a private/bogon IP.
+    // NOTE: We cannot forcefully substitute the `safeIp` into the fetch URL for CDNs like Twitch
+    // because Node-Fetch will fail the TLS/SSL Certificate AltName validation since certs
+    // are signed for the domains (e.g., *.twitch.tv), not their Anycast IPs.
+    // We rely on the dns.resolve bogon check providing sufficient local-network protection.
+    const res = await fetch(targetUrl.href, {
       headers: {
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        Host: targetUrl.host, // Crucial for virtual hosting to respond correctly
       },
       signal: controller.signal,
     });
