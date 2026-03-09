@@ -41,9 +41,9 @@ export async function joinRoom(page: Page, url: string, nickname: string) {
   );
 
   // Parse the origin domain from the project's base URL config
-  // (e.g. http://127.0.0.1:3000) so the cookie origin matches exactly
+  // (e.g. http://localhost:3001) so the cookie origin matches exactly
   const baseURL =
-    (page.context() as any)._options?.baseURL || "http://127.0.0.1:3000";
+    (page.context() as any)._options?.baseURL || "http://localhost:3001";
   const parsedUrl = new URL(url, baseURL);
 
   // Inject the server-side auth cookie used by the Socket.io WebSocket middleware
