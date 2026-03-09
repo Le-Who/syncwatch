@@ -46,18 +46,18 @@ graph TD
 
 ## Repository Structure
 
-| Path          | Purpose                                                                           |
-| ------------- | --------------------------------------------------------------------------------- |
-| `app/`        | Next.js App Router endpoints, pages, and layout definitions.                      |
-| `app/api/`    | Secure server-side HTTP routes (Metadata, YouTube Search, Auth).                  |
-| `components/` | Reusable React UI components (`Player`, `TwitchPlayer`, `Playlist`, etc.).        |
-| `hook/`       | Custom React hooks for application logic, including extracted sync engines.       |
-| `lib/`        | Shared utilities (`room-handler.ts`, `db-sync.ts`), Zustand store, Redis clients. |
-| `supabase/`   | Database migration files (e.g., `00001_initial.sql`).                             |
-| `__tests__/`  | Unit and integration tests (Vitest).                                              |
-| `e2e/`        | End-to-end user flow tests (Playwright).                                          |
-| `server.ts`   | The core WebSocket server and Next.js host (delegates to `lib/room-handler`).     |
-| `test-zod.ts` | Local CLI script for testing Zod schema behaviors.                                |
+| Path          | Purpose                                                                                           |
+| ------------- | ------------------------------------------------------------------------------------------------- |
+| `app/`        | Next.js App Router endpoints, pages, and layout definitions.                                      |
+| `app/api/`    | Secure server-side HTTP routes (Metadata, YouTube Search, Auth).                                  |
+| `components/` | Reusable React UI components (`Player`, `TwitchPlayer`, `UpNextOverlay`, etc.).                   |
+| `hook/`       | Custom React hooks for application logic (`usePlaybackSync`, `useFlashback`, etc.).               |
+| `lib/`        | Shared utilities (`room-handler.ts`, `playback-intent-manager.ts`), Zustand store, Redis clients. |
+| `supabase/`   | Database migration files (e.g., `00001_initial.sql`).                                             |
+| `__tests__/`  | Unit and integration tests (Vitest).                                                              |
+| `e2e/`        | End-to-end user flow tests (Playwright).                                                          |
+| `server.ts`   | The core WebSocket server and Next.js host (delegates to `lib/room-handler`).                     |
+| `test-zod.ts` | Local CLI script for testing Zod schema behaviors.                                                |
 
 ## Tech Stack
 

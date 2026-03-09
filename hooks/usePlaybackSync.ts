@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { useStore } from "@/lib/store";
 import { calculateDrift } from "@/lib/utils";
 import { calculatePlaybackRate } from "@/lib/drift-math";
+import { PlaybackIntentManager } from "@/lib/playback-intent-manager";
 
 export function usePlaybackSync(props: {
   realPlayerRef: React.MutableRefObject<any>;
@@ -12,14 +13,7 @@ export function usePlaybackSync(props: {
   getIsReady: () => boolean;
   getSeeking: () => boolean;
   getIsBuffering: () => boolean;
-  lastCommandEmitTimeRef: React.MutableRefObject<number>;
-  lastStateEmittedRef: React.MutableRefObject<{
-    status: string;
-    position: number;
-    time: number;
-    nonce?: string;
-  } | null>;
-  ignoreNativeEventsUntilRef: React.MutableRefObject<number>;
+  intentManager: PlaybackIntentManager;
   performProgrammaticSeek: (pos: number) => void;
   getControlMode: () => string | undefined;
   getMyRole: () => string | undefined | null;
@@ -45,18 +39,12 @@ export function usePlaybackSync(props: {
 
       if (!playback || !p.getIsReady() || p.getSeeking()) return;
 
-      if (Date.now() - p.lastCommandEmitTimeRef.current < 1500) {
+      if (p.intentManager.isRecentCommand(1500)) {
         // Optimistic UI barrier
         return;
       }
 
-      if (
-        playback.lastActionNonce &&
-        p.lastStateEmittedRef.current?.nonce === playback.lastActionNonce
-      ) {
-        p.ignoreNativeEventsUntilRef.current = Date.now() + 2000;
-        p.lastStateEmittedRef.current.nonce = undefined;
-      }
+      p.intentManager.checkAndConsumeNonce(playback.lastActionNonce);
 
       const currentServerTime = Date.now() + serverClockOffset;
       const currentPosition = p.getAccurateTime() as unknown as number;
@@ -153,7 +141,7 @@ export function usePlaybackSync(props: {
         }
 
         if (currentDrift > 1.0 && !p.getIsBuffering()) {
-          p.ignoreNativeEventsUntilRef.current = Date.now() + 1500;
+          p.intentManager.ignoreEventsFor(1500);
           p.performProgrammaticSeek(playback.basePosition);
         }
       }

@@ -48,6 +48,9 @@ import { useFlashback } from "@/hooks/useFlashback";
 import { Undo2 } from "lucide-react";
 import { usePlaybackSync } from "@/hooks/usePlaybackSync";
 import { applyTwitchEventProxy } from "@/lib/player-adapters";
+import { AwaitingSignal } from "./AwaitingSignal";
+import { UpNextOverlay } from "./UpNextOverlay";
+import { PlaybackIntentManager } from "@/lib/playback-intent-manager";
 
 const ReactPlayer = dynamic(() => import("react-player"), {
   ssr: false,
@@ -176,25 +179,11 @@ export default function Player() {
 
   // Removed ResizeObserver dimensions
 
-  // To avoid loopbacks, track manually initiated actions vs programmatic state syncs
-  const lastCommandEmitTimeRef = useRef<number>(0);
-  const lastStateEmittedRef = useRef<{
-    status: string;
-    position: number;
-    time: number;
-    nonce?: string;
-  } | null>(null);
-
-  const lastProgrammaticSeekRef = useRef<number>(0);
-  const ignoreNativeEventsUntilRef = useRef<number>(0);
-  const userIsDraggingScrubberRef = useRef<boolean>(seeking);
+  const [intentManager] = useState(() => new PlaybackIntentManager());
 
   useEffect(() => {
-    userIsDraggingScrubberRef.current = seeking;
-  }, [seeking]);
-
-  const lastServerStateChangeRef = useRef<number>(0);
-  const pauseDebounceRef = useRef<NodeJS.Timeout | null>(null);
+    intentManager.setUserDraggingScrubber(seeking);
+  }, [seeking, intentManager]);
 
   const getAccurateTime = useCallback(() => {
     if (realPlayerRef.current?.getCurrentTime) {
@@ -206,9 +195,9 @@ export default function Player() {
   const performProgrammaticSeek = (position: number) => {
     // Soft Mode Guarantee: If we are in "echo protection" (last action was ours),
     // never perform hard seeks during this interval, only drift math updates.
-    if (Date.now() < ignoreNativeEventsUntilRef.current) return;
+    if (intentManager.isIgnoringNativeEvents()) return;
 
-    lastProgrammaticSeekRef.current = Date.now();
+    intentManager.markProgrammaticSeek();
     if (
       realPlayerRef.current &&
       typeof realPlayerRef.current.seekTo === "function"
@@ -250,7 +239,7 @@ export default function Player() {
       );
 
       // Hard apply the server truth
-      ignoreNativeEventsUntilRef.current = Date.now() + 2000;
+      intentManager.ignoreEventsFor(2000);
       setPlaying(playback.status === "playing");
       performProgrammaticSeek(expectedPosition);
     }
@@ -277,13 +266,7 @@ export default function Player() {
       return;
     }
     const nonce = crypto.randomUUID(); // Manually create a nonce to track our own UI actions locally before store
-    lastCommandEmitTimeRef.current = Date.now();
-    lastStateEmittedRef.current = {
-      status: type,
-      position: payload?.position,
-      time: Date.now(),
-      nonce,
-    } as any;
+    intentManager.markCommandEmitted(type, payload?.position, nonce);
     sendCommand(type, { ...payload, nonce });
   };
 
@@ -296,9 +279,7 @@ export default function Player() {
     getIsReady: () => isReady,
     getSeeking: () => seeking,
     getIsBuffering: () => isBuffering,
-    lastCommandEmitTimeRef,
-    lastStateEmittedRef,
-    ignoreNativeEventsUntilRef,
+    intentManager,
     performProgrammaticSeek,
     getControlMode: () => controlMode,
     getMyRole: () => myRole,
@@ -333,28 +314,18 @@ export default function Player() {
   };
 
   const handleNativePlay = useEventCallback(() => {
-    if (pauseDebounceRef.current) {
-      clearTimeout(pauseDebounceRef.current);
-      pauseDebounceRef.current = null;
-    }
+    intentManager.clearPauseDebounce();
     setIsBuffering(false);
     setPlaying(true);
 
     // **INTENT MASK**: Drop events caused by programmatic seek buffer locks or scrubber dragging
-    if (
-      Date.now() < ignoreNativeEventsUntilRef.current ||
-      userIsDraggingScrubberRef.current
-    ) {
+    if (intentManager.shouldBlockNativeEvent()) {
       return;
     }
 
     // [Problem 1 Fix/Race Condition Fix]: Rely on local Optimistic UI identity if recent action fired,
     // otherwise fallback to websocket state.
-    const expectedStatus =
-      Date.now() - lastCommandEmitTimeRef.current < 2000 &&
-      lastStateEmittedRef.current !== null
-        ? lastStateEmittedRef.current.status
-        : playback?.status;
+    const expectedStatus = intentManager.getExpectedStatus(playback?.status);
 
     if (canControl && expectedStatus !== "playing") {
       emitCommand("play", { position: getAccurateTime() });
@@ -364,23 +335,16 @@ export default function Player() {
   const handleNativePause = useEventCallback(() => {
     setIsBuffering(false);
     setPlaying(false);
-    if (pauseDebounceRef.current) clearTimeout(pauseDebounceRef.current);
+    intentManager.clearPauseDebounce();
 
     // **INTENT MASK**: Drop events caused by programmatic seek buffer locks or scrubber dragging
-    if (
-      Date.now() < ignoreNativeEventsUntilRef.current ||
-      userIsDraggingScrubberRef.current
-    ) {
+    if (intentManager.shouldBlockNativeEvent()) {
       return;
     }
 
-    pauseDebounceRef.current = setTimeout(() => {
+    intentManager.setPauseDebounce(() => {
       // Look at local state first
-      const expectedStatus =
-        Date.now() - lastCommandEmitTimeRef.current < 2000 &&
-        lastStateEmittedRef.current !== null
-          ? lastStateEmittedRef.current.status
-          : playback?.status;
+      const expectedStatus = intentManager.getExpectedStatus(playback?.status);
 
       if (canControl && expectedStatus !== "paused") {
         emitCommand("pause", { position: getAccurateTime() });
@@ -411,7 +375,7 @@ export default function Player() {
     }
 
     // **INTENT MASK**: Vital for preventing rewind rollback. Drop native buffering events caused by this manual seek.
-    ignoreNativeEventsUntilRef.current = Date.now() + 2000;
+    intentManager.ignoreEventsFor(2000);
 
     if (
       realPlayerRef.current &&
@@ -485,62 +449,11 @@ export default function Player() {
 
   if (!currentMedia) {
     return (
-      <div className="font-theme relative flex h-full w-full flex-1 flex-col items-center justify-center overflow-hidden bg-transparent p-4">
-        <div className="theme-panel relative z-10 flex w-full max-w-lg flex-col items-center p-8">
-          <div className="bg-theme-bg/50 border-theme-accent shadow-theme group-hover:shadow-theme-hover mb-8 flex h-24 w-24 items-center justify-center rounded-full border-2 transition-all">
-            <Play className="text-theme-accent ml-2 h-12 w-12" />
-          </div>
-          <h2 className="text-theme-text mb-2 text-center text-3xl font-bold tracking-widest uppercase drop-shadow-sm">
-            Awaiting Signal
-          </h2>
-          <p className="text-theme-muted mb-10 text-center text-sm tracking-wider uppercase opacity-80">
-            System ready. Awaiting media input...
-          </p>
-
-          {canEditPlaylist || participantCount <= 1 ? (
-            <form
-              className="relative w-full"
-              onSubmit={async (e) => {
-                e.preventDefault();
-                const input = e.currentTarget.elements.namedItem(
-                  "urlInput",
-                ) as HTMLInputElement;
-                const url = input.value.trim();
-                const btn = e.currentTarget.querySelector("button");
-                if (btn) btn.disabled = true;
-
-                if (url) {
-                  const mediaInfo = await MediaApiService.fetchMediaInfo(url);
-                  sendCommand("add_item", mediaInfo);
-                  input.value = "";
-                }
-                if (btn) btn.disabled = false;
-              }}
-            >
-              <div className="bg-theme-bg/50 border-theme-border/50 rounded-theme focus-within:border-theme-accent shadow-theme focus-within:shadow-theme-hover relative flex flex-col items-stretch overflow-hidden border-2 transition-all sm:flex-row">
-                <input
-                  name="urlInput"
-                  type="url"
-                  placeholder="Paste video stream URL..."
-                  className="text-theme-text placeholder-theme-muted font-theme flex-1 bg-transparent px-5 py-4 text-sm focus:outline-none"
-                  required
-                />
-                <button
-                  type="submit"
-                  className="bg-theme-accent text-theme-bg border-theme-border/30 px-8 py-4 font-bold tracking-wider uppercase transition-all hover:brightness-110 hover:filter disabled:cursor-not-allowed disabled:opacity-50 sm:border-l-2"
-                >
-                  Init
-                </button>
-              </div>
-            </form>
-          ) : (
-            <div className="bg-theme-bg/50 border-theme-danger text-theme-danger font-theme rounded-theme shadow-theme flex items-center gap-3 border-2 px-6 py-4 text-xs tracking-wider uppercase">
-              <AlertCircle className="h-5 w-5" />
-              <span>Restricted access. Command privileges required.</span>
-            </div>
-          )}
-        </div>
-      </div>
+      <AwaitingSignal
+        canEditPlaylist={canEditPlaylist}
+        participantCount={participantCount}
+        sendCommand={sendCommand}
+      />
     );
   }
 
@@ -591,12 +504,10 @@ export default function Player() {
                     }}
                     onSeek={(seconds: number) => {
                       // If it's a programmatic seek responding to the server, ignore it.
-                      if (Date.now() - lastProgrammaticSeekRef.current < 1500)
-                        return;
+                      if (intentManager.isRecentProgrammaticSeek(1500)) return;
 
                       // If it's a local seek via scrubber, it would have already emitted
-                      if (Date.now() - lastCommandEmitTimeRef.current < 1500)
-                        return;
+                      if (intentManager.isRecentCommand(1500)) return;
 
                       if (canControl) {
                         emitCommand("seek", { position: seconds });
@@ -683,10 +594,8 @@ export default function Player() {
                       setIsBuffering(false);
                     }}
                     onSeek={(seconds: number) => {
-                      if (Date.now() - lastProgrammaticSeekRef.current < 1500)
-                        return;
-                      if (Date.now() - lastCommandEmitTimeRef.current < 1500)
-                        return;
+                      if (intentManager.isRecentProgrammaticSeek(1500)) return;
+                      if (intentManager.isRecentCommand(1500)) return;
 
                       if (canControl) {
                         emitCommand("seek", { position: seconds });
@@ -753,52 +662,11 @@ export default function Player() {
 
         {/* Up Next Overlay Layer */}
         {showUpNext && (
-          <div className="bg-theme-bg/95 border-theme-border/50 rounded-theme animate-in fade-in slide-in-from-right-8 pointer-events-auto absolute right-4 bottom-24 z-40 flex items-center space-x-4 border p-4 shadow-[0_10px_40px_rgba(0,0,0,0.5)] backdrop-blur-md">
-            <div className="relative flex h-12 w-12 items-center justify-center">
-              <svg className="h-full w-full -rotate-90 transform">
-                <circle
-                  cx="24"
-                  cy="24"
-                  r="20"
-                  stroke="currentColor"
-                  strokeWidth="3"
-                  fill="transparent"
-                  className="text-theme-border/30"
-                />
-                <circle
-                  cx="24"
-                  cy="24"
-                  r="20"
-                  stroke="currentColor"
-                  strokeWidth="3"
-                  fill="transparent"
-                  className="text-theme-accent transition-all duration-1000 ease-linear"
-                  strokeDasharray="125"
-                  strokeDashoffset={125 - (125 * (5 - timeRemaining)) / 5}
-                />
-              </svg>
-              <span className="text-theme-text absolute text-sm font-bold">
-                {Math.ceil(timeRemaining)}
-              </span>
-            </div>
-            <div className="flex max-w-[200px] flex-col truncate pr-4">
-              <span className="text-theme-muted text-[10px] font-bold tracking-widest uppercase">
-                Up Next
-              </span>
-              <span className="text-theme-text truncate text-sm font-bold">
-                {nextItem?.title}
-              </span>
-            </div>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                handleNext();
-              }}
-              className="text-theme-bg bg-theme-accent rounded-theme px-3 py-1.5 text-xs font-bold tracking-widest uppercase transition-all hover:brightness-110 hover:filter"
-            >
-              Skip
-            </button>
-          </div>
+          <UpNextOverlay
+            timeRemaining={timeRemaining}
+            nextItem={nextItem}
+            onSkip={handleNext}
+          />
         )}
 
         {/* Thematic Scanline Overlay */}

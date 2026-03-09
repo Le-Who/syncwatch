@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **Architecture Refactoring (Intent Management)**: Extracted all timeout and boolean "intent masking" state variables from the `Player.tsx` god-component into a dedicated `PlaybackIntentManager` class, standardizing programmatic vs. native event precedence.
+- **UI Modularization**: Extracted raw UI elements (`AwaitingSignal`, `UpNextOverlay`) from `Player.tsx` into standalone functional components.
 - **Architecture Refactoring**: Extracted core media synchronization mathematics and Intent Masking out of `Player.tsx` and into a dedicated vanilla JS `SyncEngine`.
 - **System Resilience (OOM Protection)**: Implemented strict backpressure mechanics and array limits (max 3000 items) on the Redis write-behind queue to prevent Node.js Out-of-Memory crashes during Supabase outages.
 - **Native Twitch API Integration**: Replaced the `react-player` wrapper for Twitch streams with a dedicated `TwitchPlayer.tsx` component using the official `Twitch.Player` embed API, fixing unmount bugs and Autoplay Policy violations.
