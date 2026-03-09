@@ -53,10 +53,11 @@ graph TD
 | `components/` | Reusable React UI components (`Player`, `TwitchPlayer`, `UpNextOverlay`, etc.).                   |
 | `hook/`       | Custom React hooks for application logic (`usePlaybackSync`, `useFlashback`, etc.).               |
 | `lib/`        | Shared utilities (`room-handler.ts`, `playback-intent-manager.ts`), Zustand store, Redis clients. |
+| `lib/socket/` | Socket.IO connection handlers, PubSub routing, and command event loops.                           |
 | `supabase/`   | Database migration files (e.g., `00001_initial.sql`).                                             |
 | `__tests__/`  | Unit and integration tests (Vitest).                                                              |
 | `e2e/`        | End-to-end user flow tests (Playwright).                                                          |
-| `server.ts`   | The core WebSocket server and Next.js host (delegates to `lib/room-handler`).                     |
+| `server.ts`   | Next.js host Bootstrapper and Socket.io gateway definition.                                       |
 | `test-zod.ts` | Local CLI script for testing Zod schema behaviors.                                                |
 
 ## Tech Stack

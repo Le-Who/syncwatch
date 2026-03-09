@@ -1,14 +1,11 @@
-import { createServer, Server as NetServer } from "http";
+import { createServer } from "http";
 import next from "next";
 import { Server as SocketIOServer } from "socket.io";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
-import { jwtVerify } from "jose";
-import * as cookie from "cookie";
-import { getRedisClient } from "./lib/redis-rate-limit";
-import { subClient } from "./lib/redis-actor";
-import { processQueueForRoom } from "./lib/redis-queue-worker";
-import { sanitizeRoom, registerRoomHandlers } from "./lib/room-handler";
+import { registerRoomHandlers } from "./lib/room-handler";
 import { startDbSyncWorker, flushDbSyncQueue } from "./lib/db-sync";
+import { setupSocketAuth } from "./lib/socket/setup";
+import { setupPubSubListeners } from "./lib/socket/pubsub";
 
 // Load environment variables manually for the custom server
 import { loadEnvConfig } from "@next/env";
@@ -44,8 +41,6 @@ if (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
   console.warn("⚠️ Data will NOT persist to the database.");
   console.warn("=======================================================\n");
 }
-
-// Types extracted to lib/types.ts and lib/room-handler.ts
 
 // Start Background DB Worker
 const workerInterval = startDbSyncWorker(supabase);
@@ -97,103 +92,8 @@ app.prepare().then(() => {
     pingInterval: 25000,
   });
 
-  const JWT_SECRET = new TextEncoder().encode(
-    process.env.JWT_SECRET || "default_local_secret_dont_use_in_prod",
-  );
-
-  io.use(async (socket, next) => {
-    try {
-      const cookies = cookie.parse(socket.request.headers.cookie || "");
-      const token = cookies.syncwatch_session || socket.handshake.auth?.token;
-
-      const redisClient = getRedisClient();
-
-      if (token) {
-        try {
-          const { payload } = await jwtVerify(token, JWT_SECRET);
-          if (payload.participantId) {
-            socket.data.participantId = payload.participantId;
-            return next();
-          }
-        } catch (jwtErr) {
-          console.error(
-            "JWT VERIFY FAILED in io.use! Token:",
-            token,
-            "Error:",
-            jwtErr,
-          );
-        }
-      } else {
-        console.warn(
-          "NO TOKEN PROVIDED! Fallback to guest. cookies:",
-          cookies,
-          "auth:",
-          socket.handshake.auth,
-        );
-      }
-
-      socket.data.participantId = `guest_${socket.id}`;
-      next();
-    } catch (err) {
-      console.error("UNKNOWN ERROR IN IO.USE FAILED!", err);
-      // Even on error, allow connection but mark as temporary guest to prevent UI freezes
-      socket.data.participantId = `guest_${socket.id}`;
-      next();
-    }
-  });
-
-  // Global Pub/Sub Listener for Node Synchronization
-  const sClient = subClient();
-  if (sClient) {
-    sClient.psubscribe("room_events:*");
-    sClient.on(
-      "pmessage",
-      (pattern: string, channel: string, message: string) => {
-        try {
-          const roomId = channel.split(":")[1];
-          if (!roomId) return;
-          const data = JSON.parse(message);
-          if (data.type === "state_update") {
-            // If we have local clients connected to this room, emit
-            // Using io.sockets.adapter.rooms.has is an efficient way to check local presence
-            if (io.sockets.adapter.rooms.has(roomId)) {
-              // SECURITY FIX: Must sanitize data from PubSub before broadcasting to clients
-              io.to(roomId).emit("room_state", {
-                room: sanitizeRoom(data.payload),
-                serverTime: Date.now(),
-              });
-            }
-          } else if (data.type === "participant_joined") {
-            // Re-broadcast to all clients connected to this Node instance in the room
-            if (io.sockets.adapter.rooms.has(roomId)) {
-              io.to(roomId).emit("participant_joined", data.payload);
-            }
-          }
-        } catch (e) {
-          console.error("PubSub parse error:", e);
-        }
-      },
-    );
-
-    // Queue processor listener
-    sClient.psubscribe("queue_wakeup:*");
-    sClient.on(
-      "pmessage",
-      (pattern: string, channel: string, message: string) => {
-        if (!channel.startsWith("queue_wakeup:")) return;
-        const roomId = channel.split(":")[1];
-        if (!roomId) return;
-
-        // Fire and forget processor trigger.
-        // The worker uses withLock internally, so multiple triggers won't race or corrupt memory.
-        processQueueForRoom(roomId).catch((e) =>
-          console.error("Worker error for", roomId, e),
-        );
-      },
-    );
-  }
-
-  // Disconnected/Inactive rooms are automatically garbage collected by Redis TTL (EXPIRE).
+  setupSocketAuth(io);
+  setupPubSubListeners(io);
 
   io.on("connection", (socket) => {
     registerRoomHandlers(io, socket, supabase);

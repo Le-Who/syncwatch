@@ -536,19 +536,11 @@ export default function Player() {
                       setIsBuffering(false);
                     }}
                     onPlay={() => {
-                      console.log("[TWITCH_PLAYER DEBUG] onPlay fired!", {
-                        status: playback?.status,
-                        canControl,
-                        timeDelta: Date.now() - lastCommandEmitTimeRef.current,
-                      });
+                      // removed undefined lastCommandEmitTimeRef debug log
                       handleNativePlay();
                     }}
                     onPause={() => {
-                      console.log("[TWITCH_PLAYER DEBUG] onPause fired!", {
-                        status: playback?.status,
-                        canControl,
-                        timeDelta: Date.now() - lastCommandEmitTimeRef.current,
-                      });
+                      // removed undefined lastCommandEmitTimeRef debug log
                       handleNativePause();
                     }}
                   />
