@@ -256,6 +256,7 @@ export default function Player() {
   useEffect(() => {
     if (typeof window !== "undefined") {
       setHostName(window.location.hostname);
+      (window as any).__store = useStore;
     }
     setMounted(true);
   }, []);

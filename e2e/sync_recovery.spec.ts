@@ -1,20 +1,5 @@
-import { test, expect, Page } from "@playwright/test";
-import { randomUUID } from "node:crypto";
-
-function getTestRoomUrl() {
-  return `/room/e2e-${randomUUID().slice(0, 8)}`;
-}
-
-async function joinRoom(page: Page, url: string, nickname: string) {
-  await page.goto(url);
-  const handleInput = page.locator('input[placeholder="ENTER_HANDLE"]');
-  await handleInput.waitFor({ state: "visible", timeout: 15000 });
-  await handleInput.fill(nickname);
-  await page.locator("button", { hasText: "Establish Link" }).click();
-  await expect(page.locator("text=SyncWatch").first()).toBeVisible({
-    timeout: 15000,
-  });
-}
+import { test, expect } from "@playwright/test";
+import { getTestRoomUrl, joinRoom } from "./helpers/room";
 
 test.describe("SyncWatch Sync Recovery E2E", () => {
   test("TC-06: Player mounts and accepts adaptive logic parameters cleanly", async ({
@@ -30,6 +15,17 @@ test.describe("SyncWatch Sync Recovery E2E", () => {
       'input[placeholder="Paste video stream URL..."]',
     );
     await urlInput.waitFor({ state: "visible" });
+
+    // Mock Metadata so the React flow proceeds
+    await page1.route("**/api/metadata*", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          title: "Mock BBB Video",
+        }),
+      });
+    });
 
     // We fulfill the URL to a local mocked video
     await page1.route(

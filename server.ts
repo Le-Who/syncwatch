@@ -762,15 +762,13 @@ app.prepare().then(() => {
           ].includes(type);
 
           if (isFastPath) {
-            // STRICT OCC ENFORCEMENT: We use the client's provided sequence-1 as the expected version.
-            // If the client's state is stale, the Lua script will return VERSION_CONFLICT.
-            // If expected is strictly 0, we bypass (e.g., initial join sync edge cases).
-            const clientExpectedVersion =
-              sequence > 0 ? sequence - 1 : baseVersion;
-
+            // STRICT OCC ENFORCEMENT for playlist? No, for fast mutations (play/pause/seek)
+            // we default to -1 (Last-Writer-Wins bypass). The Lua script handles the atomic state overwrite.
+            // This prevents false-positive Rollbacks when background commands (like update_duration)
+            // happen to bump the sequence number milliseconds before a user clicks pause.
             const result = await executeFastMutation(
               roomId,
-              clientExpectedVersion, // Use Client's knowledge, not the Server's fresh read!
+              -1, // -1 means bypass OCC strict sequence checks
               type,
               payload,
               currentParticipantId,

@@ -1,22 +1,5 @@
-import { test, expect, Page } from "@playwright/test";
-import { randomUUID } from "node:crypto";
-
-function getTestRoomUrl() {
-  return `/room/e2e-net-${randomUUID().slice(0, 8)}`;
-}
-
-async function joinRoom(page: Page, url: string, nickname: string) {
-  await page.goto(url);
-  const handleInput = page.locator('input[placeholder="ENTER_HANDLE"]');
-  await handleInput.waitFor({ state: "visible", timeout: 15000 });
-  await handleInput.fill(nickname);
-
-  await page.locator("button", { hasText: "Establish Link" }).click();
-  await expect(page.locator("text=SyncWatch").first()).toBeVisible({
-    timeout: 15000,
-  });
-  await page.locator("button", { hasText: /Entities/i }).click();
-}
+import { test, expect } from "@playwright/test";
+import { getTestRoomUrl, joinRoom } from "./helpers/room";
 
 test.describe("Network Resilience (TC-302)", () => {
   test("Client TCP drops securely reconnect and preserve room entity presence", async ({
