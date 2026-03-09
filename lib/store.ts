@@ -3,9 +3,9 @@ import { persist } from "zustand/middleware";
 import { roomSocketService } from "./socket";
 import { toast } from "sonner";
 
-export type PlaybackStatus = "playing" | "paused" | "buffering" | "ended";
+type PlaybackStatus = "playing" | "paused" | "buffering" | "ended";
 
-export interface PlaybackState {
+interface PlaybackState {
   status: PlaybackStatus;
   basePosition: number;
   baseTimestamp: number;
@@ -14,7 +14,7 @@ export interface PlaybackState {
   lastActionNonce?: string; // Optional because legacy rooms might not have it yet
 }
 
-export interface PlaylistItem {
+interface PlaylistItem {
   id: string;
   url: string;
   provider: string;
@@ -26,20 +26,20 @@ export interface PlaylistItem {
   thumbnail?: string;
 }
 
-export interface Participant {
+interface Participant {
   id: string;
   nickname: string;
   role: "owner" | "moderator" | "guest";
   lastSeen: number;
 }
 
-export interface RoomSettings {
+interface RoomSettings {
   controlMode: "open" | "controlled" | "hybrid";
   autoplayNext: boolean;
   looping: boolean;
 }
 
-export interface RoomState {
+interface RoomState {
   id: string;
   name: string;
   settings: RoomSettings;

@@ -22,10 +22,11 @@ export async function processQueueForRoom(roomId: string) {
 
     const baseVersion = room.version;
 
-    while (true) {
-      const item = await redisClient.lpop(`room_queue:${roomId}`);
-      if (!item) break; // Queue empty
+    const queueKey = `room_queue:${roomId}`;
+    const items = await redisClient.lrange(queueKey, 0, -1);
+    if (!items || items.length === 0) return;
 
+    for (const item of items) {
       try {
         const cmd = JSON.parse(item);
         const {
@@ -322,11 +323,19 @@ export async function processQueueForRoom(roomId: string) {
       room.lastActivity = Date.now();
       await setRedisRoom(roomId, room); // Direct overwrite, we hold the lock
 
+      // Atomically trim the chunk we just processed from the queue
+      await redisClient.ltrim(queueKey, items.length, -1);
+
       // Re-publish to socket threads
       await publishRoomEvent(roomId, {
         type: "state_update",
         payload: room, // Note: scrub sensitive info if needed
       });
+    } else {
+      // If no state changed (e.g. all commands stale or invalid), still trim them so we don't infinitely re-process
+      if (items.length > 0) {
+        await redisClient.ltrim(queueKey, items.length, -1);
+      }
     }
   });
 }

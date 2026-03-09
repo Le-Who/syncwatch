@@ -599,6 +599,7 @@ export default function Player() {
     <div
       ref={containerRef}
       className="bg-theme-bg group react-player-wrapper border-theme-border/50 font-theme relative flex h-full w-full flex-1 flex-col border-y-2 lg:border-x-2 lg:border-y-0"
+      data-testid="player-interaction-layer"
     >
       <div
         className="relative h-full min-h-[40vh] w-full flex-1 md:min-h-full"

@@ -52,8 +52,29 @@ vi.mock("http", async (importOriginal) => {
   };
 });
 
+// 4. Test Utility for AAA compliant assertions
+const waitForSocketEvent = (
+  socket: ClientSocket,
+  event: string,
+  timeoutMs: number = 2000,
+): Promise<any> => {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`Timeout waiting for socket event: ${event}`));
+    }, timeoutMs);
+
+    socket.once(event, (data?: any) => {
+      clearTimeout(timer);
+      resolve(data);
+    });
+  });
+};
+
 describe("server.ts Real Socket.IO Integration", () => {
   let clientSocket: ClientSocket;
+  let guestSocket: ClientSocket;
+  let hostileSocket: ClientSocket;
+  let recoverySocket: ClientSocket;
 
   beforeAll(async () => {
     // Import server.ts to trigger app.prepare().then(...)
@@ -81,12 +102,11 @@ describe("server.ts Real Socket.IO Integration", () => {
   });
 
   afterAll(() => {
-    if (clientSocket) {
-      clientSocket.close();
-    }
-    if (httpServer) {
-      httpServer.close();
-    }
+    if (clientSocket) clientSocket.close();
+    if (guestSocket) guestSocket.close();
+    if (hostileSocket) hostileSocket.close();
+    if (recoverySocket) recoverySocket.close();
+    if (httpServer) httpServer.close();
   });
 
   it("TC-01: Connects and joins a room, establishing owner role", async () => {
@@ -107,50 +127,50 @@ describe("server.ts Real Socket.IO Integration", () => {
       },
     });
 
-    await new Promise<void>((resolve) => clientSocket.on("connect", resolve));
+    await waitForSocketEvent(clientSocket, "connect");
 
-    // Act & Assert
-    return new Promise<void>((resolve) => {
-      clientSocket.on("room_state", (payload: any) => {
-        expect(payload.room.id).toBe("test-room-1");
-        expect(Object.keys(payload.room.participants)).toHaveLength(1);
-        const participantId = Object.keys(payload.room.participants)[0];
-        expect(payload.room.participants[participantId].role).toBe("owner");
-        expect(payload.room.participants[participantId].nickname).toBe(
-          "OwnerUser",
-        );
-        clientSocket.close();
-        resolve();
-      });
-
-      clientSocket.emit("join_room", {
-        roomId: "test-room-1",
-        nickname: "OwnerUser",
-        participantId: "user-1",
-      });
+    // Act
+    const roomStatePromise = waitForSocketEvent(clientSocket, "room_state");
+    clientSocket.emit("join_room", {
+      roomId: "test-room-1",
+      nickname: "OwnerUser",
+      participantId: "user-1",
     });
+
+    const payload = await roomStatePromise;
+
+    // Assert
+    expect(payload.room.id).toBe("test-room-1");
+    expect(Object.keys(payload.room.participants)).toHaveLength(1);
+
+    const participantId = Object.keys(payload.room.participants)[0];
+    const participant = payload.room.participants[participantId];
+
+    expect(participantId).toBe("user-1");
+    expect(participant.role).toBe("owner");
+    expect(participant.nickname).toBe("OwnerUser");
   });
 
   it("TC-02: Guest users cannot mutate state", async () => {
     // Arrange
-    const guestSocket = Client(ioServerPath, {
+    guestSocket = Client(ioServerPath, {
       path: "/socket.io",
       transports: ["websocket"],
       forceNew: true,
     });
 
-    await new Promise<void>((resolve) => guestSocket.on("connect", resolve));
+    await waitForSocketEvent(guestSocket, "connect");
 
-    await new Promise<void>((resolve) => {
-      guestSocket.on("room_state", () => resolve());
-      guestSocket.emit("join_room", {
-        roomId: "test-room-2",
-        nickname: "GuestUser",
-        participantId: "guest_123",
-      });
+    const roomStatePromise = waitForSocketEvent(guestSocket, "room_state");
+    guestSocket.emit("join_room", {
+      roomId: "test-room-2",
+      nickname: "GuestUser",
+      participantId: "guest_123",
     });
+    await roomStatePromise;
 
     // Act
+    const errorPromise = waitForSocketEvent(guestSocket, "error");
     guestSocket.emit("command", {
       roomId: "test-room-2",
       type: "play",
@@ -158,14 +178,11 @@ describe("server.ts Real Socket.IO Integration", () => {
       sequence: 1,
     });
 
+    const err = await errorPromise;
+
     // Assert
-    return new Promise<void>((resolve) => {
-      guestSocket.on("error", (err: any) => {
-        expect(err.message).toContain("Guest accounts cannot send commands");
-        guestSocket.close();
-        resolve();
-      });
-    });
+    expect(err).toBeDefined();
+    expect(err.message).toContain("Guest accounts cannot send commands");
   });
 
   it("TC-03: Invalid Zod command payload types are rejected immediately", async () => {
@@ -177,7 +194,7 @@ describe("server.ts Real Socket.IO Integration", () => {
       .setProtectedHeader({ alg: "HS256" })
       .sign(JWT_SECRET);
 
-    const hostileSocket = Client(ioServerPath, {
+    hostileSocket = Client(ioServerPath, {
       path: "/socket.io",
       transports: ["websocket"],
       forceNew: true,
@@ -186,18 +203,18 @@ describe("server.ts Real Socket.IO Integration", () => {
       },
     });
 
-    await new Promise<void>((resolve) => hostileSocket.on("connect", resolve));
+    await waitForSocketEvent(hostileSocket, "connect");
 
-    await new Promise<void>((resolve) => {
-      hostileSocket.on("room_state", () => resolve());
-      hostileSocket.emit("join_room", {
-        roomId: "test-room-3",
-        nickname: "Hacker",
-        participantId: "user-hacker",
-      });
+    const roomStatePromise = waitForSocketEvent(hostileSocket, "room_state");
+    hostileSocket.emit("join_room", {
+      roomId: "test-room-3",
+      nickname: "Hacker",
+      participantId: "user-hacker",
     });
+    await roomStatePromise;
 
     // Act
+    const errorPromise = waitForSocketEvent(hostileSocket, "error");
     hostileSocket.emit("command", {
       roomId: "test-room-3",
       type: "play",
@@ -205,13 +222,49 @@ describe("server.ts Real Socket.IO Integration", () => {
       sequence: 1,
     });
 
+    const err = await errorPromise;
+
     // Assert
-    return new Promise<void>((resolve) => {
-      hostileSocket.on("error", (err: any) => {
-        expect(err.message).toContain("Invalid command payload format");
-        hostileSocket.close();
-        resolve();
-      });
+    expect(err).toBeDefined();
+    expect(err.message).toContain("Invalid command payload format");
+  });
+
+  it("TC-04: Existing session token recovers owner privileges upon reconnection", async () => {
+    // Arrange
+    const JWT_SECRET = new TextEncoder().encode(
+      "default_local_secret_dont_use_in_prod",
+    );
+    // Use the same participantId to simulate recovery
+    const token = await new SignJWT({ participantId: "user-1" })
+      .setProtectedHeader({ alg: "HS256" })
+      .sign(JWT_SECRET);
+
+    recoverySocket = Client(ioServerPath, {
+      path: "/socket.io",
+      transports: ["websocket"],
+      forceNew: true,
+      extraHeaders: {
+        cookie: `syncwatch_session=${token}`,
+      },
     });
+
+    await waitForSocketEvent(recoverySocket, "connect");
+
+    // Act
+    const roomStatePromise = waitForSocketEvent(recoverySocket, "room_state");
+    recoverySocket.emit("join_room", {
+      roomId: "test-room-1", // Re-joining the same room created in TC-01
+      nickname: "OwnerUserRecovered",
+      participantId: "user-1",
+    });
+
+    const payload = await roomStatePromise;
+
+    // Assert
+    expect(payload.room.id).toBe("test-room-1");
+    const participant = payload.room.participants["user-1"];
+    expect(participant).toBeDefined();
+    expect(participant.role).toBe("owner"); // Should remain owner
+    expect(participant.nickname).toBe("OwnerUserRecovered"); // Should update nickname
   });
 });
