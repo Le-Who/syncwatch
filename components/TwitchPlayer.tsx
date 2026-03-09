@@ -38,6 +38,8 @@ export const TwitchPlayer = forwardRef((props: TwitchPlayerProps, ref) => {
     getCurrentTime: () => playerInstanceRef.current?.getCurrentTime() || 0,
     getDuration: () => playerInstanceRef.current?.getDuration() || 0,
     seekTo: (position: number) => playerInstanceRef.current?.seek(position),
+    play: () => playerInstanceRef.current?.play(),
+    pause: () => playerInstanceRef.current?.pause(),
   }));
 
   useEffect(() => {
@@ -99,6 +101,8 @@ export const TwitchPlayer = forwardRef((props: TwitchPlayerProps, ref) => {
 
     cleanupContainer.innerHTML = "";
     const newPlayerDiv = document.createElement("div");
+    newPlayerDiv.style.width = "100%";
+    newPlayerDiv.style.height = "100%";
     cleanupContainer.appendChild(newPlayerDiv);
 
     try {

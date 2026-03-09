@@ -22,6 +22,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **Twitch VOD Playback**: Fixed an issue where the native Twitch embedded player would vertically compress to 150px. Further stabilized integration by disabling conflicting generic custom UI controls over Twitch iframes and resolving a `_.current.play is not a function` error during active synchronization pauses.
 - **YouTube Playback Sync**: Fixed iframe origin mismatch issues during rapid scrub/pause actions by explicitly enforcing `enablejsapi: 1` and fallback target origins mapping.
 - **UI Layout Overflow**: Resolved parasitic scrolling and infinite reflow cycles on both mobile and desktop views by migrating to `100dvh` and enforcing a hard root-level `overflow: hidden`.
 - **Player Sync Loop:** Removed arbitrary `timeSinceMediaStart` limits from `handleNativePlay` and `handleNativePause` in `Player.tsx`. This fixes an aggressive rubber-banding issue when rapidly scrubbing Native YouTube components that emit successive stop/seek/play events.
