@@ -2,31 +2,78 @@ import { test, expect } from "@playwright/test";
 import { getTestRoomUrl, joinRoom } from "./helpers/room";
 
 test.describe("Network Resilience (TC-302)", () => {
-  test("Client TCP drops securely reconnect and preserve room entity presence", async ({
+  test("Client TCP drops securely reconnect and preserve JWT session", async ({
     page,
+    context,
   }) => {
+    test.setTimeout(45000);
     const roomUrl = getTestRoomUrl();
     await joinRoom(page, roomUrl, "DropoutUser");
 
+    // 1. Arrange: Ensure joined and connected
     await expect(
       page.locator('input[value="DropoutUser"]').first(),
     ).toBeVisible({ timeout: 15000 });
 
-    // Emulate browser physical network drop via Playwright native API
-    // This is much more accurate than window.dispatchEvent as it drops all active WebSockets
-    const context = page.context();
-    await context.setOffline(true);
+    const mockMetadataApi = async (route: any) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          title: "Reconnect Video",
+          thumbnail: "",
+        }),
+      });
+    };
+    await page.route("**/api/metadata*", mockMetadataApi);
 
-    // Give it a moment to realize it's disconnected
-    await page.waitForTimeout(2000);
+    // Assert initial connection state
+    await expect(async () => {
+      const isConnected = await page.evaluate(
+        () => (window as any).__store.getState().isConnected,
+      );
+      expect(isConnected).toBe(true);
+    }).toPass({ timeout: 10000 });
 
-    // Emulate network restoration
-    await context.setOffline(false);
+    // 2. Act: Emulate physical network drop by closing the underlying transport
+    // This perfectly mimics a TCP connection reset without triggering the application's clean disconnect flow
+    await page.evaluate(() => {
+      (window as any).__roomSocketService.getSocket().io.engine.close();
+    });
 
-    // Verify user presence is maintained in UI (Didn't vanish from Entities list)
-    // Actually the reconnect logic in socket.ts triggers `join_room` implicitly
-    await expect(
-      page.locator('input[value="DropoutUser"]').first(),
-    ).toBeVisible({ timeout: 15000 });
+    // Wait for the client to realize it's disconnected
+    await expect(async () => {
+      const isConnected = await page.evaluate(
+        () => (window as any).__store.getState().isConnected,
+      );
+      expect(isConnected).toBe(false);
+    }).toPass({ timeout: 15000 });
+
+    // 3. Act: Wait for the automatic reconnection (Socket.io exponential backoff)
+    // The socket will automatically try to reconnect and the __roomSocketService will upgrade the session
+
+    // Wait for reconnection and session upgrade
+    await expect(async () => {
+      const state = await page.evaluate(() =>
+        (window as any).__store.getState(),
+      );
+      expect(state.isConnected).toBe(true);
+      expect(state.sessionToken).toBeTruthy(); // Ensure token survived/was restored
+    }).toPass({ timeout: 15000 });
+
+    // 4. Assert: Verify the re-established connection actually works with a privileged JWT action
+    // "DropoutUser" is the first user, so they are the owner.
+    await page.locator("button", { hasText: /Queue/i }).click();
+    const urlInput = page.locator(
+      'input[placeholder="Paste video stream URL..."]',
+    );
+    await urlInput.waitFor({ state: "visible" });
+    await urlInput.fill("https://example.com/video.mp4");
+    await page.locator("button", { hasText: "Init" }).click();
+
+    // Verify the API command was accepted by the server and broadcasted back
+    await expect(page.locator("text=Reconnect Video").first()).toBeVisible({
+      timeout: 15000,
+    });
   });
 });

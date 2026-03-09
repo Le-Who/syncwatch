@@ -4,7 +4,7 @@ playwright-report/
 playwright/.cache/
 blob-report/
 e2e/
-lib/__tests__/
+__tests__/
 coverage/
 vitest.config.ts
 vitest.setup.ts

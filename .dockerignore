@@ -18,8 +18,10 @@ blob-report/
 Dockerfile
 .dockerignore
 e2e/
-lib/__tests__/
+__tests__/
 vitest.config.ts
+vitest.setup.ts
+test-zod.ts
 playwright.config.ts
 skills/
 .gemini/

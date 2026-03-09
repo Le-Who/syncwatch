@@ -38,6 +38,7 @@ import {
 import fscreen from "fscreen";
 import { motion } from "motion/react";
 import { formatTime, calculateDrift } from "@/lib/utils";
+import { calculatePlaybackRate } from "@/lib/drift-math";
 import { Scrubber } from "./Scrubber";
 import { MediaApiService } from "@/lib/MediaApiService";
 import { usePlayerShortcuts } from "@/hooks/usePlayerShortcuts";
@@ -352,18 +353,16 @@ export default function Player() {
         }
         performProgrammaticSeek(expectedClamped);
         setLocalPlaybackRate(playback.rate);
-      } else if (
-        currentDrift > 0.5 &&
-        !isBuffering &&
-        !isIframeProvider &&
-        currentMedia?.provider?.toLowerCase() !== "youtube"
-      ) {
-        // [THRESHOLD 2]: Minor drift (0.5s - 3.0s). Shift playbackRate invisibly.
-        const rateAdjustment = currentPosition < expectedPosition ? 1.05 : 0.95;
-        setLocalPlaybackRate(playback.rate * rateAdjustment);
       } else {
-        // PERFECT SYNC
-        setLocalPlaybackRate(playback.rate);
+        const newRate = calculatePlaybackRate(
+          currentDrift,
+          currentPosition,
+          expectedPosition,
+          playback.rate,
+          isBuffering,
+          isIframeProvider,
+        );
+        setLocalPlaybackRate(newRate);
       }
     } else if (playback.status === "paused") {
       const { drift: currentDrift } = calculateDrift(

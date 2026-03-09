@@ -43,6 +43,7 @@ SyncWatch is a latency-tolerant, real-time, server-authoritative watch-party app
 - **Thundering Herd Deadlock Prevention**: Secured the horizontal database synchronization loop by introducing distributed memory locks (`NX PX`) around identical room payload queues, fully eliminating redundant Supabase connection-pool contention across distributed web servers.
 - **Lua Timestamp Ghost-Seek Elimination**: Guarded the Redis Fast-Path atomic state machine against naive sequence overwriting logic. Redundant WebSocket `play` commands issued against already-playing sessions are now strictly ignored instead of arbitrarily zeroing-out the `baseTimestamp` relative playback loops.
 - **Provider-Aware Fractional Resampling**: Corrected the WebSocket drift-catchup implementation to respect native iFrame limitations (YouTube/Vimeo/Twitch), automatically narrowing the accepted drift margin and utilizing precise programmatic bounds instead of broken fractional `playbackRate` audio resampling commands.
+- **Robust Test Infrastructure (Vitest & Playwright)**: Hardened the entire testing ecosystem. Eliminated all nondeterministic `waitForTimeout` calls in E2E tests in favor of strict condition-polling against the Zustand store. Exposed specific internal stores to the Playwright `window` allowing true, instant TCP physical socket drops to accurately verify JWT auto-recovery mechanics. Solved brittle `ioredis` instantiation mocks and protected the `/api/metadata` SSRF tests against synthetic DNS bogon false-positives.
 
 ## Database Setup (Supabase)
 

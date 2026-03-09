@@ -34,10 +34,10 @@ export default function Participants() {
   const isOwner = currentUserRole === "owner";
 
   const participants = Object.values(room.participants).sort((a, b) => {
-    if (a.role === "owner") return -1;
-    if (b.role === "owner") return 1;
-    if (a.role === "moderator") return -1;
-    if (b.role === "moderator") return 1;
+    const roles = { owner: 3, moderator: 2, guest: 1 };
+    const wA = roles[a.role as keyof typeof roles] || 0;
+    const wB = roles[b.role as keyof typeof roles] || 0;
+    if (wA !== wB) return wB - wA;
     return a.nickname.localeCompare(b.nickname);
   });
 
@@ -58,7 +58,7 @@ export default function Participants() {
         {participants.map((p) => (
           <div
             key={p.id}
-            className={`rounded-theme relative flex items-center justify-between border-2 p-3.5 transition-all ${
+            className={`rounded-theme participant-item relative flex items-center justify-between border-2 p-3.5 transition-all ${
               p.id === participantId
                 ? "bg-theme-accent/20 border-theme-accent shadow-theme"
                 : "bg-theme-bg/40 border-theme-border/30 hover:bg-theme-bg/60 hover:border-theme-accent"

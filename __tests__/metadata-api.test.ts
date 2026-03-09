@@ -16,7 +16,7 @@ vi.mock("dns/promises", () => ({
       if (hostname.includes("127.0.0.1") || hostname.includes("localhost")) {
         return ["127.0.0.1"];
       }
-      return ["192.168.1.100"]; // Mock generic safe IP for others
+      return ["8.8.8.8"]; // Mock generic safe public IP for others
     }),
   },
 }));

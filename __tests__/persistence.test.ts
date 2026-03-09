@@ -5,20 +5,21 @@ const mockZadd = vi.fn().mockResolvedValue(1);
 const mockZremrangebyscore = vi.fn().mockReturnThis();
 
 vi.mock("ioredis", () => {
-  return {
-    Redis: vi.fn().mockImplementation(() => {
-      // Mock basic Redis methods
+  class MockRedis {
+    multi() {
       return {
-        multi: vi.fn().mockReturnValue({
-          zremrangebyscore: mockZremrangebyscore,
-          zcard: vi.fn().mockReturnThis(),
-          zadd: mockZadd,
-          expire: vi.fn().mockReturnThis(),
-          exec: vi.fn().mockResolvedValue([null, [null, 5]]), // Example output: count of 5
-        }),
+        zremrangebyscore: mockZremrangebyscore,
+        zcard: vi.fn().mockReturnThis(),
+        zadd: mockZadd,
+        expire: vi.fn().mockReturnThis(),
+        exec: vi.fn().mockResolvedValue([null, [null, 5]]),
       };
-    }),
-  };
+    }
+    on() {
+      return this;
+    }
+  }
+  return { Redis: MockRedis };
 });
 
 describe("Redis Rate Limit & Persistence Fallbacks", () => {

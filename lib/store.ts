@@ -118,6 +118,7 @@ export const useStore = create<AppState>((set, get) => ({
 
       // Expose to window for Playwright E2E introspection
       (window as any).useRoomStore = { getState: get, setState: set };
+      (window as any).__roomSocketService = roomSocketService;
 
       // Inject Zustand state getters/setters into the Socket Service
       roomSocketService.init(get, set);

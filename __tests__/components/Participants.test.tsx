@@ -49,16 +49,20 @@ describe("Participants Component (Unit Tests)", () => {
     render(<Participants />);
 
     // The order in the DOM should match the sort logic in the component
-    const names = screen.getAllByText(/Alice|Bob|Charlie/);
-    expect(
-      names[0].closest("p")?.textContent || names[0].getAttribute("value"),
-    ).toBe("Alice");
-    expect(
-      names[1].closest("p")?.textContent || names[1].getAttribute("value"),
-    ).toBe("Bob");
-    expect(
-      names[2].closest("p")?.textContent || names[2].getAttribute("value"),
-    ).toBe("Charlie");
+    const items = document.querySelectorAll(".participant-item");
+    expect(items.length).toBe(3);
+
+    // Extract textual name from each item (either from <p> or <input value>)
+    const getParticipantName = (el: Element) => {
+      const input = el.querySelector("input");
+      if (input) return input.value;
+      const p = el.querySelector("p");
+      return p?.textContent;
+    };
+
+    expect(getParticipantName(items[0])).toBe("Alice");
+    expect(getParticipantName(items[1])).toBe("Bob");
+    expect(getParticipantName(items[2])).toBe("Charlie");
   });
 
   it("TC-UI-10: Shows 'Manage user' menu only for Owner", () => {
