@@ -252,6 +252,7 @@ export default function Player() {
       setPlaying(playback.status === "playing");
       performProgrammaticSeek(expectedPosition);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [occRollbackTick]);
 
   useEffect(() => {
@@ -341,17 +342,25 @@ export default function Player() {
       const isTwitch = currentMedia?.provider?.toLowerCase() === "twitch";
 
       // [Problem 3 Fix]: Dual-Threshold Adaptive Rate (Hard Sink vs Smooth Rate Shift)
+      // Twitch DOES NOT support playback rates, so we must force a hard seek for any sync drift.
       if (
-        (currentDrift > 3.0 || (isIframeProvider && currentDrift > 2.0)) &&
-        !isBuffering &&
-        !isTwitch
+        (currentDrift > 3.0 ||
+          (isIframeProvider && currentDrift > 2.0) ||
+          (isTwitch && currentDrift > 1.0)) &&
+        !isBuffering
       ) {
-        // [THRESHOLD 1]: Massive drift (>3.0s). Requires a violent hard seek.
+        // [THRESHOLD 1]: Massive drift or Twitch drift. Requires a violent hard seek.
         let expectedClamped = expectedPosition;
         if (duration > 0 && expectedClamped > duration) {
           expectedClamped = duration;
         }
         performProgrammaticSeek(expectedClamped);
+
+        // Twitch inherently pauses when instructed to seek, so force a resume.
+        if (isTwitch && playing && realPlayerRef.current?.play) {
+          realPlayerRef.current.play();
+        }
+
         setLocalPlaybackRate(playback.rate);
       } else {
         const newRate = calculatePlaybackRate(
@@ -399,6 +408,15 @@ export default function Player() {
     if (pos === 0 && playback && playback.basePosition > 2) {
       pos = playback.basePosition;
     }
+
+    // Bypass iframe autoplay restrictions for Twitch by calling play synchronously during the click event
+    if (
+      currentMedia?.provider?.toLowerCase() === "twitch" &&
+      realPlayerRef.current
+    ) {
+      realPlayerRef.current.play();
+    }
+
     emitCommand("play", { position: pos });
   };
 
@@ -408,7 +426,7 @@ export default function Player() {
     emitCommand("pause", { position: getAccurateTime() });
   };
 
-  const handleNativePlay = () => {
+  const handleNativePlay = useEventCallback(() => {
     if (pauseDebounceRef.current) {
       clearTimeout(pauseDebounceRef.current);
       pauseDebounceRef.current = null;
@@ -427,9 +445,9 @@ export default function Player() {
     if (canControl && playback?.status !== "playing") {
       emitCommand("play", { position: getAccurateTime() });
     }
-  };
+  });
 
-  const handleNativePause = () => {
+  const handleNativePause = useEventCallback(() => {
     setIsBuffering(false);
     setPlaying(false);
     if (pauseDebounceRef.current) clearTimeout(pauseDebounceRef.current);
@@ -447,7 +465,7 @@ export default function Player() {
         emitCommand("pause", { position: getAccurateTime() });
       }
     }, 50);
-  };
+  });
 
   usePlayerShortcuts({
     canControl,
@@ -479,8 +497,23 @@ export default function Player() {
       typeof realPlayerRef.current.seekTo === "function"
     ) {
       realPlayerRef.current.seekTo(newPosition, "seconds");
+      // Explicitly call .play() since Twitch pauses on seek
+      if (
+        playing &&
+        currentMedia?.provider?.toLowerCase() === "twitch" &&
+        realPlayerRef.current.play
+      ) {
+        realPlayerRef.current.play();
+      }
     } else if (playerRef.current) {
       playerRef.current.currentTime = newPosition;
+      if (
+        playing &&
+        currentMedia?.provider?.toLowerCase() === "twitch" &&
+        typeof playerRef.current.play === "function"
+      ) {
+        playerRef.current.play();
+      }
     }
 
     if (canControl) {
@@ -633,12 +666,18 @@ export default function Player() {
                   setError(null);
 
                   // -- TWITCH EVENT PROXY HACK --
-                  // react-player @3.x fails to bubble "playing" from twitch-video-element as standard "play"
-                  // So we listen explicitly on the internal DOM element.
                   if (currentMedia.provider?.toLowerCase() === "twitch") {
                     try {
-                      const twitchEl = rPlayer.getInternalPlayer("twitch");
+                      // Note: react-player v3's getInternalPlayer() may not return the iframe wrapper,
+                      // instead the ref itself might point to the <twitch-video> web component.
+                      const twitchEl = rPlayer
+                        ? rPlayer.getInternalPlayer
+                          ? rPlayer.getInternalPlayer("twitch")
+                          : null
+                        : playerRef.current;
+
                       if (twitchEl && !twitchEl.dataset.proxyAttached) {
+                        // eslint-disable-next-line react-hooks/immutability
                         twitchEl.dataset.proxyAttached = "true";
 
                         // Using Twitch standard DOM events
@@ -1258,12 +1297,10 @@ export default function Player() {
                 </div>
 
                 {/* Sync Status Badge */}
-                {/* eslint-disable-next-line react-hooks/refs */}
                 {driftRef.current >= 0.5 && (
                   <div className="bg-theme-bg/80 border-theme-border/50 rounded-theme animate-in fade-in mr-2 hidden min-w-[120px] items-center justify-center space-x-2 border px-3 py-1.5 text-[10px] font-bold uppercase shadow-sm md:flex">
                     <div
                       className={`h-2 w-2 rounded-full ${
-                        // eslint-disable-next-line react-hooks/refs
                         driftRef.current < 2
                           ? "bg-theme-danger shadow-[0_0_8px_var(--color-theme-danger)]"
                           : "bg-red-500 shadow-[0_0_8px_rgb(239,68,68)]"
@@ -1271,13 +1308,11 @@ export default function Player() {
                     />
                     <span
                       className={`hidden sm:inline-block ${
-                        // eslint-disable-next-line react-hooks/refs
                         driftRef.current < 2
                           ? "text-theme-danger"
                           : "text-red-500"
                       }`}
                     >
-                      {/* eslint-disable-next-line react-hooks/refs */}
                       {driftRef.current < 2 ? "Sync: Locking" : "Sync: Lost"}
                     </span>
                   </div>
