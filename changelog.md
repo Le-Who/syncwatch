@@ -22,6 +22,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **YouTube Playback Sync**: Fixed iframe origin mismatch issues during rapid scrub/pause actions by explicitly enforcing `enablejsapi: 1` and fallback target origins mapping.
+- **UI Layout Overflow**: Resolved parasitic scrolling and infinite reflow cycles on both mobile and desktop views by migrating to `100dvh` and enforcing a hard root-level `overflow: hidden`.
 - **Player Sync Loop:** Removed arbitrary `timeSinceMediaStart` limits from `handleNativePlay` and `handleNativePause` in `Player.tsx`. This fixes an aggressive rubber-banding issue when rapidly scrubbing Native YouTube components that emit successive stop/seek/play events.
 - **Twitch Embed Initialization:** Conditioned the `ReactPlayer` `controls` prop to include `Twitch`. By explicitly rendering native Twitch controls, the embedded iframe complies with strict browser/Twitch autoplay rules and requires manual user initialization before syncing successfully.
 - **E2E Playwright Tests:** Fixed a minor TypeScript error accessing `_options.baseURL` within `e2e/helpers/room.ts`.

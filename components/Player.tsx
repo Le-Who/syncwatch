@@ -635,13 +635,14 @@ export default function Player() {
                         playerVars: {
                           controls: 1,
                           disablekb: 0,
-                          modestbranding: 0,
+                          modestbranding: 1,
                           rel: 1,
-                          showinfo: 1,
+                          showinfo: 0,
                           origin:
                             typeof window !== "undefined"
                               ? window.location.origin
-                              : undefined,
+                              : "https://69.tri.mom",
+                          enablejsapi: 1,
                         },
                       },
                       vimeo: { playerOptions: { controls: false } },

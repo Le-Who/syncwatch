@@ -129,7 +129,7 @@ export default function RoomPage() {
             <button
               type="submit"
               disabled={!tempName.trim()}
-              className="bg-theme-accent text-theme-bg rounded-theme ring-theme-accent w-full border-2 border-transparent px-4 py-4 font-bold tracking-[0.2em] uppercase shadow-[var(--theme-shadow)] transition-all hover:-translate-y-0.5 hover:shadow-[var(--theme-shadow-hover)] focus-visible:ring-4 active:translate-y-0.5 active:shadow-none disabled:opacity-50"
+              className="bg-theme-accent text-theme-bg rounded-theme ring-theme-accent shadow-theme hover:shadow-theme-hover w-full border-2 border-transparent px-4 py-4 font-bold tracking-[0.2em] uppercase transition-all hover:-translate-y-0.5 focus-visible:ring-4 active:translate-y-0.5 active:shadow-none disabled:opacity-50"
             >
               Establish Link
             </button>
@@ -158,7 +158,7 @@ export default function RoomPage() {
   }
 
   return (
-    <div className="text-theme-text font-theme selection:bg-theme-accent selection:text-theme-bg flex h-screen flex-col overflow-hidden bg-transparent">
+    <div className="text-theme-text font-theme selection:bg-theme-accent selection:text-theme-bg flex h-dvh flex-col overflow-hidden bg-transparent">
       {/* Header */}
       <header className="border-theme-border bg-theme-card relative z-20 flex h-[72px] shrink-0 items-center justify-between border-b-4 px-4 shadow-[0_4px_32px_var(--color-theme-shadow)] backdrop-blur-xl lg:px-6">
         <div className="relative z-10 flex items-center space-x-6">
@@ -166,7 +166,7 @@ export default function RoomPage() {
             href="/"
             className="text-theme-text group ring-theme-accent flex items-center space-x-3 outline-none focus-visible:ring-2"
           >
-            <div className="bg-theme-accent text-theme-bg rounded-theme flex h-10 w-10 items-center justify-center shadow-[var(--theme-shadow)] transition-transform group-hover:scale-105 group-active:scale-95 group-active:shadow-none">
+            <div className="bg-theme-accent text-theme-bg rounded-theme shadow-theme flex h-10 w-10 items-center justify-center transition-transform group-hover:scale-105 group-active:scale-95 group-active:shadow-none">
               <Zap className="h-6 w-6 fill-current" />
             </div>
             <span className="hidden text-xl font-bold tracking-tighter uppercase drop-shadow-sm sm:block">
@@ -211,7 +211,7 @@ export default function RoomPage() {
         <div className="relative z-10 flex items-center space-x-4">
           <button
             onClick={copyInviteLink}
-            className="bg-theme-bg/50 border-theme-accent hover:bg-theme-accent hover:text-theme-bg text-theme-accent rounded-theme ring-theme-text flex items-center space-x-2 border-2 px-4 py-2.5 text-xs font-bold tracking-wider uppercase shadow-[var(--theme-shadow)] transition-all outline-none focus-visible:ring-2 active:translate-y-0.5 active:shadow-none"
+            className="bg-theme-bg/50 border-theme-accent hover:bg-theme-accent hover:text-theme-bg text-theme-accent rounded-theme ring-theme-text shadow-theme flex items-center space-x-2 border-2 px-4 py-2.5 text-xs font-bold tracking-wider uppercase transition-all outline-none focus-visible:ring-2 active:translate-y-0.5 active:shadow-none"
           >
             {copied ? (
               <Check className="h-4 w-4" />
@@ -237,7 +237,7 @@ export default function RoomPage() {
       <div className="relative mt-1 flex flex-1 flex-col overflow-hidden bg-transparent lg:flex-row">
         {/* Player Area */}
         <div className="relative z-10 flex min-h-[40vh] flex-1 flex-col p-2 transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] lg:min-h-0 lg:p-4">
-          <div className="border-theme-border/50 bg-theme-bg rounded-theme relative h-full w-full overflow-hidden border-2 shadow-[var(--theme-shadow)]">
+          <div className="border-theme-border/50 bg-theme-bg rounded-theme shadow-theme relative h-full w-full overflow-hidden border-2">
             <Player />
             <Reactions />
           </div>
@@ -296,7 +296,7 @@ export default function RoomPage() {
             </div>
 
             {/* Decorative Footer */}
-            <div className="border-theme-border/30 bg-theme-bg/30 flex h-6 items-center justify-between border-t-[1px] px-3">
+            <div className="border-theme-border/30 bg-theme-bg/30 flex h-6 items-center justify-between border-t px-3">
               <div className="flex space-x-1">
                 <div className="bg-theme-accent h-1.5 w-1.5 animate-pulse rounded-full"></div>
                 <div className="bg-theme-accent h-1.5 w-1.5 animate-pulse rounded-full delay-75"></div>

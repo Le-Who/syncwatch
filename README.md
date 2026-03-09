@@ -13,6 +13,7 @@ SyncWatch allows multiple users to watch videos (YouTube, Vimeo, Twitch, or dire
 - The core synchronization, resilient database write-behind queues, and external media APIs are fully functional and stable.
 - The project is thoroughly tested with both E2E (Playwright) and Unit/Integration (Vitest) suites.
 - Code is resilient to DB downtime and handles temporary network partitions gracefully.
+- Responsive design provides stable layouts (100dvh) avoiding browser UI shifts on mobile contexts.
 
 ## Features
 
