@@ -442,7 +442,15 @@ export default function Player() {
       return;
     }
 
-    if (canControl && playback?.status !== "playing") {
+    // [Problem 1 Fix/Race Condition Fix]: Rely on local Optimistic UI identity if recent action fired,
+    // otherwise fallback to websocket state.
+    const expectedStatus =
+      Date.now() - lastCommandEmitTimeRef.current < 2000 &&
+      lastStateEmittedRef.current !== null
+        ? lastStateEmittedRef.current.status
+        : playback?.status;
+
+    if (canControl && expectedStatus !== "playing") {
       emitCommand("play", { position: getAccurateTime() });
     }
   });
@@ -461,7 +469,14 @@ export default function Player() {
     }
 
     pauseDebounceRef.current = setTimeout(() => {
-      if (canControl && playback?.status !== "paused") {
+      // Look at local state first
+      const expectedStatus =
+        Date.now() - lastCommandEmitTimeRef.current < 2000 &&
+        lastStateEmittedRef.current !== null
+          ? lastStateEmittedRef.current.status
+          : playback?.status;
+
+      if (canControl && expectedStatus !== "paused") {
         emitCommand("pause", { position: getAccurateTime() });
       }
     }, 50);
