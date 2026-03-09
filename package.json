@@ -10,6 +10,7 @@
     "build": "next build && npx tsc -p tsconfig.server.json",
     "start": "cross-env NODE_ENV=production NODE_OPTIONS=\"--no-warnings=DeprecationWarning\" node .next/production-server/server.js",
     "lint": "eslint .",
+    "test": "vitest run",
     "clean": "next clean",
     "format": "prettier --write .",
     "prune": "knip",
