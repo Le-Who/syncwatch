@@ -4,11 +4,14 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("../lib/socket", () => {
   return {
     roomSocketService: {
-      init: vi.fn(),
       connect: vi.fn(),
       disconnect: vi.fn(),
       sendCommand: vi.fn(),
       upgradeSession: vi.fn(),
+      joinRoom: vi.fn(),
+      on: vi.fn(),
+      off: vi.fn(),
+      emit: vi.fn(),
     },
   };
 });
@@ -54,8 +57,8 @@ describe("Zustand Store & OCC Flashback", () => {
 
     init();
 
-    expect(roomSocketService.init).toHaveBeenCalledWith(
-      expect.any(Function),
+    expect(roomSocketService.on).toHaveBeenCalledWith(
+      "connected",
       expect.any(Function),
     );
     expect(localStorage.getItem).toHaveBeenCalledWith("participantId");
@@ -75,24 +78,37 @@ describe("Zustand Store & OCC Flashback", () => {
   });
 
   it("TC-03: Should inject nonce for fast-path mutations", () => {
+    useStore.setState({
+      isConnected: true,
+      room: { id: "test", sequence: 1 } as any,
+    });
     const { sendCommand } = useStore.getState();
 
     sendCommand("play", { position: 10 });
 
     expect(roomSocketService.sendCommand).toHaveBeenCalledWith(
+      "test",
+      2,
       "play",
       expect.objectContaining({ position: 10, nonce: expect.any(String) }),
+      "test-user-1",
     );
   });
 
   it("TC-04: Should NOT inject nonce for slow-path mutations", () => {
+    useStore.setState({
+      isConnected: true,
+      room: { id: "test", sequence: 1 } as any,
+    });
     const { sendCommand } = useStore.getState();
 
     sendCommand("add_item", { url: "https://example.com/video" });
 
     const call = vi.mocked(roomSocketService.sendCommand).mock.calls[0];
-    expect(call[0]).toBe("add_item");
-    expect(call[1]).not.toHaveProperty("nonce");
+    expect(call[0]).toBe("test");
+    expect(call[1]).toBe(2);
+    expect(call[2]).toBe("add_item");
+    expect(call[3]).not.toHaveProperty("nonce");
   });
 
   it("TC-05: Should update nickname and notify server if connected", () => {
@@ -106,13 +122,19 @@ describe("Zustand Store & OCC Flashback", () => {
     expect(roomSocketService.sendCommand).not.toHaveBeenCalled();
 
     // Fake connected state and room
-    useStore.setState({ isConnected: true, room: { id: "test" } as any });
+    useStore.setState({
+      isConnected: true,
+      room: { id: "test", sequence: 1 } as any,
+    });
 
     useStore.getState().setNickname("ConnectedName");
     expect(useStore.getState().nickname).toBe("ConnectedName");
     expect(roomSocketService.sendCommand).toHaveBeenCalledWith(
+      "test",
+      2,
       "update_nickname",
       { nickname: "ConnectedName" },
+      expect.any(String),
     );
   });
 

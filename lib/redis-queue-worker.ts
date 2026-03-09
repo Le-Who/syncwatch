@@ -6,7 +6,7 @@ import {
   withLock,
 } from "./redis-actor";
 import { randomUUID } from "crypto";
-import { sanitizeRoom } from "../server";
+import { sanitizeRoom } from "./room-handler";
 
 export async function processQueueForRoom(roomId: string) {
   const redisClient = getRedisClient();

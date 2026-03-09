@@ -41,6 +41,8 @@ import { formatTime, calculateDrift } from "@/lib/utils";
 import { calculatePlaybackRate } from "@/lib/drift-math";
 import { Scrubber } from "./Scrubber";
 import { MediaApiService } from "@/lib/MediaApiService";
+import { RoomState, PlaybackState, PlaybackStatus } from "@/lib/types";
+import { TwitchPlayer } from "./TwitchPlayer";
 import { usePlayerShortcuts } from "@/hooks/usePlayerShortcuts";
 import { useFlashback } from "@/hooks/useFlashback";
 import { Undo2 } from "lucide-react";
@@ -99,7 +101,6 @@ export default function Player() {
   const [error, setError] = useState<string | null>(null);
   const [hostName, setHostName] = useState<string>("localhost");
   const [mounted, setMounted] = useState(false);
-  const [localPlaybackRate, setLocalPlaybackRate] = useState<number>(1);
   const [userJoined, setUserJoined] = useState(false);
   const [useNativeTwitch, setUseNativeTwitch] = useState(false);
   const { flashbacks, registerPossibleFlashback, popFlashback } =
@@ -290,20 +291,19 @@ export default function Player() {
     realPlayerRef,
     playerRef,
     getAccurateTime,
-    playing,
+    getPlaying: () => playing,
     setPlaying,
-    isReady,
-    seeking,
-    isBuffering,
+    getIsReady: () => isReady,
+    getSeeking: () => seeking,
+    getIsBuffering: () => isBuffering,
     lastCommandEmitTimeRef,
     lastStateEmittedRef,
     ignoreNativeEventsUntilRef,
     performProgrammaticSeek,
-    setLocalPlaybackRate,
-    controlMode,
-    myRole,
-    currentMedia,
-    duration,
+    getControlMode: () => controlMode,
+    getMyRole: () => myRole,
+    getCurrentMedia: () => currentMedia,
+    getDuration: () => duration,
     emitCommand,
   });
 
@@ -568,147 +568,186 @@ export default function Player() {
           {mounted &&
             (currentMedia.provider?.toLowerCase() !== "twitch" ||
               userJoined) && (
-              <ReactPlayer
-                ref={playerRef}
-                src={currentMedia.url}
-                width="100%"
-                height="100%"
-                controls={
-                  currentMedia.provider?.toLowerCase() === "youtube" ||
-                  currentMedia.provider?.toLowerCase() === "twitch"
-                }
-                playing={userJoined ? playing : false}
-                volume={volume}
-                muted={userJoined ? muted : true}
-                playbackRate={localPlaybackRate}
-                onReady={(rPlayer: any) => {
-                  realPlayerRef.current = rPlayer;
-                  setIsReady(true);
-                  setError(null);
+              <>
+                {currentMedia.provider?.toLowerCase() === "twitch" ? (
+                  <TwitchPlayer
+                    ref={playerRef}
+                    url={currentMedia.url}
+                    width="100%"
+                    height="100%"
+                    playing={userJoined ? playing : false}
+                    volume={volume}
+                    muted={userJoined ? muted : true}
+                    controls={true}
+                    onReady={(rPlayer: any) => {
+                      realPlayerRef.current = playerRef.current; // The TwitchPlayer exposes getInternalPlayer etc via its own ref
+                      setIsReady(true);
+                      setError(null);
+                    }}
+                    onError={(e: any) => {
+                      console.error("Twitch Player error:", e);
+                      setError("SYSTEM FAILURE. SIGNAL LOST.");
+                      setIsBuffering(false);
+                    }}
+                    onSeek={(seconds: number) => {
+                      // If it's a programmatic seek responding to the server, ignore it.
+                      if (Date.now() - lastProgrammaticSeekRef.current < 1500)
+                        return;
 
-                  // -- TWITCH EVENT PROXY HACK --
-                  if (currentMedia.provider?.toLowerCase() === "twitch") {
-                    applyTwitchEventProxy(
-                      playerRef,
-                      realPlayerRef,
-                      handleNativePlay,
-                      handleNativePause,
-                    );
-                  }
+                      // If it's a local seek via scrubber, it would have already emitted
+                      if (Date.now() - lastCommandEmitTimeRef.current < 1500)
+                        return;
 
-                  // Extract HLS Levels if it's a direct stream
-                  if (
-                    currentMedia.provider?.toLowerCase() !== "youtube" &&
-                    currentMedia.provider?.toLowerCase() !== "twitch" &&
-                    currentMedia.provider?.toLowerCase() !== "vimeo"
-                  ) {
-                    try {
-                      const el = playerRef.current as any;
-                      // In react-player v3, if using HLS, the web component might expose native properties
-                      // Just cleanly ignore it if unavailable, or try to access the underlying HLS instance.
-                      if (el && el.levels) {
-                        setHlsLevels(el.levels);
-                        setCurrentHlsLevel(el.currentLevel);
+                      if (canControl) {
+                        emitCommand("seek", { position: seconds });
                       }
-                    } catch (e) {
-                      console.log("Not an HLS stream or levels unavailable.");
+                    }}
+                    onDurationChange={(dur: number) => {
+                      setDuration(dur);
+                      if (canControl && currentMediaId) {
+                        emitCommand("update_duration", {
+                          itemId: currentMediaId,
+                          duration: dur,
+                        });
+                      }
+                    }}
+                    onEnded={() => {
+                      if (canControl) {
+                        emitCommand("video_ended", {
+                          currentMediaId,
+                        });
+                      }
+                    }}
+                    onWaiting={() => {
+                      setIsBuffering(true);
+                    }}
+                    onPlaying={() => {
+                      setIsBuffering(false);
+                    }}
+                    onPlay={() => {
+                      console.log("[TWITCH_PLAYER DEBUG] onPlay fired!", {
+                        status: playback?.status,
+                        canControl,
+                        timeDelta: Date.now() - lastCommandEmitTimeRef.current,
+                      });
+                      handleNativePlay();
+                    }}
+                    onPause={() => {
+                      console.log("[TWITCH_PLAYER DEBUG] onPause fired!", {
+                        status: playback?.status,
+                        canControl,
+                        timeDelta: Date.now() - lastCommandEmitTimeRef.current,
+                      });
+                      handleNativePause();
+                    }}
+                  />
+                ) : (
+                  <ReactPlayer
+                    ref={playerRef}
+                    src={currentMedia.url}
+                    width="100%"
+                    height="100%"
+                    controls={
+                      currentMedia.provider?.toLowerCase() === "youtube"
                     }
-                  }
-                }}
-                onError={(e: any) => {
-                  console.error("Player error:", e);
-                  setError("SYSTEM FAILURE. SIGNAL LOST.");
-                  setIsBuffering(false);
-                }}
-                onSeek={(seconds: number) => {
-                  // If it's a programmatic seek responding to the server, ignore it.
-                  if (Date.now() - lastProgrammaticSeekRef.current < 1500)
-                    return;
+                    playing={userJoined ? playing : false}
+                    volume={volume}
+                    muted={userJoined ? muted : true}
+                    onReady={(rPlayer: any) => {
+                      realPlayerRef.current = rPlayer;
+                      setIsReady(true);
+                      setError(null);
 
-                  // If it's a local seek via scrubber, it would have already emitted
-                  if (Date.now() - lastCommandEmitTimeRef.current < 1500)
-                    return;
+                      // Extract HLS Levels if it's a direct stream
+                      if (
+                        currentMedia.provider?.toLowerCase() !== "youtube" &&
+                        currentMedia.provider?.toLowerCase() !== "twitch" &&
+                        currentMedia.provider?.toLowerCase() !== "vimeo"
+                      ) {
+                        try {
+                          const el = playerRef.current as any;
+                          if (el && el.levels) {
+                            setHlsLevels(el.levels);
+                            setCurrentHlsLevel(el.currentLevel);
+                          }
+                        } catch (e) {
+                          console.log(
+                            "Not an HLS stream or levels unavailable.",
+                          );
+                        }
+                      }
+                    }}
+                    onError={(e: any) => {
+                      console.error("Player error:", e);
+                      setError("SYSTEM FAILURE. SIGNAL LOST.");
+                      setIsBuffering(false);
+                    }}
+                    onSeek={(seconds: number) => {
+                      if (Date.now() - lastProgrammaticSeekRef.current < 1500)
+                        return;
+                      if (Date.now() - lastCommandEmitTimeRef.current < 1500)
+                        return;
 
-                  if (canControl) {
-                    emitCommand("seek", { position: seconds });
-                    // We do NOT emit "play" here! The native player will resume naturally,
-                    // firing onPlay, which is safely debounced and resolved by handleNativePlay.
-                  }
-                }}
-                onSeeked={(e: any) => {
-                  if (isBuffering) setIsBuffering(false);
-                }}
-                onDurationChange={(e: any) => {
-                  const dur =
-                    realPlayerRef.current?.getDuration?.() ||
-                    e?.target?.duration ||
-                    e?.duration ||
-                    0;
-                  setDuration(dur);
-                  if (canControl && currentMediaId) {
-                    emitCommand("update_duration", {
-                      itemId: currentMediaId,
-                      duration: dur,
-                    });
-                  }
-                }}
-                onEnded={() => {
-                  if (canControl) {
-                    emitCommand("video_ended", {
-                      currentMediaId,
-                    });
-                  }
-                }}
-                onWaiting={() => {
-                  setIsBuffering(true);
-                }}
-                onPlaying={() => {
-                  setIsBuffering(false);
-                }}
-                onPlay={() => {
-                  console.log("[REACT_PLAYER DEBUG] onPlay fired!", {
-                    status: playback?.status,
-                    canControl,
-                    timeDelta: Date.now() - lastCommandEmitTimeRef.current,
-                  });
-                  handleNativePlay();
-                }}
-                onPause={() => {
-                  console.log("[REACT_PLAYER DEBUG] onPause fired!", {
-                    status: playback?.status,
-                    canControl,
-                    timeDelta: Date.now() - lastCommandEmitTimeRef.current,
-                  });
-                  handleNativePause();
-                }}
-                style={{ position: "absolute", top: 0, left: 0 }}
-                config={{
-                  youtube: {
-                    playerVars: {
-                      controls: 1,
-                      disablekb: 0,
-                      modestbranding: 0,
-                      rel: 1,
-                      showinfo: 1,
-                      origin:
-                        typeof window !== "undefined"
-                          ? window.location.origin
-                          : undefined,
-                    },
-                  },
-                  vimeo: { playerOptions: { controls: false } },
-                  twitch: {
-                    options: {
-                      parent: [
-                        hostName,
-                        "localhost",
-                        "127.0.0.1",
-                        "syncwatch.example.com",
-                      ],
-                    },
-                  },
-                }}
-              />
+                      if (canControl) {
+                        emitCommand("seek", { position: seconds });
+                      }
+                    }}
+                    onSeeked={(e: any) => {
+                      if (isBuffering) setIsBuffering(false);
+                    }}
+                    onDurationChange={(e: any) => {
+                      const dur =
+                        realPlayerRef.current?.getDuration?.() ||
+                        e?.target?.duration ||
+                        e?.duration ||
+                        0;
+                      setDuration(dur);
+                      if (canControl && currentMediaId) {
+                        emitCommand("update_duration", {
+                          itemId: currentMediaId,
+                          duration: dur,
+                        });
+                      }
+                    }}
+                    onEnded={() => {
+                      if (canControl) {
+                        emitCommand("video_ended", {
+                          currentMediaId,
+                        });
+                      }
+                    }}
+                    onWaiting={() => {
+                      setIsBuffering(true);
+                    }}
+                    onPlaying={() => {
+                      setIsBuffering(false);
+                    }}
+                    onPlay={() => {
+                      handleNativePlay();
+                    }}
+                    onPause={() => {
+                      handleNativePause();
+                    }}
+                    style={{ position: "absolute", top: 0, left: 0 }}
+                    config={{
+                      youtube: {
+                        playerVars: {
+                          controls: 1,
+                          disablekb: 0,
+                          modestbranding: 0,
+                          rel: 1,
+                          showinfo: 1,
+                          origin:
+                            typeof window !== "undefined"
+                              ? window.location.origin
+                              : undefined,
+                        },
+                      },
+                      vimeo: { playerOptions: { controls: false } },
+                    }}
+                  />
+                )}
+              </>
             )}
         </div>
 

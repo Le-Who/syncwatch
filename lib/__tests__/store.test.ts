@@ -6,10 +6,15 @@ import { vi, describe, beforeEach, it, expect } from "vitest";
 vi.mock("../socket", () => {
   return {
     roomSocketService: {
-      init: vi.fn(),
       connect: vi.fn(),
       disconnect: vi.fn(),
       sendCommand: vi.fn(),
+      upgradeSession: vi.fn(),
+      joinRoom: vi.fn(),
+      on: vi.fn(),
+      off: vi.fn(),
+      emit: vi.fn(),
+      commandQueue: [],
     },
   };
 });
@@ -98,13 +103,19 @@ describe("useStore", () => {
     const { result } = renderHook(() => useStore());
 
     act(() => {
-      useStore.setState({ isConnected: true, room: { id: "room1" } as any });
+      useStore.setState({
+        isConnected: true,
+        room: { id: "room1", sequence: 1 } as any,
+      });
       result.current.setNickname("EmitName");
     });
 
     expect(roomSocketService.sendCommand).toHaveBeenCalledWith(
+      "room1",
+      2,
       "update_nickname",
       { nickname: "EmitName" },
+      null,
     );
   });
 
@@ -123,13 +134,19 @@ describe("useStore", () => {
   it("should append a unique nonce to fast-path commands to prevent echo rollbacks (TC-101)", () => {
     const { result } = renderHook(() => useStore());
     act(() => {
-      useStore.setState({ isConnected: true, room: { id: "room1" } as any });
+      useStore.setState({
+        isConnected: true,
+        room: { id: "room1", sequence: 1 } as any,
+      });
       result.current.sendCommand("play", { position: 10 });
     });
 
     expect(roomSocketService.sendCommand).toHaveBeenCalledWith(
+      "room1",
+      2,
       "play",
       expect.objectContaining({ position: 10, nonce: expect.any(String) }),
+      null,
     );
   });
 });

@@ -6,8 +6,12 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- **Architecture Refactoring**: Extracted core media synchronization mathematics and Intent Masking out of `Player.tsx` and into a dedicated `usePlaybackSync` hook.
-- **Provider Adapters**: Isolated Twitch-specific DOM manipulation into `lib/player-adapters.ts` (`applyTwitchEventProxy`) to decouple it from React's rendering lifecycle.
+- **Architecture Refactoring**: Extracted core media synchronization mathematics and Intent Masking out of `Player.tsx` and into a dedicated vanilla JS `SyncEngine`.
+- **System Resilience (OOM Protection)**: Implemented strict backpressure mechanics and array limits (max 3000 items) on the Redis write-behind queue to prevent Node.js Out-of-Memory crashes during Supabase outages.
+- **Native Twitch API Integration**: Replaced the `react-player` wrapper for Twitch streams with a dedicated `TwitchPlayer.tsx` component using the official `Twitch.Player` embed API, fixing unmount bugs and Autoplay Policy violations.
+- **State & Network Decoupling**: Broke the cyclic dependency between `socket.ts` and `store.ts` by introducing an `EventEmitter` pattern. The store now subscribes to socket events passively.
+- **Monolith Splitting**: Refactored the 1000+ line `server.ts` monolith by extracting routing/Zod validation into `lib/room-handler.ts` and background worker logic into `lib/db-sync.ts`.
+- **Provider Adapters**: Isolated Twitch-specific DOM manipulation into `lib/player-adapters.ts` (`applyTwitchEventProxy`) to decouple it from React's rendering lifecycle (Note: Partially deprecated by Native Twitch API).
 - **QA Architecture**: Established strict AAA (Arrange-Act-Assert) conventions across all E2E and integration tests. Added `fast_path.test.ts` to independently verify Lua mutations without DB locks.
 - **Test Infrastructure (`server.test.ts`)**: Implemented `waitForSocketEvent` utility for integration tests to enforce strict AAA (Arrange-Act-Assert) patterns and eliminate race conditions within Socket.io callbacks. Added Test Case 304 (`worker_resilience.test.ts`) to verify database write-behind queue recovery.
 - **E2E Playwright Resilience**: Added TC-303 (`high_latency_sync.spec.ts`) utilizing CDP to simulate 500ms network latency to mathematically prove the drift-math algorithms compensate for network chaos correctly.

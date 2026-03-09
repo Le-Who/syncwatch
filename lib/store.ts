@@ -84,6 +84,8 @@ interface AppState {
   nickname: string;
   commandSequence: number;
   occRollbackTick: number;
+  isResyncing: boolean;
+  resyncSession: () => Promise<void>;
   setNickname: (name: string) => void;
   connect: (roomId: string, nickname: string) => Promise<void>;
   disconnect: () => void;
@@ -101,8 +103,56 @@ export const useStore = create<AppState>((set, get) => ({
   nickname: "",
   commandSequence: 1,
   occRollbackTick: 0,
+  isResyncing: false,
   triggerOccRollback: () =>
     set((state) => ({ occRollbackTick: state.occRollbackTick + 1 })),
+  resyncSession: async () => {
+    const state = get();
+    if (state.isResyncing) return;
+    set({ isResyncing: true });
+    setTimeout(() => {
+      set({ isResyncing: false });
+    }, 60000);
+
+    if (state.room && typeof window !== "undefined") {
+      try {
+        const res = await fetch("/api/auth/session", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ participantId: state.participantId }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.token) {
+            set({ sessionToken: data.token });
+            roomSocketService.upgradeSession(
+              state.room.id,
+              state.commandSequence + 1,
+              data.token,
+            );
+
+            setTimeout(() => {
+              while (roomSocketService.commandQueue.length > 0) {
+                const cmd = roomSocketService.commandQueue.shift();
+                if (cmd) {
+                  roomSocketService.sendCommand(
+                    cmd.roomId,
+                    cmd.sequence,
+                    cmd.type,
+                    cmd.payload,
+                    get().participantId,
+                  );
+                }
+              }
+            }, 600);
+          }
+        }
+      } catch (e) {
+        console.warn("Failed to resync session", e);
+        roomSocketService.commandQueue = [];
+      }
+    }
+  },
   init: () => {
     if (typeof window !== "undefined") {
       const storedName = localStorage.getItem("nickname") || "";
@@ -120,8 +170,105 @@ export const useStore = create<AppState>((set, get) => ({
       (window as any).useRoomStore = { getState: get, setState: set };
       (window as any).__roomSocketService = roomSocketService;
 
-      // Inject Zustand state getters/setters into the Socket Service
-      roomSocketService.init(get, set);
+      roomSocketService.on("connected", () => {
+        set({ isConnected: true });
+        const state = get();
+        if (state.room && state.participantId) {
+          roomSocketService.joinRoom(
+            state.room.id,
+            state.room.participants[state.participantId]?.nickname || "User",
+            state.participantId,
+          );
+        }
+        if (state.sessionToken && state.room) {
+          roomSocketService.upgradeSession(
+            state.room.id,
+            state.commandSequence,
+            state.sessionToken,
+          );
+        }
+      });
+
+      roomSocketService.on("disconnected", () => {
+        set({ isConnected: false });
+      });
+
+      roomSocketService.on("room_state", (payload: any) => {
+        const { serverClockOffset } = get();
+        let newOffset = serverClockOffset;
+        if (serverClockOffset === 0) {
+          newOffset = payload.serverTime - Date.now();
+        }
+        set({
+          room: payload.room,
+          serverClockOffset: newOffset,
+          commandSequence: payload.room.sequence,
+        });
+      });
+
+      roomSocketService.on("clock_sync", ({ offset }) => {
+        set({ serverClockOffset: offset });
+      });
+
+      roomSocketService.on("participant_joined", (participant: any) => {
+        const state = get();
+        if (!state.room) return;
+        set({
+          room: {
+            ...state.room,
+            participants: {
+              ...state.room.participants,
+              [participant.id]: participant,
+            },
+          },
+        });
+      });
+
+      roomSocketService.on("participant_left", ({ participantId }) => {
+        const state = get();
+        if (!state.room) return;
+        const newParticipants = { ...state.room.participants };
+        delete newParticipants[participantId];
+        set({ room: { ...state.room, participants: newParticipants } });
+      });
+
+      roomSocketService.on("session_upgraded", ({ participantId }) => {
+        set({ participantId });
+      });
+
+      roomSocketService.on("error", (error: any) => {
+        const msg = error.message || "An error occurred";
+        if (msg === "VERSION_CONFLICT") {
+          toast("Sync Adjustment", {
+            description:
+              "Another user changed the state first. Rolling back to server time.",
+            icon: "⏪",
+          });
+          get().triggerOccRollback();
+          return;
+        }
+
+        if (
+          !msg.includes("Too many") &&
+          !msg.includes("Rate limit") &&
+          !msg.includes("Guest commands blocked")
+        ) {
+          toast.error(msg);
+        }
+
+        if (msg.includes("Unauthorized") || msg.includes("Guest")) {
+          if (
+            roomSocketService.lastCommand &&
+            !roomSocketService.commandQueue.includes(
+              roomSocketService.lastCommand,
+            )
+          ) {
+            roomSocketService.commandQueue.push(roomSocketService.lastCommand);
+            roomSocketService.lastCommand = null;
+          }
+          get().resyncSession();
+        }
+      });
     }
   },
   setNickname: (name: string) => {
@@ -156,15 +303,25 @@ export const useStore = create<AppState>((set, get) => ({
         const data = await res.json();
         if (data.token) {
           set({ sessionToken: data.token });
-          // Hot-swap the connection immediately if it was already connected as guest
-          roomSocketService.upgradeSession(data.token);
+          if (get().room?.id === roomId) {
+            roomSocketService.upgradeSession(
+              roomId,
+              get().commandSequence,
+              data.token,
+            );
+          }
         }
-        roomSocketService.connect(roomId, nickname, pId as string);
+        roomSocketService.connect(
+          roomId,
+          nickname,
+          pId as string,
+          data.token || sToken,
+        );
       }
     } catch (err) {
       console.warn("Could not establish secure session", err);
       // Fallback
-      roomSocketService.connect(roomId, nickname, pId as string);
+      roomSocketService.connect(roomId, nickname, pId as string, sToken);
     }
   },
   disconnect: () => {
@@ -186,6 +343,14 @@ export const useStore = create<AppState>((set, get) => ({
       payload = { ...payload, nonce: crypto.randomUUID() };
     }
 
-    roomSocketService.sendCommand(type, payload);
+    const state = get();
+    if (!state.room) return;
+    roomSocketService.sendCommand(
+      state.room.id,
+      state.commandSequence + 1,
+      type,
+      payload,
+      state.participantId,
+    );
   },
 }));

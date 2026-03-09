@@ -1,39 +1,34 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// Partially mock socket.io-client to capture the event binding
-const mockSocketOn = vi.fn();
-const mockSocketEmit = vi.fn();
-const mockSocketDisconnect = vi.fn();
-
-vi.mock("socket.io-client", () => {
+vi.mock("../lib/socket", () => {
   return {
-    io: vi.fn(() => ({
-      on: mockSocketOn,
-      emit: mockSocketEmit,
+    roomSocketService: {
+      on: vi.fn(),
+      off: vi.fn(),
+      emit: vi.fn(),
       connect: vi.fn(),
-      disconnect: mockSocketDisconnect,
-      connected: true,
-    })),
+      disconnect: vi.fn(),
+      commandQueue: [],
+    },
   };
 });
 
 import { roomSocketService } from "../lib/socket";
+import { useStore } from "../lib/store";
 
 describe("Socket Service OCC Rollback", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    (roomSocketService as any).socket = null;
-    (roomSocketService as any).isResyncing = false;
-    // We need to trigger the initial getSocket() call so event listeners are bound
-    roomSocketService.getSocket();
   });
 
-  it("TC-01: Should call triggerOccRollback on VERSION_CONFLICT error", () => {
-    // 1. Arrange: Setup spy payload
+  it("TC-01: Should trigger occRollback on VERSION_CONFLICT error", () => {
+    // 1. Arrange: grab error callback
     let errorCallback: any = null;
 
-    // Find the 'error' event registration from mockSocketOn
-    for (const call of mockSocketOn.mock.calls) {
+    useStore.getState().init();
+
+    const mockOnCalls = vi.mocked(roomSocketService.on).mock.calls;
+    for (const call of mockOnCalls) {
       if (call[0] === "error") {
         errorCallback = call[1];
         break;
@@ -41,28 +36,22 @@ describe("Socket Service OCC Rollback", () => {
     }
     expect(errorCallback).toBeDefined();
 
-    const mockTriggerOccRollback = vi.fn();
-    const mockGetState = vi.fn().mockReturnValue({
-      triggerOccRollback: mockTriggerOccRollback,
-    });
+    const initialTick = useStore.getState().occRollbackTick;
 
-    // Inject mock state getters into the socket service
-    roomSocketService.init(mockGetState, vi.fn());
-
-    // 2. Act: Simulate Socket.IO receiving VERSION_CONFLICT error
+    // 2. Act
     errorCallback({ message: "VERSION_CONFLICT" });
 
-    // 3. Assert: Store should have been told to roll back
-    expect(mockGetState).toHaveBeenCalled();
-    expect(mockTriggerOccRollback).toHaveBeenCalled();
+    // 3. Assert
+    expect(useStore.getState().occRollbackTick).toBe(initialTick + 1);
   });
 
   it("TC-02: Should not trigger rollback on generic errors", () => {
-    // 1. Arrange
     let errorCallback: any = null;
 
-    // We already called roomSocketService.getSocket() in beforeEach which binds events
-    for (const call of mockSocketOn.mock.calls) {
+    useStore.getState().init();
+
+    const mockOnCalls = vi.mocked(roomSocketService.on).mock.calls;
+    for (const call of mockOnCalls) {
       if (call[0] === "error") {
         errorCallback = call[1];
         break;
@@ -70,17 +59,10 @@ describe("Socket Service OCC Rollback", () => {
     }
     expect(errorCallback).toBeDefined();
 
-    const mockTriggerOccRollback = vi.fn();
-    const mockGetState = vi.fn().mockReturnValue({
-      triggerOccRollback: mockTriggerOccRollback,
-      participantId: "user-1",
-    });
-    roomSocketService.init(mockGetState, vi.fn());
+    const initialTick = useStore.getState().occRollbackTick;
 
-    // 2. Act: Simulate Generic error
     errorCallback({ message: "Rate limit exceeded" });
 
-    // 3. Assert: Store should NOT have been told to roll back
-    expect(mockTriggerOccRollback).not.toHaveBeenCalled();
+    expect(useStore.getState().occRollbackTick).toBe(initialTick);
   });
 });
