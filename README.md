@@ -1,213 +1,188 @@
-# SyncWatch - Production Ready
+# SyncWatch
 
-SyncWatch is a latency-tolerant, real-time, server-authoritative watch-party application. It uses Next.js for the frontend and a custom Node.js + Socket.io server to coordinate synchronized media playback.
+SyncWatch is a latency-tolerant, real-time, server-authoritative watch-party application. It coordinates synchronized media playback across multiple clients using an optimistic UI and strict server-side concurrency controls.
+
+## What It Does
+
+SyncWatch allows multiple users to watch videos (YouTube, Vimeo, Twitch, or direct media) together perfectly in sync. It solves the problem of "pause loops", rubber-banding, and state drift during collaborative viewing over unreliable networks by using Optimistic Concurrency Control (OCC) and dynamic NTP-style latency adjustments.
+
+## Current Status
+
+**Production-ish**
+
+- The core synchronization, resilient database write-behind queues, and external media APIs are fully functional and stable.
+- The project is thoroughly tested with both E2E (Playwright) and Unit/Integration (Vitest) suites.
+- Code is resilient to DB downtime and handles temporary network partitions gracefully.
+
+## Features
+
+- **Server-Authoritative Synchronization**: Real-time websocket-based synchronization via `socket.io` and Lua OCC state machines.
+- **Provider-Aware Resampling**: Supports YouTube, Vimeo, and Twitch via Next.js background API metadata resolvers with anti-SSRF safeguards.
+- **Durable State Persistence**: Database writes are queued in a Redis write-behind queue and persisted efficiently to Supabase.
+- **Dynamic Theme Engine**: Toggles between custom visual themes ("Cotton Candy Glassmorphism", "Cyber-Industrial Brutalist") via CSS variables.
+- **Robust Security**: JWT-based session tokens, aggressive API Circuit Breakers, structured Zod validation for WebSockets, and sliding-window rate limiters.
+
+## Non-Goals / Limitations
+
+- **Stateless Serverless Hosting Limits**: Requires long-running Node.js processes for Socket.io. Traditional stateless serverless functions (like Vercel) are not adequate without external WS brokers.
+- **Database Reliance**: Directly demands Supabase/PostgreSQL with `pgvector` and standard SQL schema constraints.
 
 ## Architecture
 
-- **Frontend**: Next.js (App Router), ReactPlayer, Tailwind, Zustand (State Management).
-- **Backend**: Fully stateless custom `server.ts` running Next.js alongside Socket.io. Tightly integrated with `ioredis` for horizontal scaling via Pub/Sub, **Optimistic Concurrency Control (OCC) Lua Scripts** for atomic state mutations, and robust Redis Sets for a crash-resilient Write-Behind Queue for Supabase persistence.
-- **Security**: JWT-based WebSocket handshakes via `jose`, SSRF-protected metadata over `htmlparser2`, and Sliding Window Log rate limiters deployed globally across all APIs and Socket commands.
+- **Frontend**: Next.js App Router, React 19, TailwindCSS v4, Zustand.
+- **Backend (Stateless Gateway)**: Custom `server.ts` process runs `socket.io` alongside `next`.
+- **Data Stores**:
+  - _Redis_: Pub/Sub broker, atomic OCC state mutations, horizontal locking.
+  - _Supabase_: Persistent record-keeping via a daemonized write-behind queue.
 
-- **Frontend Optimization**: Zustand store decoupled from Socket.io via Singleton DI (`RoomSocketService`). High-frequency video drift synchronizations bypass React rendering completely using an uncontrolled `Scrubber.tsx` architecture and native `requestAnimationFrame`.
-- **Dynamic Theme Engine**: CSS variables natively power seamless client-side toggling between the soft, luminous "Cotton Candy Glassmorphism" and the high-contrast "Cyber-Industrial Brutalist" interface.
-- **Synchronization Model**: Server-authoritative with optimistic UI. Uses custom NTP-style packet handshakes on connect to calculate precise network latency, correcting local player timestamps appropriately. Stale event rejection blocks out-of-order websocket commands.
-- **API Robustness & Type Safety**: Zod validation schemas and strict Promise racing (`AbortSignal`) globally protect external API fetches (YouTube/Vimeo) from malformed data. Circuit breaking and caching safeguard third-party APIs from abuse.
-- **Persistence & Performance**: Database state is synchronized with **Supabase**. Playback snapshots are safely upserted via a periodic write-behind queue to survive server restarts, preventing database rate limits at scale. Unbounded memory arrays are guarded by strict capacity limiters (500 items/room).
-- **Pro-Max UI/UX**: Includes a Glassmorphic Quality Selection Menu, synchronized floating emoji reactions, intelligent "Up Next" smart-buffer countdowns, and real-time inline progress bars tracking media consumption.
-- **Metadata Resolver**: Background `/api/metadata` routes securely fetch and sanitize video titles from YouTube/Vimeo/Twitch over oEmbed protocols.
-
-## Recent Stability & Sync Improvements
-
-- **True Client OCC (Anti-Echo)**: Replaced naive distributed locks with highly optimized Atomic Lua Scripts enforcing Strict Sequence Optimistic Concurrency Control. Rather than blindly retrying failed state mutations, the server now actively rejects stale client `play/pause/seek` commands. Client UI (`Player.tsx`) intercepts the `VERSION_CONFLICT` signal to trigger a visual `<Flashback>` animation and forcefully scrub the playhead back to the authoritative server time.
-- **OCC Sequence Drift Elimination**: Resolved "Pause Loops" where valid commands were erroneously blocked. Upgraded the atomic Lua state machine check to evaluate against strict command `sequence` bounds rather than the broader session-level `version` counters (which artificially trigger on concurrent user joins).
-- **Adaptive Drift Control & Oracle Mode**: Replaced naive hardware rewinds with a PID-like dual-threshold drift controller. Synchronizations under 3 seconds smoothly accelerate or decelerate playback (`1.05x` / `0.95x`) without audio clipping. In "Controlled" mode, Owner browser clocks act as the authoritative Oracle, seamlessly warping all viewer playback rates to match the leader via `sync_correction` mutations.
-- **Immortal Active Rooms (Piggyback Keep-Alive)**: Attached Redis TTL extension commands directly to the high-frequency NTP chronosync websocket `ping_time` heartbeat. Active rooms now survive indefinitely without generating external Cron jobs or expensive Supabase updates.
-- **Durable Write-Behind Queue (At-Least-Once Delivery)**: Upgraded the volatile Node.js `Set` cache to a durable Redis `ZSET` (`pending_db_syncs`) backend queue. The synchronized daemon guarantees state persistence by only acknowledging items _after_ successful RPC writes to Supabase.
-- **Intent-Based Flow Control (Rubberbanding Fix)**: Refactored `Player.tsx` to explicitly differentiate between hardware buffer event storms (Native `onPause`/`onPlay`) and explicit human UI interactions using synchronized state masks, completely eliminating infinite buffering feedback loops during programmatic `seekTo` operations.
-- **Twitch Autoplay Policy Bypass (IntersectionObserver)**: Fixed catastrophic crash loops where the Twitch iframe unmounted or blocked autoplay. Twitch embeds now lazily mount into the DOM _only_ after explicit user interact initialization, completely bypassing Twitch's anti-occlusion `IntersectionObserver` v2 hit-testing which previously broke transparency hacks. Furthermore, explicit `containerType: "size"` dimensions that confused iframe visibility metrics on mobile have been dropped in favor of absolute block logic.
-- **Stateful TCP Reconnect Handshake**: Completely patched `"Invalid Session"` drops where users vanished from the room after local internet blips. WebSocket micro-disconnects now intercept `socket.on("connect")` directly to immediately re-emit `join_room` alongside cached JWT bearer tokens, preventing the NodeJS 15-second Garbage Collector from purging transiently disconnected users.
-- **Strict Redis Lua Serialization**: Neutralized fatal `ERR value is not an integer` socket loops by enforcing strict positional argument packing (bypassing V4 syntax arrays) for the `ioredis` driver communicating with the fast-path optimistic concurrency control Lua scripts.
-- **Transparent WebSocket Session Upgrades**: Resolved Guest Login Session Desyncs by implementing dynamic `upgrade_session` payloads in the Socket gateway. Users transitioning from unauthenticated to authenticated states have their JWT injected mid-flight without dropping socket frames.
-- **Postgres AB/BA Deadlocks Resolved**: Refactored the `sync_room_state` RPC in Supabase. Replaced iterative iterative `INSERT` loops with optimized `json_populate_recordset` queries and explicit `SELECT ... FOR UPDATE` parent row-locks, eliminating concurrent indexing deadlocks.
-- **Deterministic E2E Test Suite**: Stabilized Playwright E2E suites by isolating tests from DNS/Network unreliability. `page.route` securely mocks external MP4 streams with deterministic local `200 OK` HTTP buffers. Solved Chromium Headless `video.currentTime` freezing by exposing the local Zustand store for strict React State assertions, and explicitly dismissing Playwright `Automated Autoplay Guards` manually before injecting video sync interactions.
-- **OCC Fast-Path Drift Prevention**: Solved false-positive Server OCC Rollbacks caused by metadata background commands overlapping with instant Playwright E2E interaction speeds. Upgraded the Lua playback fast-path mutator (play/pause/seek) to `last-writer-wins`, guaranteeing rapid UI interactions succeed gracefully regardless of strict database mutation sequence validations.
-- **Database UUID Validation**: Guaranteed all dynamically generated room IDs use strict 36-character UUIDv5 strings using reliable MD5 hashes, satisfying the Postgres `uuid` schema requirements and eliminating `22P02` serialization poison-pill crashes.
-- **Multi-Browser Stability**: Implemented deterministic guest ID assignments in the Socket.io `io.use` middleware. Unauthenticated connections now safely receive a `guest_` session (unblocking the UI from freezing) while state-mutating commands are explicitly rejected.
-- **Strict Pub/Sub Sanitization**: Eliminated critical Participant Session Token leaks by enforcing `sanitizeRoom` interceptors on all Redis Pub/Sub broadcast listeners before routing events to WebSockets.
-- **Multi-Node Phantom User Fix**: Disconnected local socket.to `participant_joined` emissions and refactored them to route globally through the Redis Pub/Sub message broker, guaranteeing UX sync across distributed node clusters.
-- **Database DDoS Protection & Memory Limits**: Sandboxed the background Database Persistence worker. Enforced hard processing limits (`LIMIT 50`) on the Redis `pending_db_syncs` ZSET and added an Exponential Request Backoff (1 minute penalty) on Supabase insertion failures, preventing Thundering Herds and catastrophic Node.js OOM crashes.
-- **Playlist Race Condition Rectification**: Rewrote the `reorder_playlist` Socket worker logic from destructive full-array-overwrites to a granular Concurrent Delta Reconciler. Video items added by peers mid-reorder are no longer lost to localized state overrides.
-- **PostgreSQL Check Constraint Alignment**: Hardened the fast-path Lua atomic mutator to strictly map unvalidated websocket `play` event payloads to the required `playing` database `playback_snapshots_status_check` constraint. Added an aggressive Type Coercion fallback in `server.ts` to neutralize malicious payload injections before Supabase RPC UPSERTs.
-- **Strict Zod API Validation**: Erected an impenetrable `.passthrough()` `z.discriminatedUnion` validation boundary at the WebSocket ingress handler (`socket.on("command")`). Malformed schemas and arbitrary invalid keys are instantly dropped and logged before hitting the OCC Lua state-machine, fully eradicating database type mismatch and check constraint exceptions.
-- **DNS Rebinding SSRF Protection**: Hardened the `/api/metadata` background metadata resolver against DNS Rebinding attacks by strictly overriding `fetch` to connect directly to pre-verified IPs while synthetically persisting the original SNI host.
-- **Thundering Herd Deadlock Prevention**: Secured the horizontal database synchronization loop by introducing distributed memory locks (`NX PX`) around identical room payload queues, fully eliminating redundant Supabase connection-pool contention across distributed web servers.
-- **Lua Timestamp Ghost-Seek Elimination**: Guarded the Redis Fast-Path atomic state machine against naive sequence overwriting logic. Redundant WebSocket `play` commands issued against already-playing sessions are now strictly ignored instead of arbitrarily zeroing-out the `baseTimestamp` relative playback loops.
-- **Provider-Aware Fractional Resampling**: Corrected the WebSocket drift-catchup implementation to respect native iFrame limitations (YouTube/Vimeo/Twitch), automatically narrowing the accepted drift margin and utilizing precise programmatic bounds instead of broken fractional `playbackRate` audio resampling commands.
-- **Robust Test Infrastructure (Vitest & Playwright)**: Hardened the entire testing ecosystem. Eliminated all nondeterministic `waitForTimeout` calls in E2E tests in favor of strict condition-polling against the Zustand store. Exposed specific internal stores to the Playwright `window` allowing true, instant TCP physical socket drops to accurately verify JWT auto-recovery mechanics. Solved brittle `ioredis` instantiation mocks and protected the `/api/metadata` SSRF tests against synthetic DNS bogon false-positives.
-
-## Database Setup (Supabase)
-
-You must configure a Supabase project to persist room states.
-
-1.  Create a new project on [Supabase.com](https://supabase.com/).
-2.  Navigate to the **SQL Editor**, and run the entire contents of `supabase/migrations/00001_initial.sql`.
-3.  Navigate to **Project Settings -> API** to get your URL and Keys.
-
-### Environment Variables
-
-Copy `.env.example` to `.env` and fill in the values:
-
-```env
-NEXT_PUBLIC_SUPABASE_URL="https://YOUR_PROJECT_ID.supabase.co"
-SUPABASE_SERVICE_ROLE_KEY="your-secret-service-role-key"
-# Use the Service Role Key so the server can bypass RLS to persist global room data.
+```mermaid
+graph TD
+    Client1[Client A UI] <-->|WebSocket commands| WS[Node.js server.ts]
+    Client2[Client B UI] <-->|WebSocket updates| WS
+    WS <--> Redis[(Redis Pub/Sub & Scripts)]
+    WS -->|Daemonized Worker| Supabase[(Supabase DB)]
+    WS <--> |HTTP| External[YouTube/Vimeo/Twitch]
 ```
 
----
+## Repository Structure
 
-## Deployment Guide (Free Tier)
+| Path          | Purpose                                                          |
+| ------------- | ---------------------------------------------------------------- |
+| `app/`        | Next.js App Router endpoints, pages, and layout definitions.     |
+| `app/api/`    | Secure server-side HTTP routes (Metadata, YouTube Search, Auth). |
+| `components/` | Reusable React UI components (`Player`, `Playlist`, etc.).       |
+| `hooks/`      | Custom React hooks for application logic.                        |
+| `lib/`        | Shared utilities, Zustand store, Zod schemas, Redis clients.     |
+| `supabase/`   | Database migration files (e.g., `00001_initial.sql`).            |
+| `__tests__/`  | Unit and integration tests (Vitest).                             |
+| `e2e/`        | End-to-end user flow tests (Playwright).                         |
+| `server.ts`   | The core WebSocket server and Next.js instance host.             |
+| `test-zod.ts` | Local CLI script for testing Zod schema behaviors.               |
 
-Because SyncWatch relies on **WebSockets** (Socket.io) embedded in a custom `server.ts` file, **it must be deployed to a provider that supports long-running Node.js processes**. Serverless function platforms (like Vercel) terminate connections quickly and do not natively support stateful WebSockets without external brokers.
+## Tech Stack
 
-### 1. Render (Recommended Free Tier)
+| Layer        | Technology                        | Purpose                                                    |
+| ------------ | --------------------------------- | ---------------------------------------------------------- |
+| Frontend     | Next.js, React, Tailwind, Zustand | UI rendering, client-side routing, and reactive state.     |
+| Backend      | Node.js, Socket.io                | Bi-directional communication and API boundary.             |
+| Caching/Sync | ioredis                           | Fast atomic operations, session management, and Pub/Sub.   |
+| Database     | Supabase (PostgreSQL)             | Long-term durable storage of rooms and snapshots.          |
+| Validation   | Zod                               | Strictly parsing incoming WS boundaries and external APIs. |
+| Media        | ReactPlayer                       | Embedded media frames for YouTube/Vimeo/Twitch.            |
 
-Render offers a free Web Service tier perfectly suited for Node.js apps.
+## Setup
 
-1.  Create a new **Web Service** on Render and connect your GitHub repository.
-2.  **Build Command:** `npm install && npm run build`
-3.  **Start Command:** `npm start` (This will safely use `tsx server.ts` as updated in `package.json`).
-4.  **Environment Variables:** Add `NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`. Set `NODE_ENV` to `production`.
-5.  _Note: Render's free tier spins down after 15 minutes of inactivity. The Supabase persistence logic ensures rooms survive these restarts!_
+1. Clone the repository and install dependencies:
+   ```bash
+   npm install
+   ```
+2. Configure your local database by running the script at `supabase/migrations/00001_initial.sql` in your Supabase SQL Editor.
+3. Apply environment variables based on `.env.example` mapping.
 
-### 2. Northflank (Alternative Free Tier)
+## Configuration
 
-Northflank provides generous developer tiers for stateful Docker/Node services.
+| Variable                    | Required             | Default                                   | Description                                     | Used In              |
+| --------------------------- | -------------------- | ----------------------------------------- | ----------------------------------------------- | -------------------- |
+| `NEXT_PUBLIC_SUPABASE_URL`  | Yes                  | -                                         | URL of your Supabase instance.                  | Client / Server      |
+| `SUPABASE_SERVICE_ROLE_KEY` | Yes                  | -                                         | Admin key to bypass RLS and persist states.     | Server               |
+| `JWT_SECRET`                | Yes (implicitly)     | `"default_local_secret_dont_use_in_prod"` | Used to cryptographically sign session cookies. | Auth API             |
+| `APP_URL`                   | Yes                  | -                                         | Public URL of the application.                  | Env Setup            |
+| `GEMINI_API_KEY`            | No                   | -                                         | API key for experimental AI features.           | Server               |
+| `YOUTUBE_API_KEY`           | No                   | -                                         | API key for YouTube video search fetching.      | YouTube Search API   |
+| `REDIS_URL`                 | No (fallback exists) | -                                         | URI for Upstash or internal Redis instance.     | Rate limiter / Cache |
 
-1.  Create a new **Service** on Northflank.
-2.  Select **Build from version control** and connect your repo.
-3.  Choose the **Node.js** buildpack or define a raw Docker builder if needed.
-4.  For the **Start Command**, ensure it targets `npm start`.
-5.  Under **Environment**, add the required variables listed below.
-6.  Ensure **Public Ports** are mapping port `3000` to HTTP.
-
-#### Required Environment Variables for Northflank
-
-To deploy successfully on Northflank, you must configure the following Environment Variables in your Service's **Environment / Secrets** tab:
-
-**1. Database & Authentication (Essential)**
-
-- `NEXT_PUBLIC_SUPABASE_URL`: The URL of your Supabase project.
-  - _How to get it:_ Go to your Supabase Project -> Settings -> API -> Project URL.
-- `SUPABASE_SERVICE_ROLE_KEY`: The secret service role key to bypass RLS for server-side state persistence.
-  - _How to get it:_ Go to your Supabase Project -> Settings -> API -> Project API Keys -> `service_role` (secret).
-- `JWT_SECRET`: A long, random cryptographic string used to securely sign user session cookies.
-  - _How to get it:_ Generate a random string using your terminal (`openssl rand -base64 32`) or a secure password generator. Do not use the default local secret in production.
-
-**2. Application Routing (Essential)**
-
-- `APP_URL`: The public-facing URL where your Northflank service will be accessible.
-  - _How to get it:_ After creating your service on Northflank, look at the "Ports & DNS" tab in your service dashboard and copy the generated public webdomain URL (e.g., `https://syncwatch-app-xxxx.northflank.app`).
-
-**3. Rate Limiting (Infrastructure)**
-
-- `REDIS_URL` (or `UPSTASH_REDIS_REST_URL`): A Redis connection string required to prevent API abuse via rate limiting.
-  - _How to get it:_ Create a new Redis **Addon** directly in Northflank. Once created, go to your Service -> Environment -> Linked Addons, and link the Redis addon. Northflank will automatically inject the connection details, or you can supply an external URI from Upstash.
-
-**4. External Integrations (Optional but Recommended)**
-
-- `YOUTUBE_API_KEY`: Used for the built-in YouTube search via official API (falls back to scraping if missing, but API is more stable).
-  - _How to get it:_ Go to the [Google Cloud Console](https://console.cloud.google.com/), create a project, enable "YouTube Data API v3", and generate an API key under Credentials.
-- `GEMINI_API_KEY`: Used for AI-related operations.
-  - _How to get it:_ Obtain an API key from [Google AI Studio](https://aistudio.google.com/).
-
-_(Note: `NODE_ENV` is set to `production` and `PORT` is mapped automatically by the Northflank Node.js buildpack.)_
-
-### 3. Vercel (Not Recommended for WebSockets)
-
-Vercel is a Serverless platform. While you _can_ deploy the frontend here, Vercel Serverless Functions will sever WebSocket connections after a few seconds or a minute.
-
-**If you deeply need Vercel:**
-
-1.  You must host the `server.ts` (Socket.io) logic elsewhere (e.g., Render/Railway).
-2.  Remove custom `server.ts` from the Vercel branch, deploying only the standard Next.js build.
-3.  Update the Socket.io client initialization in `lib/socket.ts` to hardcode the URL of your external Render server instead of using the local path.
-
-## Local Development
+## Run
 
 ```bash
-npm install
+# Start development server with debugging (auto-compiled server.ts)
 npm run dev
-# Server will start on http://localhost:3000 with hot-reloading.
+
+# Build the project for production
+npm run build
+
+# Start production server
+npm start
 ```
 
-## Testing Ecosystem (`systematic-debugging`)
+## Scripts
 
-SyncWatch comes pre-configured with a dual-layer testing environment to ensure regressions aren't shipped to production:
+| Command                 | Purpose                                                                |
+| ----------------------- | ---------------------------------------------------------------------- |
+| `npm run dev`           | Runs the Next.js app natively with TSX parsing the custom `server.ts`. |
+| `npm run build`         | Compiles Next.js artifacts and type-checks the server bundle via TSC.  |
+| `npm run start`         | Launches the built Node.js production server.                          |
+| `npm run lint`          | Runs ESLint across the codebase.                                       |
+| `npm run clean`         | Cleans Next.js build cache.                                            |
+| `npm run format`        | Runs Prettier to auto-format the codebase.                             |
+| `npm run prune`         | Runs Knip to resolve unused exports and files.                         |
+| `npm run test:coverage` | Executes Vitest unit/integration tests with coverage tracking.         |
 
-- **Unit/Integration (Vitest)**: Located in `__tests__/`. Provides deeply sandboxed, mocked tests for Zustand store state transitions (`lib/store.test.ts`), atomic component rendering (`components/Player.test.tsx`), and deterministic action routing. Evaluates strict AAA (Arrange-Act-Assert) patterns.
-- **E2E Testing (Playwright)**: Located in `e2e/`. Tests visual implementations, DOM integrity, network mock interception (`api/metadata`), and simulated multi-client websocket synchronization directly against a local isolated `server.ts` build (Port 3001).
+## Testing
 
-### Running Tests
+- **Unit & Integration**: Validates React components and Zustand state isolation.
+  - Tooling: Vitest + jsdom + v8 coverage
+  - Command: `npm run test:coverage`
+- **End-to-End (E2E)**: Simulates real browser websockets and UI operations.
+  - Tooling: Playwright
+  - Command: `npx playwright test`
+- **Prerequisites**: E2E boots the app on `localhost:3001` natively inside Chromium test workers.
 
-```bash
-# Run Unit & Integration Tests (Vitest)
-npm run test
+| Test Type        | Tooling    | Command                 | Scope                                          |
+| ---------------- | ---------- | ----------------------- | ---------------------------------------------- |
+| Unit/Integration | Vitest     | `npm run test:coverage` | Stores, components, background API resolution. |
+| E2E              | Playwright | `npx playwright test`   | Multi-user WS sync, visual assertions.         |
 
-# Run Watch Mode for Unit Tests
-npm run test:watch
+## API / Events / Contracts
 
-# Run all E2E Tests (Isolated Sandbox)
-npx playwright test
+### HTTP Routes
 
-# Run Playwright UI for visual debugging
-npx playwright test --ui
-```
+- **`POST /api/auth/session`**: Validates `{ participantId }`, signs a JWT token, and injects session cookies.
+- **`GET /api/metadata?url=...`**: Resolves URLs into safe video metadata structures. Protected against DNS Rebinding and local Bogon SSRF attacks via explicit `dns.resolve`.
+- **`GET /api/youtube/playlist?listId=...`**: Resolves valid YouTube lists securely via `yt-search`.
+- **`GET /api/youtube/search?q=...`**: Queries via primary Google API. Has an internal Circuit Breaker that falls back to a worker-thread `yt-search` orchestrator.
 
-> **Important note for CI and Headless environments:**
-> SyncWatch utilizes complex media embeds (ReactPlayer/YouTube iframe) which historically trigger WebGL rendering deadlocks in headless Chromium on Windows and standard CI workers. We have structurally patched the `playwright.config.ts` with a **hybrid configuration**:
->
-> 1.  **Native `channel: "chrome"` invocation** guarantees proprietary H.264/AAC media codecs are available, preventing iframe pipeline freezes.
-> 2.  **Forced `--use-gl=egl`** combined with aggressive headless timeouts aggressively eliminate GPU hangs during testing.
-> 3.  **Dedicated Local Sandbox**: Playwright automatically boots `server.ts` natively on `localhost:3001` and inherits shared JWT keys from `@next/env` to perfectly mock authenticated client handshakes.
+### WebSocket Commands (ingress via `socket.on("command")`)
 
----
+All payloads are strictly parsed against `commandSchema` (Zod validation).
 
-### [Phase 5] Distributed Redis Lock Race Condition (System busy spam)
+- **Fast Path (OCC sync-critical)**: `play`, `pause`, `seek`, `buffering`, `update_rate`, `sync_correction`.
+- **Slow Path (Database-impacting)**: `add_item`, `add_items`, `remove_item`, `reorder_playlist`, `set_media`, `next`, `clear_playlist`.
+- **Room Lifecycle**: `update_settings`, `upgrade_session`.
 
-**Symptom:** UI spamming "System busy acquiring room lock" toasts immediately whenever a peer enters a room. Lock evaluations failed silently due to concurrent socket event emissions (e.g. `play` + `update_duration`).
-**Root Cause:**
+## Main User Flows
 
-1.  The distributed Redis Mutex (`set NX` mode) was implemented as a fast-fail. Concurrent websocket events were processed in the same millisecond. Message 1 acquired the lock, Message 2 immediately threw a Lock Failed Exception because there was zero wait-retry or queueing loop logic inside `withLock`.
-2.  The `process.env.REDIS_URL` evaluation inside `redis-rate-limit.ts` was executed globally at module load time (Lexical hoisting) _before_ `server.ts` executed `loadEnvConfig()`.
+1. **Joining a Room**
+   - _Preconditions_: User navigates to a shared room link.
+   - _Steps_: The socket handshakes with a `join_room` invocation. The Node server validates OCC/lock integrity and emits an authoritative `room_state` JSON patch to the client.
+   - _Expected Outcome_: Local UI connects to WebSocket, synchronizes the Zustand store completely mirroring the backend.
 
-**Solution:**
+2. **Searching & Queuing Media**
+   - _Preconditions_: User acts as an owner or moderator in the room.
+   - _Steps_: Submits query; `GET /api/youtube/search` resolves metadata. Client emits `add_item` payload to the Socket.
+   - _Expected Outcome_: The Socket modifies the backend Playlist, broadcasts delta to participants, and dynamically enqueues it to the Supabase write-behind queue.
 
-1.  Converted `redisClient` to a lazy `getRedisClient()` initialization function evaluated exclusively at runtime to honor `.env.local` propagation mapping.
-2.  Replaced the `withLock` fast-fail with a **Jittered Spin-Lock Backoff Queue**. `withLock` now spins up to 20 times (with 30-70ms randomized jitter) waiting for lock evaluation to complete before firing failures.
+3. **Playback Synchronization**
+   - _Preconditions_: Active video loaded in `ReactPlayer`.
+   - _Steps_: User interacts with UI (seek/pause). Local `sendCommand` triggers optimistic state change and transmits event over TCP.
+   - _Expected Outcome_: Other clients detect timeline divergence from authoritative payload sequences. High-frequency corrections smoothly dial back or surge playback drift via PID modifiers without generating audio clipping.
 
-## Project Factual & Mental Map
+## Troubleshooting
 
-### 1. Frontend Layer (Next.js APP Router & React 19)
+- **Lock Deadlocks ("System busy acquiring room lock")**: In dev, make sure a local Redis node is available or test modes correctly decouple the physical instances. Check the console for retry jitter exhaustions.
+- **Missing WebSocket Drops in Vercel**: Vercel kills Serverless execution paths rapidly. SyncWatch must be deployed on a Long-Lived Node Server (like Render, Railway, or VPS).
+- **Metadata Resolvers Failing**: If YouTube blocks the upstream provider instance, `GET /api/youtube/search` might exhaust circuit breakers. Supply a valid `YOUTUBE_API_KEY` for stability.
 
-- **App/Routing (`app/`)**: Manages routing, API endpoints (`api/metadata`), and root layouts.
-- **UI Components (`components/`)**:
-  - `Player.tsx`: Wraps `react-player`, handles low-level playback state and syncing with store.
-  - `Playlist.tsx`: Manages video queue (maximum 500 items constraint).
-  - `Participants.tsx`: Displays users and roles.
-  - `ThemeProvider.tsx`/`ThemeToggle.tsx`: Manages custom CSS theme switching.
-- **State Management (`lib/store.ts`)**: Zustand store managing room state, playback progress, and user info. Synchronizes natively with Socket.io events.
+## Known Documentation Gaps
 
-### 2. Backend Layer (Node.js & Socket.io)
+- **Missing NPM Scripts for Tests**: Previous documentation references `npm run test` and `npm run test:watch` locally. While these run E2E conventionally via default binaries, they are explicitly missing in the current `package.json` index (only `test:coverage` is registered).
+- **Environment Variable Undefined Secrets**: The `.env.example` does not contain explicit outlines for required `JWT_SECRET` outside of looking directly at source fallbacks.
 
-- **Custom Server (`server.ts`)**: The architectural backbone. Fully **Stateless** Node.js server using Redis as the singular source of truth.
-- **WebSocket Gateway**: Processes `command` and `join_room` events via pure OCC Lua Scripts. Authoritative over playback rate, seeking, and playing/pausing to prevent desyncs. Guards against memory exhaustion (OOM).
-- **Supabase Persistence**: Background worker debounces state persistence (2s loop) from resilient Redis Sets (`writeBehindQueue`) to Supabase tables (`rooms`, `playlist_items`, `playback_snapshots`).
+## Contributing
 
-### 3. Data Flow Pattern
+- PRs must pass `npm run format` and `npm run lint`.
+- All database schema updates must append an explicit sequential SQL migration in `supabase/migrations/`.
+- Verify full stability via `npx playwright test` before pulling. Modifying `server.ts` requires robust understanding of the Redlock spin-jitter implementations.
 
-1.  Client action (e.g., Click Play in UI).
-2.  `useStore.sendCommand('play', payload)` fires the event to Socket.io.
-3.  `server.ts` receives event, validates permissions/limits securely.
-4.  `server.ts` mutates authoritative in-memory room state.
-5.  `server.ts` emits updated `room_state` back to all connected clients in the room.
-6.  Local Zustand store (`lib/store.ts`) updates; React re-renders globally.
+## License
+
+_Assuming proprietary/unlicensed unless a LICENSE file is provided in the repository folder._
