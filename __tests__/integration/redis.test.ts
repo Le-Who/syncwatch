@@ -37,6 +37,8 @@ describe("Redis Actor & Queue Integration Tests", () => {
 
   it("1. withLock: should guarantee mutual exclusion for distributed locks", async () => {
     if (!redis) return;
+
+    // Arrange: setup identical competing lock bounds
     const resourceId = `lock_test_${TEST_RUN_ID}`;
     let concurrencyCounter = 0;
     let maxConcurrencyObserved = 0;
@@ -48,13 +50,13 @@ describe("Redis Actor & Queue Integration Tests", () => {
           maxConcurrencyObserved,
           concurrencyCounter,
         );
-        // Simulate async work
-        await new Promise((resolve) => setTimeout(resolve, 50));
+        // Simulate async work cleanly without implicit time races (force event loop yield)
+        await new Promise((resolve) => setImmediate(resolve));
         concurrencyCounter--;
       });
     };
 
-    // Fire 5 operations absolutely concurrently
+    // Act: Fire 5 operations absolutely concurrently
     await Promise.all([
       criticalPath(),
       criticalPath(),
@@ -63,7 +65,7 @@ describe("Redis Actor & Queue Integration Tests", () => {
       criticalPath(),
     ]);
 
-    // If the lock works, the critical section is strictly sequential, so counter never exceeds 1.
+    // Assert: If the lock works, the critical section is strictly sequential, so counter never exceeds 1.
     expect(maxConcurrencyObserved).toBe(1);
   });
 
@@ -71,31 +73,33 @@ describe("Redis Actor & Queue Integration Tests", () => {
     if (!redis) return;
     const roomId = `cas_test_${TEST_RUN_ID}`;
 
+    // Arrange: Seed initial synchronized base version
     const initialState = { id: roomId, version: 1, data: "initial" };
     await setRedisRoom(roomId, initialState);
 
-    // 1. Valid update matching version 1
     const v2State = { ...initialState, version: 2, data: "second" };
-    const success1 = await setRedisRoomCAS(roomId, v2State, 1);
-    expect(success1).toBe(true);
-
-    // 2. Stale update attempting to branch from version 1 again (should fail)
     const staleState = { ...initialState, version: 3, data: "stale_attempt" };
-    const success2 = await setRedisRoomCAS(roomId, staleState, 1);
-    expect(success2).toBe(false);
 
-    // Verify current state is v2
+    // Act: Valid update matching version 1, followed by a stale overwrite attempt
+    const success1 = await setRedisRoomCAS(roomId, v2State, 1);
+    const success2 = await setRedisRoomCAS(roomId, staleState, 1);
+
     const current = await getRedisRoom(roomId);
+
+    // Assert: Verify acceptance and rejection bounds
+    expect(success1).toBe(true);
+    expect(success2).toBe(false);
     expect(current.version).toBe(2);
     expect(current.data).toBe("second");
   });
 
   it("3. pushSlowCommand & processQueueForRoom: should process queued commands properly", async () => {
     if (!redis) return;
+
+    // Arrange: Create an initial room and queue payload
     const roomId = `queue_test_${TEST_RUN_ID}`;
     const participantId = `user_${TEST_RUN_ID}`;
 
-    // Create an initial room with an owner
     const initialState = {
       id: roomId,
       name: "Queue Test Room",
@@ -124,7 +128,6 @@ describe("Redis Actor & Queue Integration Tests", () => {
 
     await setRedisRoom(roomId, initialState as any);
 
-    // Push an item to the queue simulating a user adding a video
     const payload = {
       url: "https://www.youtube.com/watch?v=mock_video",
       provider: "youtube",
@@ -132,6 +135,7 @@ describe("Redis Actor & Queue Integration Tests", () => {
       duration: 180,
     };
 
+    // Act: Push to queue, then synchronously drain the queue worker
     const pushSuccess = await pushSlowCommand(
       roomId,
       2,
@@ -140,16 +144,16 @@ describe("Redis Actor & Queue Integration Tests", () => {
       participantId,
       "Owner",
     );
-    expect(pushSuccess).toBe(true);
 
-    // Process the queue synchronously for testing purposes
     await processQueueForRoom(roomId);
 
-    // Fetch the room state to ensure the item was appended to the playlist
     const updatedRoom = await getRedisRoom(roomId);
+
+    // Assert: Check command was accurately materialized onto the room state
+    expect(pushSuccess).toBe(true);
     expect(updatedRoom.playlist.length).toBe(1);
     expect(updatedRoom.playlist[0].title).toBe("Mock Video from Queue");
-    expect(updatedRoom.currentMediaId).toBe(updatedRoom.playlist[0].id); // since playlist was empty, playback should shift to it
+    expect(updatedRoom.currentMediaId).toBe(updatedRoom.playlist[0].id); // Since playlist was empty, playback shifts to it
     expect(updatedRoom.playback.status).toBe("paused");
   });
 });

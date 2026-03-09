@@ -10,7 +10,7 @@ test.describe("Network Resilience (TC-302)", () => {
     const roomUrl = getTestRoomUrl();
     await joinRoom(page, roomUrl, "DropoutUser");
 
-    // 1. Arrange: Ensure joined and connected
+    // Arrange: Ensure joined and connected
     await expect(
       page.locator('input[value="DropoutUser"]').first(),
     ).toBeVisible({ timeout: 15000 });
@@ -27,7 +27,7 @@ test.describe("Network Resilience (TC-302)", () => {
     };
     await page.route("**/api/metadata*", mockMetadataApi);
 
-    // Assert initial connection state
+    // Arrange: Assert initial connection state before dropout
     await expect(async () => {
       const isConnected = await page.evaluate(
         () => (window as any).__store.getState().isConnected,
@@ -35,13 +35,13 @@ test.describe("Network Resilience (TC-302)", () => {
       expect(isConnected).toBe(true);
     }).toPass({ timeout: 10000 });
 
-    // 2. Act: Emulate physical network drop by closing the underlying transport
+    // Act: Emulate physical network drop by closing the underlying transport
     // This perfectly mimics a TCP connection reset without triggering the application's clean disconnect flow
     await page.evaluate(() => {
       (window as any).__roomSocketService.getSocket().io.engine.close();
     });
 
-    // Wait for the client to realize it's disconnected
+    // Act: Wait for the client to realize it's disconnected (Store update)
     await expect(async () => {
       const isConnected = await page.evaluate(
         () => (window as any).__store.getState().isConnected,
@@ -49,10 +49,8 @@ test.describe("Network Resilience (TC-302)", () => {
       expect(isConnected).toBe(false);
     }).toPass({ timeout: 15000 });
 
-    // 3. Act: Wait for the automatic reconnection (Socket.io exponential backoff)
+    // Act: Wait for the automatic reconnection (Socket.io exponential backoff)
     // The socket will automatically try to reconnect and the __roomSocketService will upgrade the session
-
-    // Wait for reconnection and session upgrade
     await expect(async () => {
       const state = await page.evaluate(() =>
         (window as any).__store.getState(),
@@ -61,7 +59,7 @@ test.describe("Network Resilience (TC-302)", () => {
       expect(state.sessionToken).toBeTruthy(); // Ensure token survived/was restored
     }).toPass({ timeout: 15000 });
 
-    // 4. Assert: Verify the re-established connection actually works with a privileged JWT action
+    // Assert: Verify the re-established connection actually works with a privileged JWT action
     // "DropoutUser" is the first user, so they are the owner.
     // The initial screen displays the empty player input
     const urlInput = page.locator(
@@ -71,7 +69,7 @@ test.describe("Network Resilience (TC-302)", () => {
     await urlInput.fill("https://example.com/video.mp4");
     await page.locator("button", { hasText: "Init" }).click();
 
-    // Verify the API command was accepted by the server and broadcasted back
+    // Assert: Verify the API command was accepted by the server and broadcasted back
     await expect(page.locator("text=Reconnect Video").first()).toBeVisible({
       timeout: 15000,
     });

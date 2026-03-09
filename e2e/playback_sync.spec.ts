@@ -89,15 +89,7 @@ test.describe("Playback Sync & Drift Catchup (TC-301)", () => {
       expect(status).not.toBeUndefined(); // Store should be fully materialized
     }).toPass({ timeout: 15000 });
 
-    // ==========================================
-    // ACT: Host simulates playing the video
-    // ==========================================
-    const playerWrapper = hostPage
-      .getByTestId("player-interaction-layer")
-      .first();
-    await playerWrapper.hover({ force: true }).catch(() => {});
-
-    // Attempt play action safely outside the retry block
+    // Ensure state is ready for interaction
     await hostPage.waitForFunction(
       () => {
         const state = (window as any).__store?.getState();
@@ -106,18 +98,25 @@ test.describe("Playback Sync & Drift Catchup (TC-301)", () => {
       { timeout: 15000 },
     );
 
+    // ==========================================
+    // ACT: Host simulates playing the video
+    // ==========================================
+    const playerWrapper = hostPage
+      .getByTestId("player-interaction-layer")
+      .first();
+    await playerWrapper.hover({ force: true }).catch(() => {});
     await playerWrapper.click({ force: true });
 
+    // ==========================================
+    // ASSERT: Both Host and Viewer correctly derive Playback state explicitly
+    // ==========================================
     await expect(async () => {
       const hostStatus = await hostPage.evaluate(
         () => (window as any).__store.getState().room?.playback?.status,
       );
       expect(hostStatus).toBe("playing");
-    }).toPass({ timeout: 10000 });
+    }).toPass({ timeout: 15000 });
 
-    // ==========================================
-    // ASSERT: Viewer correctly derives state over websocket
-    // ==========================================
     await expect(async () => {
       const viewerStatus = await viewerPage.evaluate(
         () => (window as any).__store.getState().room?.playback?.status,

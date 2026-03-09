@@ -36,31 +36,39 @@ describe("OCC Thrashing Simulation (Phase 1)", () => {
 
   it("should handle 100 concurrent fast-path mutations via Lua without deadlocking", async () => {
     if (!redis) return; // Skip in memory mode
-    const promises = [];
+
+    // Arrange: Prepare 100 mutation intents
+    const intents: Promise<any>[] = [];
+
+    // Act: Fire 100 fast-path concurrent mutations (LWW bypassed bounds)
     for (let i = 0; i < 100; i++) {
-      // -1 bypasses strict OCC versioning for LWW
-      promises.push(
+      intents.push(
         executeFastMutation(roomId, -1, "seek", { position: i }, "u1", "u1"),
       );
     }
-    const results = await Promise.all(promises);
+    const results = await Promise.all(intents);
+
+    // Assert: Verify all 100 intents resolved successfully without deadlocks
     const successes = results.filter((r) => r.success);
     expect(successes.length).toBe(100);
   });
 
   it("should queue 10 playlist additions and process them sequentially without read-modify-write collisions", async () => {
     if (!redis) return;
-    const promises = [];
+
+    // Arrange: Generate 10 slow-path queue insertions
+    const insertPromises: Promise<any>[] = [];
     for (let i = 0; i < 10; i++) {
-      promises.push(
+      insertPromises.push(
         pushSlowCommand(roomId, i, "add_item", { url: `vid_${i}` }, "u1", "u1"),
       );
     }
-    await Promise.all(promises);
+    await Promise.all(insertPromises);
 
-    // Process queue synchronously for test
+    // Act: Process the queue synchronously
     await processQueueForRoom(roomId);
 
+    // Assert: Verify the playlist has all 10 items appended accurately
     const roomStr = await redis.get(`room_state:${roomId}`);
     const room = JSON.parse(roomStr!);
     expect(room.playlist.length).toBe(10);
@@ -69,7 +77,7 @@ describe("OCC Thrashing Simulation (Phase 1)", () => {
   it("should enforce strict OCC versioning and reject stale sequence commands (TC-201)", async () => {
     if (!redis) return;
 
-    // Set baseline
+    // Arrange: Set strict baseline sequence 5
     await setRedisRoom(roomId, {
       id: roomId,
       version: 5,
@@ -86,7 +94,7 @@ describe("OCC Thrashing Simulation (Phase 1)", () => {
       }, // added rate and updatedBy to satisfy types
     } as any);
 
-    // Emulate 2 clients racing with the same sequence knowledge (e.g. sequence 5)
+    // Act: Emulate 2 clients racing with the same exact baseline knowledge sequence 5
     const reqA = executeFastMutation(
       roomId,
       5,
@@ -106,7 +114,7 @@ describe("OCC Thrashing Simulation (Phase 1)", () => {
 
     const [resA, resB] = await Promise.all([reqA, reqB]);
 
-    // One must succeed, one must fail with VERSION_CONFLICT
+    // Assert: One must succeed, one must fail with VERSION_CONFLICT
     const successes = [resA, resB].filter((r: any) => r.success);
     const conflicts = [resA, resB].filter(
       (r: any) => !r.success && r.error === "VERSION_CONFLICT",

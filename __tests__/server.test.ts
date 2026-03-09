@@ -129,8 +129,10 @@ describe("server.ts Real Socket.IO Integration", () => {
 
     await waitForSocketEvent(clientSocket, "connect");
 
-    // Act
+    // Arrange: Prepare to capture the async response
     const roomStatePromise = waitForSocketEvent(clientSocket, "room_state");
+
+    // Act
     clientSocket.emit("join_room", {
       roomId: "test-room-1",
       nickname: "OwnerUser",
@@ -152,7 +154,7 @@ describe("server.ts Real Socket.IO Integration", () => {
   });
 
   it("TC-02: Guest users cannot mutate state", async () => {
-    // Arrange
+    // Arrange: Create Socket connection
     guestSocket = Client(ioServerPath, {
       path: "/socket.io",
       transports: ["websocket"],
@@ -161,6 +163,7 @@ describe("server.ts Real Socket.IO Integration", () => {
 
     await waitForSocketEvent(guestSocket, "connect");
 
+    // Arrange: Join the room (Precondition)
     const roomStatePromise = waitForSocketEvent(guestSocket, "room_state");
     guestSocket.emit("join_room", {
       roomId: "test-room-2",
@@ -169,8 +172,10 @@ describe("server.ts Real Socket.IO Integration", () => {
     });
     await roomStatePromise;
 
-    // Act
+    // Arrange: Prepare to capture the expected error event
     const errorPromise = waitForSocketEvent(guestSocket, "error");
+
+    // Act: Attempt to mutate state via command
     guestSocket.emit("command", {
       roomId: "test-room-2",
       type: "play",
@@ -180,13 +185,13 @@ describe("server.ts Real Socket.IO Integration", () => {
 
     const err = await errorPromise;
 
-    // Assert
+    // Assert: Check the error payload
     expect(err).toBeDefined();
     expect(err.message).toContain("Guest accounts cannot send commands");
   });
 
   it("TC-03: Invalid Zod command payload types are rejected immediately", async () => {
-    // Arrange
+    // Arrange: Setup malicious authenticated client
     const JWT_SECRET = new TextEncoder().encode(
       "default_local_secret_dont_use_in_prod",
     );
@@ -205,6 +210,7 @@ describe("server.ts Real Socket.IO Integration", () => {
 
     await waitForSocketEvent(hostileSocket, "connect");
 
+    // Arrange: Join room (Precondition)
     const roomStatePromise = waitForSocketEvent(hostileSocket, "room_state");
     hostileSocket.emit("join_room", {
       roomId: "test-room-3",
@@ -213,8 +219,10 @@ describe("server.ts Real Socket.IO Integration", () => {
     });
     await roomStatePromise;
 
-    // Act
+    // Arrange: Capture the expected error event
     const errorPromise = waitForSocketEvent(hostileSocket, "error");
+
+    // Act: Dispatch structurally malformed command
     hostileSocket.emit("command", {
       roomId: "test-room-3",
       type: "play",
@@ -224,13 +232,13 @@ describe("server.ts Real Socket.IO Integration", () => {
 
     const err = await errorPromise;
 
-    // Assert
+    // Assert: Ensure Zod parsing blocked the payload
     expect(err).toBeDefined();
     expect(err.message).toContain("Invalid command payload format");
   });
 
   it("TC-04: Existing session token recovers owner privileges upon reconnection", async () => {
-    // Arrange
+    // Arrange: Setup recovered socket with earlier valid token
     const JWT_SECRET = new TextEncoder().encode(
       "default_local_secret_dont_use_in_prod",
     );
@@ -250,8 +258,10 @@ describe("server.ts Real Socket.IO Integration", () => {
 
     await waitForSocketEvent(recoverySocket, "connect");
 
-    // Act
+    // Arrange: Prepare to capture room state event
     const roomStatePromise = waitForSocketEvent(recoverySocket, "room_state");
+
+    // Act: Rejoin the same room using the recovered socket
     recoverySocket.emit("join_room", {
       roomId: "test-room-1", // Re-joining the same room created in TC-01
       nickname: "OwnerUserRecovered",
@@ -260,7 +270,7 @@ describe("server.ts Real Socket.IO Integration", () => {
 
     const payload = await roomStatePromise;
 
-    // Assert
+    // Assert: Verify server maintained state associations
     expect(payload.room.id).toBe("test-room-1");
     const participant = payload.room.participants["user-1"];
     expect(participant).toBeDefined();

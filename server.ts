@@ -238,7 +238,7 @@ const forcePersistRoom = async (room: RoomState) => {
 };
 
 // Robust Background Worker: Guaranteed at-least-once delivery to DB (Concurrent Batched Processing)
-setInterval(async () => {
+export const workerInterval = setInterval(async () => {
   if (!supabase) return;
 
   const redisClient = getRedisClient();
