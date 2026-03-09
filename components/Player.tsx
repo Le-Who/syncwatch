@@ -44,6 +44,8 @@ import { MediaApiService } from "@/lib/MediaApiService";
 import { usePlayerShortcuts } from "@/hooks/usePlayerShortcuts";
 import { useFlashback } from "@/hooks/useFlashback";
 import { Undo2 } from "lucide-react";
+import { usePlaybackSync } from "@/hooks/usePlaybackSync";
+import { applyTwitchEventProxy } from "@/lib/player-adapters";
 
 const ReactPlayer = dynamic(() => import("react-player"), {
   ssr: false,
@@ -95,7 +97,6 @@ export default function Player() {
   const [isReady, setIsReady] = useState(false);
   const [isBuffering, setIsBuffering] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const driftRef = useRef(0);
   const [hostName, setHostName] = useState<string>("localhost");
   const [mounted, setMounted] = useState(false);
   const [localPlaybackRate, setLocalPlaybackRate] = useState<number>(1);
@@ -285,121 +286,26 @@ export default function Player() {
     sendCommand(type, { ...payload, nonce });
   };
 
-  const syncPlayback = useEventCallback(() => {
-    if (!playback || !isReady || seeking) return;
-
-    if (Date.now() - lastCommandEmitTimeRef.current < 1500) {
-      // Optimistic UI barrier: ignore server discrepancy immediately after manual UI action
-      return;
-    }
-
-    // [Problem 1 Fix]: Nonce-based Identity (Anti-Echo Rollback)
-    const storeOpts = useStore.getState();
-    if (
-      playback.lastActionNonce &&
-      lastStateEmittedRef.current?.nonce === playback.lastActionNonce
-    ) {
-      // Server just repeated back our own recent action.
-      // Enter "Soft Mode": grant another 2 seconds of immunity against hard `seekTo` corrections
-      ignoreNativeEventsUntilRef.current = Date.now() + 2000;
-      // We clear the local tracking so we only grant immunity once per nonce resolution
-      lastStateEmittedRef.current.nonce = undefined;
-    }
-
-    const currentServerTime = Date.now() + serverClockOffset;
-    const currentPosition = getAccurateTime();
-
-    if (playback.status === "playing") {
-      const { expectedPosition, drift: currentDrift } = calculateDrift(
-        playback.status,
-        playback.basePosition,
-        playback.baseTimestamp,
-        currentServerTime,
-        currentPosition,
-        playback.rate,
-      );
-      driftRef.current = currentDrift;
-
-      if (!playing) {
-        lastServerStateChangeRef.current = Date.now();
-        setPlaying(true);
-      }
-
-      // [Problem 5 Fix]: Owner As Oracle in Controlled Mode
-      if (controlMode === "controlled" && myRole === "owner") {
-        // The owner dictates time. If the owner's local player drifts from the server's math
-        // by more than 600ms, the owner forces the server to accept the local position.
-        if (currentDrift > 0.6) {
-          emitCommand("sync_correction", { position: currentPosition });
-          // No local seek required, we are the authority.
-          return;
-        }
-      }
-
-      const isIframeProvider = ["youtube", "vimeo", "twitch"].includes(
-        currentMedia?.provider?.toLowerCase() || "",
-      );
-      const isTwitch = currentMedia?.provider?.toLowerCase() === "twitch";
-
-      // [Problem 3 Fix]: Dual-Threshold Adaptive Rate (Hard Sink vs Smooth Rate Shift)
-      // Twitch DOES NOT support playback rates, so we must force a hard seek for any sync drift.
-      if (
-        (currentDrift > 3.0 ||
-          (isIframeProvider && currentDrift > 2.0) ||
-          (isTwitch && currentDrift > 1.0)) &&
-        !isBuffering
-      ) {
-        // [THRESHOLD 1]: Massive drift or Twitch drift. Requires a violent hard seek.
-        let expectedClamped = expectedPosition;
-        if (duration > 0 && expectedClamped > duration) {
-          expectedClamped = duration;
-        }
-        performProgrammaticSeek(expectedClamped);
-
-        // Twitch inherently pauses when instructed to seek, so force a resume.
-        if (isTwitch && playing && realPlayerRef.current?.play) {
-          realPlayerRef.current.play();
-        }
-
-        setLocalPlaybackRate(playback.rate);
-      } else {
-        const newRate = calculatePlaybackRate(
-          currentDrift,
-          currentPosition,
-          expectedPosition,
-          playback.rate,
-          isBuffering,
-          isIframeProvider,
-        );
-        setLocalPlaybackRate(newRate);
-      }
-    } else if (playback.status === "paused") {
-      const { drift: currentDrift } = calculateDrift(
-        playback.status,
-        playback.basePosition,
-        playback.baseTimestamp,
-        currentServerTime,
-        currentPosition,
-        1.0,
-      );
-      driftRef.current = currentDrift;
-
-      if (playing) {
-        lastServerStateChangeRef.current = Date.now();
-        setPlaying(false);
-      }
-
-      if (currentDrift > 1.0 && !isBuffering) {
-        ignoreNativeEventsUntilRef.current = Date.now() + 1500;
-        performProgrammaticSeek(playback.basePosition);
-      }
-    }
+  const { driftRef } = usePlaybackSync({
+    realPlayerRef,
+    playerRef,
+    getAccurateTime,
+    playing,
+    setPlaying,
+    isReady,
+    seeking,
+    isBuffering,
+    lastCommandEmitTimeRef,
+    lastStateEmittedRef,
+    ignoreNativeEventsUntilRef,
+    performProgrammaticSeek,
+    setLocalPlaybackRate,
+    controlMode,
+    myRole,
+    currentMedia,
+    duration,
+    emitCommand,
   });
-
-  useEffect(() => {
-    const interval = setInterval(syncPlayback, 1000);
-    return () => clearInterval(interval);
-  }, [syncPlayback]);
 
   const handlePlay = () => {
     if (!currentMediaId || !participantId || !canControl) return;
@@ -682,36 +588,12 @@ export default function Player() {
 
                   // -- TWITCH EVENT PROXY HACK --
                   if (currentMedia.provider?.toLowerCase() === "twitch") {
-                    try {
-                      // Note: react-player v3's getInternalPlayer() may not return the iframe wrapper,
-                      // instead the ref itself might point to the <twitch-video> web component.
-                      const twitchEl = rPlayer
-                        ? rPlayer.getInternalPlayer
-                          ? rPlayer.getInternalPlayer("twitch")
-                          : null
-                        : playerRef.current;
-
-                      if (twitchEl && !twitchEl.dataset.proxyAttached) {
-                        // eslint-disable-next-line react-hooks/immutability
-                        twitchEl.dataset.proxyAttached = "true";
-
-                        // Using Twitch standard DOM events
-                        twitchEl.addEventListener("play", () => {
-                          console.log("[TWITCH PROXY] play event fired");
-                          handleNativePlay();
-                        });
-                        twitchEl.addEventListener("playing", () => {
-                          console.log("[TWITCH PROXY] playing event fired");
-                          handleNativePlay();
-                        });
-                        twitchEl.addEventListener("pause", () => {
-                          console.log("[TWITCH PROXY] pause event fired");
-                          handleNativePause();
-                        });
-                      }
-                    } catch (e) {
-                      console.error("Failed to proxy twitch events", e);
-                    }
+                    applyTwitchEventProxy(
+                      playerRef,
+                      realPlayerRef,
+                      handleNativePlay,
+                      handleNativePause,
+                    );
                   }
 
                   // Extract HLS Levels if it's a direct stream

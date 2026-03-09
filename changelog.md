@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **Architecture Refactoring**: Extracted core media synchronization mathematics and Intent Masking out of `Player.tsx` and into a dedicated `usePlaybackSync` hook.
+- **Provider Adapters**: Isolated Twitch-specific DOM manipulation into `lib/player-adapters.ts` (`applyTwitchEventProxy`) to decouple it from React's rendering lifecycle.
 - **QA Architecture**: Established strict AAA (Arrange-Act-Assert) conventions across all E2E and integration tests. Added `fast_path.test.ts` to independently verify Lua mutations without DB locks.
 - **Test Infrastructure (`server.test.ts`)**: Implemented `waitForSocketEvent` utility for integration tests to enforce strict AAA (Arrange-Act-Assert) patterns and eliminate race conditions within Socket.io callbacks. Added Test Case 304 (`worker_resilience.test.ts`) to verify database write-behind queue recovery.
 - **E2E Playwright Resilience**: Added TC-303 (`high_latency_sync.spec.ts`) utilizing CDP to simulate 500ms network latency to mathematically prove the drift-math algorithms compensate for network chaos correctly.
