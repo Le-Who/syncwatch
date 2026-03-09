@@ -6,8 +6,9 @@ test.describe("Playback Sync & Drift Catchup (TC-301)", () => {
     browser,
   }) => {
     test.setTimeout(60000);
+
     // ==========================================
-    // ARRANGE: Setup browsers, join room, and mock API
+    // ARRANGE: Environment, Mocks, and Setup
     // ==========================================
     const context1 = await browser.newContext();
     const context2 = await browser.newContext();
@@ -15,26 +16,14 @@ test.describe("Playback Sync & Drift Catchup (TC-301)", () => {
     const viewerPage = await context2.newPage();
 
     const roomUrl = getTestRoomUrl();
-    await joinRoom(hostPage, roomUrl, "Host");
 
-    // Prevent Socket.io room creation race conditions by polling for Host to be fully joined
-    await expect(hostPage.locator("input[value='Host']").first()).toBeVisible({
-      timeout: 15000,
-    });
-
-    await joinRoom(viewerPage, roomUrl, "Viewer");
-    await expect(
-      viewerPage.locator("input[value='Viewer']").first(),
-    ).toBeVisible({
-      timeout: 15000,
-    });
-
+    // Mock API to return predictable metadata and prevent network flakes
     const mockMetadataApi = async (route: any) => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
         body: JSON.stringify({
-          title: "Mocked Sync MP4 Video",
+          title: "Mocked Sync Video",
           thumbnail: "",
         }),
       });
@@ -42,8 +31,17 @@ test.describe("Playback Sync & Drift Catchup (TC-301)", () => {
     await hostPage.route("**/api/metadata*", mockMetadataApi);
     await viewerPage.route("**/api/metadata*", mockMetadataApi);
 
-    const testVideoUrl = "https://www.w3schools.com/html/mov_bbb.mp4";
+    // Join room sequentially to avoid locking thrashing
+    await joinRoom(hostPage, roomUrl, "Host");
+    await expect(hostPage.locator("input[value='Host']").first()).toBeVisible();
 
+    await joinRoom(viewerPage, roomUrl, "Viewer");
+    await expect(
+      viewerPage.locator("input[value='Viewer']").first(),
+    ).toBeVisible();
+
+    // Queue Video as Host
+    const testVideoUrl = "https://www.w3schools.com/html/mov_bbb.mp4";
     await hostPage.locator("button", { hasText: /Queue/i }).click();
     const urlInput = hostPage.locator(
       'input[placeholder="Paste video stream URL..."]',
@@ -52,19 +50,18 @@ test.describe("Playback Sync & Drift Catchup (TC-301)", () => {
     await urlInput.fill(testVideoUrl);
     await hostPage.locator("button", { hasText: "Init" }).click();
 
-    // Verify the playlist item is added first
+    // Wait for Playlist UI updates
     await expect(
-      hostPage.locator("text=Mocked Sync MP4 Video").first(),
-    ).toBeVisible({ timeout: 15000 });
+      hostPage.locator("text=Mocked Sync Video").first(),
+    ).toBeVisible();
 
-    // Now wait for the video DOM elements to attach (Player component mounting)
+    // Wait for Video DOM attachment
     const hostVideo = hostPage.locator("video").first();
     const viewerVideo = viewerPage.locator("video").first();
+    await hostVideo.waitFor({ state: "attached" });
+    await viewerVideo.waitFor({ state: "attached" });
 
-    await hostVideo.waitFor({ state: "attached", timeout: 15000 });
-    await viewerVideo.waitFor({ state: "attached", timeout: 15000 });
-
-    // Ensure video has successfully mapped metadata duration before interacting
+    // Ensure DOM Videos are ready with loaded metadata
     await expect(async () => {
       const dur = await hostVideo.evaluate(
         (vid: HTMLVideoElement) => vid.duration,
@@ -73,7 +70,7 @@ test.describe("Playback Sync & Drift Catchup (TC-301)", () => {
       expect(Number.isNaN(dur)).toBe(false);
     }).toPass({ timeout: 15000 });
 
-    // Dismiss the Autoplay "User Gesture Guard" overlay for both explicitly
+    // Dismiss Initial Gesture Guard
     await hostPage
       .getByRole("button", { name: /Initialize Stream Sync/i })
       .click();
@@ -81,47 +78,40 @@ test.describe("Playback Sync & Drift Catchup (TC-301)", () => {
       .getByRole("button", { name: /Initialize Stream Sync/i })
       .click();
 
-    // Wait for the initial loading "intent mask" to clear by asserting underlying playback store readiness
+    // Ensure Zustand store internal playback state is fully initialized as 'paused' before testing mutations
     await expect(async () => {
       const status = await hostPage.evaluate(
         () => (window as any).__store?.getState().room?.playback?.status,
       );
-      expect(status).not.toBeUndefined(); // Store should be fully materialized
+      expect(status).toBe("paused");
     }).toPass({ timeout: 15000 });
 
-    // Ensure state is ready for interaction
-    await hostPage.waitForFunction(
-      () => {
-        const state = (window as any).__store?.getState();
-        return state?.room?.playback?.status !== undefined;
-      },
-      { timeout: 15000 },
-    );
-
     // ==========================================
-    // ACT: Host simulates playing the video
+    // ACT: Apply one single logical action
     // ==========================================
+    // Host simulates clicking Play on the video interaction layer
     const playerWrapper = hostPage
       .getByTestId("player-interaction-layer")
       .first();
-    await playerWrapper.hover({ force: true }).catch(() => {});
     await playerWrapper.click({ force: true });
 
     // ==========================================
-    // ASSERT: Both Host and Viewer correctly derive Playback state explicitly
+    // ASSERT: Verify specific behavioral outcomes
     // ==========================================
+    // 1. Host should internally register 'playing'
     await expect(async () => {
       const hostStatus = await hostPage.evaluate(
         () => (window as any).__store.getState().room?.playback?.status,
       );
       expect(hostStatus).toBe("playing");
-    }).toPass({ timeout: 15000 });
+    }).toPass({ timeout: 10000 });
 
+    // 2. Viewer should synchronize to 'playing'
     await expect(async () => {
       const viewerStatus = await viewerPage.evaluate(
         () => (window as any).__store.getState().room?.playback?.status,
       );
       expect(viewerStatus).toBe("playing");
-    }).toPass({ timeout: 15000 });
+    }).toPass({ timeout: 10000 });
   });
 });

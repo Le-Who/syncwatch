@@ -119,13 +119,15 @@ npm start
 
 ## Testing
 
-- **Unit & Integration**: Validates React components and Zustand state isolation.
+The testing suite strictly adheres to the **Arrange-Act-Assert (AAA)** pattern to ensure determinism and prevent flaky tests. We rely on state interrogation (`window.__store`) rather than brittle DOM timeouts.
+
+- **Unit & Integration**: Validates core logic (Drift Math, Zod boundaries, and Redis limits) and state isolation natively via Vitest without spinning up full backend environments.
   - Tooling: Vitest + jsdom + v8 coverage
   - Command: `npm run test:coverage`
-- **End-to-End (E2E)**: Simulates real browser websockets and UI operations.
+- **End-to-End (E2E)**: Simulates real browser websockets and UI operations with Playwright, enforcing cross-origin playback constraints.
   - Tooling: Playwright
   - Command: `npx playwright test`
-- **Prerequisites**: E2E boots the app on `localhost:3001` natively inside Chromium test workers.
+- **Prerequisites**: E2E requires the full multi-process Next.js + Socket.io gateway to be running on `localhost:3001` with an active Redis environment.
 
 | Test Type        | Tooling    | Command                 | Scope                                          |
 | ---------------- | ---------- | ----------------------- | ---------------------------------------------- |

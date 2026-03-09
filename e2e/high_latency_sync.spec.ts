@@ -7,12 +7,15 @@ test.describe("High Latency Network Chaos (TC-303)", () => {
   }) => {
     test.setTimeout(60000);
 
+    // ==========================================
+    // ARRANGE: Setup browsers, network bounds, and mock API
+    // ==========================================
     const context1 = await browser.newContext();
     const context2 = await browser.newContext();
     const hostPage = await context1.newPage();
     const viewerPage = await context2.newPage();
 
-    // 1. Arrange: Setup network conditions on Viewer
+    // Emulate 500ms latency on the viewer's CDP session
     const viewerCdp = await context2.newCDPSession(viewerPage);
     await viewerCdp.send("Network.enable");
     await viewerCdp.send("Network.emulateNetworkConditions", {
@@ -23,19 +26,8 @@ test.describe("High Latency Network Chaos (TC-303)", () => {
     });
 
     const roomUrl = getTestRoomUrl();
-    await joinRoom(hostPage, roomUrl, "Host");
-    await expect(hostPage.locator("input[value='Host']").first()).toBeVisible({
-      timeout: 15000,
-    });
 
-    await joinRoom(viewerPage, roomUrl, "Viewer");
-    await expect(
-      viewerPage.locator("input[value='Viewer']").first(),
-    ).toBeVisible({
-      timeout: 15000,
-    });
-
-    // Mock API
+    // Mock API to return predictable metadata and prevent network flakes
     const mockMetadataApi = async (route: any) => {
       await route.fulfill({
         status: 200,
@@ -49,6 +41,15 @@ test.describe("High Latency Network Chaos (TC-303)", () => {
     await hostPage.route("**/api/metadata*", mockMetadataApi);
     await viewerPage.route("**/api/metadata*", mockMetadataApi);
 
+    // Join room sequentially to avoid locking thrashing
+    await joinRoom(hostPage, roomUrl, "Host");
+    await expect(hostPage.locator("input[value='Host']").first()).toBeVisible();
+
+    await joinRoom(viewerPage, roomUrl, "Viewer");
+    await expect(
+      viewerPage.locator("input[value='Viewer']").first(),
+    ).toBeVisible();
+
     // Host queues video
     const testVideoUrl = "https://www.w3schools.com/html/mov_bbb.mp4";
     await hostPage.locator("button", { hasText: /Queue/i }).click();
@@ -59,16 +60,17 @@ test.describe("High Latency Network Chaos (TC-303)", () => {
     await urlInput.fill(testVideoUrl);
     await hostPage.locator("button", { hasText: "Init" }).click();
 
-    // 2. Arrange: Wait for UI to settle
+    // Wait for Playlist UI updates
     await expect(
       hostPage.locator("text=Latency Test Video").first(),
-    ).toBeVisible({ timeout: 15000 });
+    ).toBeVisible();
 
     const hostVideo = hostPage.locator("video").first();
     const viewerVideo = viewerPage.locator("video").first();
-    await hostVideo.waitFor({ state: "attached", timeout: 15000 });
-    await viewerVideo.waitFor({ state: "attached", timeout: 20000 }); // Give viewer more time
+    await hostVideo.waitFor({ state: "attached" });
+    await viewerVideo.waitFor({ state: "attached" });
 
+    // Validate Media loaded durations explicitly before user gestures
     await expect(async () => {
       const dur = await hostVideo.evaluate(
         (vid: HTMLVideoElement) => vid.duration,
@@ -77,7 +79,7 @@ test.describe("High Latency Network Chaos (TC-303)", () => {
       expect(Number.isNaN(dur)).toBe(false);
     }).toPass({ timeout: 15000 });
 
-    // Dismiss Intent Mask
+    // Dismiss Initial Gesture Guard
     await hostPage
       .getByRole("button", { name: /Initialize Stream Sync/i })
       .click();
@@ -85,6 +87,7 @@ test.describe("High Latency Network Chaos (TC-303)", () => {
       .getByRole("button", { name: /Initialize Stream Sync/i })
       .click();
 
+    // Ensure state bindings internally recognized initialization
     await hostPage.waitForFunction(
       () => {
         const state = (window as any).__store?.getState();
@@ -93,14 +96,18 @@ test.describe("High Latency Network Chaos (TC-303)", () => {
       { timeout: 15000 },
     );
 
-    // 3. Act: Host initiates playback
+    // ==========================================
+    // ACT: Host simulates playing the video
+    // ==========================================
     const playerWrapper = hostPage
       .getByTestId("player-interaction-layer")
       .first();
-    await playerWrapper.hover({ force: true }).catch(() => {});
     await playerWrapper.click({ force: true });
 
-    // Wait for Host to officially start playing
+    // ==========================================
+    // ASSERT: Validate the downstream OCC drift calculation behavior bounds
+    // ==========================================
+    // Wait for Host to reliably broadcast "playing" constraint locally
     await expect(async () => {
       const hostStatus = await hostPage.evaluate(
         () => (window as any).__store.getState().room?.playback?.status,
@@ -108,16 +115,15 @@ test.describe("High Latency Network Chaos (TC-303)", () => {
       expect(hostStatus).toBe("playing");
     }).toPass({ timeout: 10000 });
 
-    // 4. Assert: Viewer catches up despite 500ms latency without infinite looping
-    // It should eventually reach "playing" state
+    // Despite massive 500ms network RTT and occ version mismatch padding, viewer resolves correctly
     await expect(async () => {
       const viewerStatus = await viewerPage.evaluate(
         () => (window as any).__store.getState().room?.playback?.status,
       );
       expect(viewerStatus).toBe("playing");
-    }).toPass({ timeout: 20000 }); // Viewer needs extra time due to 500ms RTT
+    }).toPass({ timeout: 20000 });
 
-    // Assert that the video is actually advancing for viewer
+    // Ensure the player inherently catches up physically over time without ping-pong looping
     await expect(async () => {
       const viewerTime = await viewerVideo.evaluate(
         (vid: HTMLVideoElement) => vid.currentTime,

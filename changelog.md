@@ -17,6 +17,8 @@ All notable changes to this project will be documented in this file.
 - **QA Architecture**: Established strict AAA (Arrange-Act-Assert) conventions across all E2E and integration tests. Added `fast_path.test.ts` to independently verify Lua mutations without DB locks.
 - **Test Infrastructure (`server.test.ts`)**: Implemented `waitForSocketEvent` utility for integration tests to enforce strict AAA (Arrange-Act-Assert) patterns and eliminate race conditions within Socket.io callbacks. Added Test Case 304 (`worker_resilience.test.ts`) to verify database write-behind queue recovery.
 - **E2E Playwright Resilience**: Added TC-303 (`high_latency_sync.spec.ts`) utilizing CDP to simulate 500ms network latency to mathematically prove the drift-math algorithms compensate for network chaos correctly.
+- **QA & Testing Strategy Finalization**: Completed comprehensive system audit and enforced strict Arrange-Act-Assert (AAA) compliance across all E2E boundaries. Refactored `playback_sync.spec.ts` and `high_latency_sync.spec.ts` for deterministic state validations.
+- **Auth Boundary Unit Testing**: Implemented fully isolated unit tests in `room-handler.test.ts` to definitively verify guest privilege isolation logic beneath the Redis queue.
 
 ### Fixed
 
