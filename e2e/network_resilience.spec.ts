@@ -63,7 +63,7 @@ test.describe("Network Resilience (TC-302)", () => {
 
     // 4. Assert: Verify the re-established connection actually works with a privileged JWT action
     // "DropoutUser" is the first user, so they are the owner.
-    await page.locator("button", { hasText: /Queue/i }).click();
+    // The initial screen displays the empty player input
     const urlInput = page.locator(
       'input[placeholder="Paste video stream URL..."]',
     );

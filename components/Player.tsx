@@ -425,10 +425,7 @@ export default function Player() {
     }
 
     if (canControl && playback?.status !== "playing") {
-      const timeSinceMediaStart = Date.now() - (playback?.baseTimestamp || 0);
-      if (timeSinceMediaStart > 2000) {
-        emitCommand("play", { position: getAccurateTime() });
-      }
+      emitCommand("play", { position: getAccurateTime() });
     }
   };
 
@@ -442,11 +439,6 @@ export default function Player() {
       Date.now() < ignoreNativeEventsUntilRef.current ||
       userIsDraggingScrubberRef.current
     ) {
-      return;
-    }
-
-    const timeSinceMediaStart = Date.now() - (playback?.baseTimestamp || 0);
-    if (timeSinceMediaStart < 2000) {
       return;
     }
 
@@ -626,7 +618,10 @@ export default function Player() {
                 src={currentMedia.url}
                 width="100%"
                 height="100%"
-                controls={currentMedia.provider?.toLowerCase() === "youtube"}
+                controls={
+                  currentMedia.provider?.toLowerCase() === "youtube" ||
+                  currentMedia.provider?.toLowerCase() === "twitch"
+                }
                 playing={userJoined ? playing : false}
                 volume={volume}
                 muted={userJoined ? muted : true}
