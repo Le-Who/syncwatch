@@ -7,6 +7,7 @@ import {
 } from "./redis-actor";
 import { randomUUID } from "crypto";
 import { sanitizeRoom } from "./room-handler";
+import { markRoomForSync } from "./db-sync";
 
 export async function processQueueForRoom(roomId: string) {
   const redisClient = getRedisClient();
@@ -325,6 +326,9 @@ export async function processQueueForRoom(roomId: string) {
 
       // Atomically trim the chunk we just processed from the queue
       await redisClient.ltrim(queueKey, items.length, -1);
+
+      // Queue the room for database persistence
+      markRoomForSync(roomId);
 
       // Re-publish to socket threads
       await publishRoomEvent(roomId, {

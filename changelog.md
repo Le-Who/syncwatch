@@ -25,6 +25,7 @@ All notable changes to this project will be documented in this file.
 - **E2E Playwright Tests:** Fixed a minor TypeScript error accessing `_options.baseURL` within `e2e/helpers/room.ts`.
 - **E2E Playwright Tests:** Fixed a flaky locator within `e2e/network_resilience.spec.ts` where the test attempted to interact with the center Player overlay initialization bar after mistakenly switching to the Queue sidebar.
 - **Database Write-Behind Timeouts Data Loss**: Fixed a critical bug in `lib/redis-queue-worker.ts` where the worker used `lpop` to destroy queued commands before successful Database insertion. Replaced with atomic `lrange` and `ltrim` to ensure queues safely preserve data on DB 500/timeout errors.
+- **Queue Worker Data Loss**: Fixed a critical persistence hole where slow-path operations in `lib/redis-queue-worker.ts` modified Redis state but failed to enqueue the room for Supabase synchronization. Extracted queueing to `markRoomForSync` to decouple it from the DB client.
 - **Intent Mask Locator Drift**: Fixed E2E test locator instability by replacing brittle CSS class locators (`.react-player-wrapper`) with concrete `data-testid="player-interaction-layer"` data attributes.
 
 ### Changed

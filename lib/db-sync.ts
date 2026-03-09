@@ -33,19 +33,23 @@ export async function isSystemDegraded(): Promise<boolean> {
   return writeBehindQueue.size > 2000;
 }
 
+export const markRoomForSync = (roomId: string) => {
+  const redisClient = getRedisClient();
+  if (redisClient) {
+    redisClient
+      .zadd("pending_db_syncs", Date.now(), roomId)
+      .catch((e) => console.error("Redis queue error:", e));
+  } else {
+    writeBehindQueue.add(roomId);
+  }
+};
+
 export const persistRoomState = (
   room: RoomState,
   supabase: SupabaseClient | null,
 ) => {
   if (!supabase) return;
-  const redisClient = getRedisClient();
-  if (redisClient) {
-    redisClient
-      .zadd("pending_db_syncs", Date.now(), room.id)
-      .catch((e) => console.error("Redis queue error:", e));
-  } else {
-    writeBehindQueue.add(room.id);
-  }
+  markRoomForSync(room.id);
 };
 
 export const forcePersistRoom = async (
