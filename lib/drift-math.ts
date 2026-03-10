@@ -17,8 +17,16 @@ export function calculatePlaybackRate(
 
   // Minor drift threshold
   if (currentDrift > 0.5) {
-    const rateAdjustment = currentPosition < expectedPosition ? 1.05 : 0.95;
-    return serverPlaybackRate * rateAdjustment;
+    let adjustment = 0.05; // 5%
+    if (currentDrift > 2.0) {
+      adjustment = 0.15; // 15%
+    } else if (currentDrift > 1.0) {
+      adjustment = 0.1; // 10%
+    }
+    const rateAdjustment =
+      currentPosition < expectedPosition ? 1 + adjustment : 1 - adjustment;
+    const finalRate = serverPlaybackRate * rateAdjustment;
+    return Math.max(0.5, Math.min(2.0, finalRate));
   }
 
   // Perfect sync

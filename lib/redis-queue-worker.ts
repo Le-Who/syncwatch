@@ -333,7 +333,7 @@ export async function processQueueForRoom(roomId: string) {
       // Re-publish to socket threads
       await publishRoomEvent(roomId, {
         type: "state_update",
-        payload: room, // Note: scrub sensitive info if needed
+        payload: sanitizeRoom(room),
       });
     } else {
       // If no state changed (e.g. all commands stale or invalid), still trim them so we don't infinitely re-process

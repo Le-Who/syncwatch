@@ -2,54 +2,14 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { roomSocketService } from "./socket";
 import { toast } from "sonner";
-
-type PlaybackStatus = "playing" | "paused" | "buffering" | "ended";
-
-interface PlaybackState {
-  status: PlaybackStatus;
-  basePosition: number;
-  baseTimestamp: number;
-  rate: number;
-  updatedBy: string;
-  lastActionNonce?: string; // Optional because legacy rooms might not have it yet
-}
-
-interface PlaylistItem {
-  id: string;
-  url: string;
-  provider: string;
-  title: string;
-  duration: number;
-  addedBy: string;
-  startPosition?: number;
-  lastPosition?: number;
-  thumbnail?: string;
-}
-
-interface Participant {
-  id: string;
-  nickname: string;
-  role: "owner" | "moderator" | "guest";
-  lastSeen: number;
-}
-
-interface RoomSettings {
-  controlMode: "open" | "controlled" | "hybrid";
-  autoplayNext: boolean;
-  looping: boolean;
-}
-
-interface RoomState {
-  id: string;
-  name: string;
-  settings: RoomSettings;
-  participants: Record<string, Participant>;
-  playlist: PlaylistItem[];
-  currentMediaId: string | null;
-  playback: PlaybackState;
-  version: number;
-  sequence: number;
-}
+import {
+  RoomState,
+  PlaybackStatus,
+  PlaybackState,
+  PlaylistItem,
+  Participant,
+  RoomSettings,
+} from "./types";
 
 interface LocalSettingsState {
   volume: number;
@@ -345,6 +305,11 @@ export const useStore = create<AppState>((set, get) => ({
 
     const state = get();
     if (!state.room) return;
+
+    set((s) => ({
+      commandSequence: s.commandSequence + 1,
+    }));
+
     roomSocketService.sendCommand(
       state.room.id,
       state.commandSequence + 1,

@@ -2,9 +2,9 @@ import { Server } from "socket.io";
 import * as cookie from "cookie";
 import { jwtVerify } from "jose";
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "default_local_secret_dont_use_in_prod",
-);
+import { getJwtSecret } from "../jwt-config";
+
+const JWT_SECRET = getJwtSecret();
 
 export function setupSocketAuth(io: Server) {
   io.use(async (socket, next) => {

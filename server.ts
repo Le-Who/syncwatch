@@ -82,9 +82,15 @@ app.prepare().then(() => {
     }
   });
 
+  const isProduction = process.env.NODE_ENV === "production";
+  const corsOrigin =
+    isProduction && process.env.APP_URL
+      ? `https://${process.env.APP_URL}`
+      : "*";
+
   const io = new SocketIOServer(server, {
     cors: {
-      origin: "*",
+      origin: corsOrigin,
       methods: ["GET", "POST"],
       credentials: true,
     },

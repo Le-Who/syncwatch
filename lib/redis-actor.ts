@@ -1,46 +1,29 @@
 import { getRedisClient } from "./redis-rate-limit";
+import type { Redis } from "ioredis";
 
 export const pubClient = getRedisClient;
-export const subClient = () => getRedisClient()?.duplicate();
+let cachedSubClient: Redis | null = null;
+export const subClient = () => {
+  if (!cachedSubClient) {
+    cachedSubClient = getRedisClient()?.duplicate() || null;
+  }
+  return cachedSubClient;
+};
+
+import { LRUCache } from "./lru-cache";
 
 // LRU Cache for fallback when Redis is unavailable to prevent OOM
-class SimpleLRU {
-  private cache = new Map<string, { value: any; lastAccessed: number }>();
-  private readonly maxSize: number;
+const rawLocalRooms = new LRUCache<string, any>(500);
 
-  constructor(maxSize: number = 1000) {
-    this.maxSize = maxSize;
-  }
-
-  get(key: string) {
-    const item = this.cache.get(key);
-    if (item) {
-      item.lastAccessed = Date.now();
-      return JSON.parse(JSON.stringify(item.value)); // Clone to prevent mutation
-    }
-    return null;
-  }
-
-  set(key: string, value: any) {
-    if (this.cache.size >= this.maxSize && !this.cache.has(key)) {
-      // Find oldest key
-      let oldestKey: string | null = null;
-      let oldestTime = Infinity;
-      for (const [k, v] of this.cache.entries()) {
-        if (v.lastAccessed < oldestTime) {
-          oldestTime = v.lastAccessed;
-          oldestKey = k;
-        }
-      }
-      if (oldestKey) this.cache.delete(oldestKey);
-    }
-    this.cache.set(key, {
-      value: JSON.parse(JSON.stringify(value)),
-      lastAccessed: Date.now(),
-    });
-  }
-}
-const localRooms = new SimpleLRU(500);
+const localRooms = {
+  get: (key: string) => {
+    const val = rawLocalRooms.get(key);
+    return val ? JSON.parse(JSON.stringify(val)) : null; // Clone to prevent mutation
+  },
+  set: (key: string, value: any) => {
+    rawLocalRooms.set(key, JSON.parse(JSON.stringify(value)));
+  },
+};
 
 export async function withLock<T>(
   resourceId: string,

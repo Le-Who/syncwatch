@@ -6,6 +6,7 @@ export interface PlaybackState {
   baseTimestamp: number;
   rate: number;
   updatedBy: string;
+  lastActionNonce?: string;
 }
 
 export interface PlaylistItem {

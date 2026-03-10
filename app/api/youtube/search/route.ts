@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { checkRateLimit } from "@/lib/rate-limit";
+import { checkRedisRateLimit } from "@/lib/redis-rate-limit";
 import { Worker } from "worker_threads";
+import { LRUCache } from "@/lib/lru-cache";
 
 const ytSearchQuerySchema = z.string().min(1);
 
@@ -16,38 +17,6 @@ const ytSearchVideoSchema = z.object({
 const ytSearchResponseSchema = z.object({
   videos: z.array(ytSearchVideoSchema).catch([]),
 });
-
-// LRU Cache (L1)
-class LRUCache<K, V> {
-  private cache: Map<K, { value: V; expiresAt: number }> = new Map();
-  constructor(
-    private maxSize: number,
-    private ttlMs: number,
-  ) {}
-
-  get(key: K): V | undefined {
-    const item = this.cache.get(key);
-    if (!item) return undefined;
-    if (Date.now() > item.expiresAt) {
-      this.cache.delete(key);
-      return undefined;
-    }
-    // Refresh position
-    this.cache.delete(key);
-    this.cache.set(key, item);
-    return item.value;
-  }
-
-  set(key: K, value: V) {
-    if (this.cache.has(key)) {
-      this.cache.delete(key);
-    } else if (this.cache.size >= this.maxSize) {
-      const firstKey = this.cache.keys().next().value;
-      if (firstKey !== undefined) this.cache.delete(firstKey);
-    }
-    this.cache.set(key, { value, expiresAt: Date.now() + this.ttlMs });
-  }
-}
 
 const searchCache = new LRUCache<string, any>(200, 1000 * 60 * 60);
 
@@ -161,7 +130,8 @@ async function searchWithGoogleApi(query: string, apiKey: string) {
 
 export async function GET(request: Request) {
   const ip = request.headers.get("x-forwarded-for") || "unknown";
-  if (!checkRateLimit(ip, 20, 60000)) {
+  const allowed = await checkRedisRateLimit(ip, 20, 60);
+  if (!allowed) {
     return NextResponse.json({ error: "Too many requests" }, { status: 429 });
   }
 
@@ -199,18 +169,16 @@ export async function GET(request: Request) {
         rawResult = await searchYoutubeWithWorker(q, 5000);
       }
     } else {
-      if (ytSearchBreaker.isOpen()) {
+      // Either we have no API key, OR the breaker for the Google API is OPEN.
+      // In this case, we rely purely on the worker.
+      try {
+        rawResult = await searchYoutubeWithWorker(q, 5000);
+      } catch (e) {
+        console.error("Scraped worker failed:", e);
         return NextResponse.json(
           { error: "Search service temporarily unavailable" },
           { status: 503 },
         );
-      }
-      try {
-        rawResult = await searchYoutubeWithWorker(q, 5000);
-        ytSearchBreaker.recordSuccess();
-      } catch (e) {
-        ytSearchBreaker.recordFailure();
-        throw e;
       }
     }
 

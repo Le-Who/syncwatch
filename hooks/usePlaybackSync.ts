@@ -22,6 +22,7 @@ export function usePlaybackSync(props: {
   emitCommand: (type: string, payload: any) => void;
 }) {
   const driftRef = useRef(0);
+  const syncTimerRef = useRef<any>(null);
   const lastServerStateChangeRef = useRef<number>(0);
   const propsRef = useRef(props);
 
@@ -65,11 +66,15 @@ export function usePlaybackSync(props: {
           p.setPlaying(true);
         }
 
-        if (p.getControlMode() === "controlled" && p.getMyRole() === "owner") {
-          if (currentDrift > 0.6) {
+        if (p.getControlMode() === "controlled") {
+          if (currentDrift > 0.6 && p.getMyRole() === "owner") {
             p.emitCommand("sync_correction", { position: currentPosition });
             return;
+          } else if (currentDrift > 3.0) {
+            // Followers hard seek locally if drift is massive
+            p.performProgrammaticSeek(playback.basePosition);
           }
+          // Note: followers fall through to rate adjustment for 0.6 - 3.0s drift
         }
 
         const currentMedia = p.getCurrentMedia();
@@ -140,15 +145,24 @@ export function usePlaybackSync(props: {
           p.setPlaying(false);
         }
 
-        if (currentDrift > 1.0 && !p.getIsBuffering()) {
+        if (currentDrift > 3.0 && !p.getIsBuffering()) {
           p.intentManager.ignoreEventsFor(1500);
           p.performProgrammaticSeek(playback.basePosition);
         }
       }
+
+      // Adaptive interval based on drift magnitude
+      let nextIntervalMs = 500;
+      if (driftRef.current > 0.5) nextIntervalMs = 250;
+      else if (driftRef.current < 0.1) nextIntervalMs = 2000;
+
+      syncTimerRef.current = setTimeout(syncPlayback, nextIntervalMs) as any;
     };
 
-    const interval = setInterval(syncPlayback, 1000);
-    return () => clearInterval(interval);
+    syncTimerRef.current = setTimeout(syncPlayback, 500) as any;
+    return () => {
+      if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+    };
   }, []); // Empty deps so the interval sets up once, uses propsRef
 
   return { driftRef };

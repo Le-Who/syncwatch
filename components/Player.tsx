@@ -345,7 +345,10 @@ export default function Player() {
 
     intentManager.setPauseDebounce(() => {
       // Look at local state first
-      const expectedStatus = intentManager.getExpectedStatus(playback?.status);
+      const currentPlayback = useStore.getState().room?.playback;
+      const expectedStatus = intentManager.getExpectedStatus(
+        currentPlayback?.status,
+      );
 
       if (canControl && expectedStatus !== "paused") {
         emitCommand("pause", { position: getAccurateTime() });
@@ -403,9 +406,10 @@ export default function Player() {
     }
 
     if (canControl) {
-      emitCommand("seek", { position: newPosition });
       if (playing) {
-        emitCommand("play", { position: newPosition });
+        emitCommand("play", { position: newPosition, forceSeek: true });
+      } else {
+        emitCommand("seek", { position: newPosition });
       }
     }
   };
@@ -532,6 +536,11 @@ export default function Player() {
                     }}
                     onWaiting={() => {
                       setIsBuffering(true);
+                      if (canControl) {
+                        emitCommand("buffering", {
+                          position: getAccurateTime(),
+                        });
+                      }
                     }}
                     onPlaying={() => {
                       setIsBuffering(false);
@@ -620,6 +629,11 @@ export default function Player() {
                     }}
                     onWaiting={() => {
                       setIsBuffering(true);
+                      if (canControl) {
+                        emitCommand("buffering", {
+                          position: getAccurateTime(),
+                        });
+                      }
                     }}
                     onPlaying={() => {
                       setIsBuffering(false);

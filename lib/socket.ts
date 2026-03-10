@@ -162,7 +162,6 @@ class RoomSocketService {
   private syncClock() {
     if (!this.socket) return;
     const socket = this.socket;
-    let pings = 0;
     let offsets: number[] = [];
 
     const doPing = () => {
@@ -175,24 +174,35 @@ class RoomSocketService {
           const offset = serverTime - (end - rtt / 2);
 
           offsets.push(offset);
-          if (offsets.length > 5) offsets.shift();
+          if (offsets.length > 10) offsets.shift();
 
+          // Trimmed mean (discard min/max)
           const sorted = [...offsets].sort((a, b) => a - b);
-          const median = sorted[Math.floor(sorted.length / 2)];
-          this.emit("clock_sync", { offset: median });
+          let sum = 0;
+          let count = 0;
+          const startIdx = sorted.length > 3 ? 1 : 0;
+          const endIdx = sorted.length > 3 ? sorted.length - 1 : sorted.length;
+
+          for (let i = startIdx; i < endIdx; i++) {
+            sum += sorted[i];
+            count++;
+          }
+
+          this.emit("clock_sync", { offset: sum / count });
         },
       );
     };
 
-    doPing();
-    this.pingInterval = setInterval(() => {
-      pings++;
-      if (pings > 5) {
-        if (this.pingInterval) clearInterval(this.pingInterval);
-      } else {
-        doPing();
-      }
-    }, 1000);
+    let currentInterval = 1000;
+    const scheduleNextPing = () => {
+      if (!this.socket?.connected) return;
+      doPing();
+      currentInterval = Math.min(currentInterval * 1.5, 30000);
+      this.pingInterval = setTimeout(scheduleNextPing, currentInterval) as any;
+    };
+
+    if (this.pingInterval) clearTimeout(this.pingInterval as any);
+    scheduleNextPing();
   }
 }
 

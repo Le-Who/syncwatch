@@ -4,6 +4,10 @@ import yts from "yt-search";
 
 vi.mock("yt-search");
 
+vi.mock("@/lib/redis-rate-limit", () => ({
+  checkRedisRateLimit: vi.fn().mockReturnValue(true),
+}));
+
 describe("GET /api/youtube/playlist", () => {
   beforeEach(() => {
     vi.clearAllMocks();

@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 import { SignJWT } from "jose";
 import { checkRedisRateLimit } from "@/lib/redis-rate-limit";
 
-const secret = new TextEncoder().encode(
-  process.env.JWT_SECRET || "default_local_secret_dont_use_in_prod", // Provide a default for local dev
-);
+import { getJwtSecret } from "@/lib/jwt-config";
+
+const secret = getJwtSecret();
 
 export async function POST(request: Request) {
   const ip = request.headers.get("x-forwarded-for") || "unknown";

@@ -19,6 +19,7 @@ blob-report/
 # IDE & Caches
 .vscode/
 .idea/
+.agents/
 .eslintcache
 .stylelintcache
 npm-debug.log*
@@ -30,4 +31,4 @@ pnpm-debug.log*
 # Custom AI Skills and Workflows
 skills/
 .gemini/
-.kilocode/
+.kilocode/.env.example

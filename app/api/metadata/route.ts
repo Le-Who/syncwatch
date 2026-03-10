@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { checkRateLimit } from "@/lib/rate-limit";
+import { checkRedisRateLimit } from "@/lib/redis-rate-limit";
 import dns from "dns/promises";
 import { Parser } from "htmlparser2";
 import ipaddr from "ipaddr.js";
@@ -25,7 +25,8 @@ function isBogon(ipStr: string): boolean {
 
 export async function GET(request: NextRequest) {
   const ip = request.headers.get("x-forwarded-for") || "unknown";
-  if (!checkRateLimit(ip, 20, 60000)) {
+  const allowed = await checkRedisRateLimit(ip, 20, 60);
+  if (!allowed) {
     return NextResponse.json({ error: "Too many requests" }, { status: 429 });
   }
 

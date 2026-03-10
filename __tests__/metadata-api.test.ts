@@ -5,8 +5,8 @@ import { GET } from "../app/api/metadata/route";
 import { NextRequest } from "next/server";
 
 // Mock the rate limiter so our tests don't randomly fail
-vi.mock("../lib/rate-limit", () => ({
-  checkRateLimit: vi.fn().mockReturnValue(true),
+vi.mock("../lib/redis-rate-limit", () => ({
+  checkRedisRateLimit: vi.fn().mockReturnValue(true),
 }));
 
 // Mock DNS promises strictly

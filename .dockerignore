@@ -25,3 +25,4 @@ test-zod.ts
 playwright.config.ts
 skills/
 .gemini/
+.agents/

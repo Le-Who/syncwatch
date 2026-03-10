@@ -6,6 +6,11 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **Continuous Clock Sync**: Implemented dynamic `setInterval` daemon utilizing exponential backoff (1s→30s) and trimmed mean RTT offset calculations for ultra-stable clock parity.
+- **Adaptive Polling Intervals**: Client UI polling now dynamically shifts from 250ms to 2000ms based on measured drift magnitude.
+- **PID-Style Correction**: Drift mathematical heuristics now gradually shift player framerates (±5%/±10%/±15% steps) between 0.5x and 2.0x depending on severity.
+- **Network Buffering Propagation**: Plumbed the video player's raw `onWaiting` trigger out to the global DB room sequence to emit real-time buffering statuses to connected peers.
+- **Centralized Rate Limiting**: Moved all endpoints (`/api/metadata`, `/api/youtube/*`) to an enterprise leaky-bucket `ioredis` rate limiter.
 - **Architecture Refactoring (Intent Management)**: Extracted all timeout and boolean "intent masking" state variables from the `Player.tsx` god-component into a dedicated `PlaybackIntentManager` class, standardizing programmatic vs. native event precedence.
 - **UI Modularization**: Extracted raw UI elements (`AwaitingSignal`, `UpNextOverlay`) from `Player.tsx` into standalone functional components.
 - **Architecture Refactoring**: Extracted core media synchronization mathematics and Intent Masking out of `Player.tsx` and into a dedicated vanilla JS `SyncEngine`.
@@ -22,6 +27,10 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **Redundant WebSocket Egress**: Eliminated double network bursts on programmatic seeks by replacing standalone `seek` and `play` socket loops with packaged `forceSeek: true` flags.
+- **State Race Conditions**: Closed a closure leakage bug in `handleNativePause` by pulling state immutably from Zustand.
+- **Follower Rubber-banding**: Re-tuned controlled mode followers so the UI doesn't visually stutter through constant hard programmatic rewinds within an acceptable tolerance.
+- **Circuit Breaker Routing**: Fixed the YouTube Search circuit breaker which previously dead-ended requests natively instead of properly funneling closed pipes into the fallback Worker scraper.
 - **Twitch VOD Playback**: Fixed an issue where the native Twitch embedded player would vertically compress to 150px. Further stabilized integration by disabling conflicting generic custom UI controls over Twitch iframes and resolving a `_.current.play is not a function` error during active synchronization pauses.
 - **YouTube Playback Sync**: Fixed iframe origin mismatch issues during rapid scrub/pause actions by explicitly enforcing `enablejsapi: 1` and fallback target origins mapping.
 - **UI Layout Overflow**: Resolved parasitic scrolling and infinite reflow cycles on both mobile and desktop views by migrating to `100dvh` and enforcing a hard root-level `overflow: hidden`.
@@ -35,4 +44,6 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- **Package Identity**: Renamed `package.json` package identifier from `ai-studio-applet` to `syncwatch`.
+- **API Mocks**: Updated Vitest to mock centralized Redis-based rate limiters with 503 expectations.
 - **Backend Code Testability**: Exported `workerInterval` in `server.ts` to allow test suites to cleanly shut down write-behind background loops, preventing event loop leaks.

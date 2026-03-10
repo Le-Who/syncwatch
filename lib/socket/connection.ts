@@ -166,6 +166,9 @@ export function handleConnectionEvents(
                 r.version - 1,
               );
               if (success) {
+                // Ensure room departure state is written via DB queue
+                persistRoomState(r, supabase);
+
                 io.to(currentRoomId).emit("participant_left", {
                   participantId: currentParticipantId,
                 });

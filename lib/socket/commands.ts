@@ -15,9 +15,9 @@ import { persistRoomState, isSystemDegraded } from "../db-sync";
 import { sanitizeRoom } from "../room-handler";
 import { SocketContext } from "./context";
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "super-secret-key-for-development-only-123",
-);
+import { getJwtSecret } from "../jwt-config";
+
+const JWT_SECRET = getJwtSecret();
 
 export function handleCommandEvents(
   io: Server,

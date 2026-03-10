@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { GET } from "../route";
 import yts from "yt-search";
-import * as rateLimit from "@/lib/rate-limit";
+import * as rateLimit from "@/lib/redis-rate-limit";
 import { EventEmitter } from "events";
 
 vi.mock("yt-search", () => {
@@ -9,7 +9,7 @@ vi.mock("yt-search", () => {
     default: vi.fn(),
   };
 });
-vi.mock("@/lib/rate-limit");
+vi.mock("@/lib/redis-rate-limit");
 
 // Mocking Worker Threads to prevent actual execution of yt-search in isolated context
 vi.mock("worker_threads", () => {
@@ -45,7 +45,7 @@ vi.mock("worker_threads", () => {
 describe("GET /api/youtube/search", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(rateLimit.checkRateLimit).mockReturnValue(true);
+    vi.mocked(rateLimit.checkRedisRateLimit).mockResolvedValue(true);
     // Force fallback to scraped worker by omitting the API key in test environment
     delete process.env.YOUTUBE_API_KEY;
   });
@@ -59,7 +59,7 @@ describe("GET /api/youtube/search", () => {
   };
 
   it("should return 429 Too Many Requests if rate limit is exceeded", async () => {
-    vi.mocked(rateLimit.checkRateLimit).mockReturnValueOnce(false);
+    vi.mocked(rateLimit.checkRedisRateLimit).mockResolvedValueOnce(false);
 
     const req = createRequest(
       "http://localhost:3000/api/youtube/search?q=test",
@@ -123,7 +123,7 @@ describe("GET /api/youtube/search", () => {
     expect(data.videos[1].author).toBe("Unknown");
   });
 
-  it("should return 500 if yt-search throws an error", async () => {
+  it("should return 503 if yt-search throws an error resulting in service unavailability", async () => {
     (global as any).forceWorkerThrow = true;
 
     const req = createRequest(
@@ -131,9 +131,9 @@ describe("GET /api/youtube/search", () => {
     );
     const response = await GET(req);
 
-    expect(response.status).toBe(500);
+    expect(response.status).toBe(503);
     const data = await response.json();
-    expect(data.error).toBe("Search failed");
+    expect(data.error).toBe("Search service temporarily unavailable");
 
     delete (global as any).forceWorkerThrow;
   });

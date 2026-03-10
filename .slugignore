@@ -18,6 +18,7 @@ debug_investigation.md
 skills/
 .gemini/
 .kilocode/
+.agents/
 
 # Source Map files (if any are generated in production)
 *.map

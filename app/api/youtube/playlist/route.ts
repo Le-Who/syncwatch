@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import yts from "yt-search";
 import { z } from "zod";
+import { checkRedisRateLimit } from "@/lib/redis-rate-limit";
 
 const ytPlaylistQuerySchema = z.string().min(1);
 
@@ -19,6 +20,11 @@ const ytPlaylistResponseSchema = z.object({
 });
 
 export async function GET(request: Request) {
+  const ip = request.headers.get("x-forwarded-for") || "unknown";
+  const allowed = await checkRedisRateLimit(ip, 10, 60);
+  if (!allowed) {
+    return NextResponse.json({ error: "Too many requests" }, { status: 429 });
+  }
   const { searchParams } = new URL(request.url);
   const rawListId = searchParams.get("listId");
 
