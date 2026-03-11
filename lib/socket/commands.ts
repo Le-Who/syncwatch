@@ -71,21 +71,9 @@ export function handleCommandEvents(
       let stateChanged = false;
 
       while (occRetries > 0) {
-        stateChanged = false;
         if (!context.currentParticipantId) {
           socket.emit("error", {
             message: "Unauthorized command. No participant ID.",
-          });
-          return;
-        }
-
-        if (
-          context.currentParticipantId.startsWith("guest_") &&
-          type !== "upgrade_session"
-        ) {
-          socket.emit("error", {
-            message:
-              "Unauthorized command. Guest accounts cannot send commands.",
           });
           return;
         }

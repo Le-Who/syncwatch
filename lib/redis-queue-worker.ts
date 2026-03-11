@@ -300,6 +300,79 @@ export async function processQueueForRoom(roomId: string) {
             stateChanged = true;
             break;
 
+          case "video_ended":
+            // Anyone can report video ended naturally, no control check needed
+            if (payload.currentMediaId !== room.currentMediaId) break;
+
+            const activeItemEnded = room.playlist.find(
+              (i: any) => i.id === room.currentMediaId,
+            );
+            if (activeItemEnded) {
+              const elapsed =
+                room.playback.status === "playing"
+                  ? (Date.now() - room.playback.baseTimestamp) / 1000
+                  : 0;
+              activeItemEnded.lastPosition =
+                room.playback.basePosition + elapsed * room.playback.rate;
+            }
+
+            const endedIndex = room.playlist.findIndex(
+              (i: any) => i.id === room.currentMediaId,
+            );
+
+            if (endedIndex !== -1 && endedIndex < room.playlist.length - 1) {
+              if (room.settings.autoplayNext) {
+                const endedNextItem = room.playlist[endedIndex + 1];
+                room.currentMediaId = endedNextItem.id;
+                room.playback.status = "playing";
+                let startEndedNext =
+                  endedNextItem.lastPosition ||
+                  endedNextItem.startPosition ||
+                  0;
+                if (
+                  endedNextItem.duration > 0 &&
+                  startEndedNext >= endedNextItem.duration - 5
+                ) {
+                  startEndedNext = 0;
+                  endedNextItem.lastPosition = 0;
+                }
+                room.playback.basePosition = startEndedNext;
+                room.playback.baseTimestamp = Date.now();
+                room.playback.updatedBy = participantNickname;
+              } else {
+                room.playback.status = "paused";
+                room.playback.basePosition = activeItemEnded?.duration || 0;
+                room.playback.baseTimestamp = Date.now();
+                room.playback.updatedBy = participantNickname;
+              }
+              stateChanged = true;
+            } else if (room.settings.looping && room.playlist.length > 0) {
+              const loopItemEnded = room.playlist[0];
+              room.currentMediaId = loopItemEnded.id;
+              room.playback.status = "playing";
+              let startLoopEnded =
+                loopItemEnded.lastPosition || loopItemEnded.startPosition || 0;
+              if (
+                loopItemEnded.duration > 0 &&
+                startLoopEnded >= loopItemEnded.duration - 5
+              ) {
+                startLoopEnded = 0;
+                loopItemEnded.lastPosition = 0;
+              }
+              room.playback.basePosition = startLoopEnded;
+              room.playback.baseTimestamp = Date.now();
+              room.playback.updatedBy = participantNickname;
+              stateChanged = true;
+            } else {
+              // End of playlist without looping
+              room.playback.status = "paused";
+              room.playback.basePosition = activeItemEnded?.duration || 0;
+              room.playback.baseTimestamp = Date.now();
+              room.playback.updatedBy = participantNickname;
+              stateChanged = true;
+            }
+            break;
+
           // Legacy Sync Events remaining
           case "update_duration":
           case "update_room_name":
@@ -307,7 +380,6 @@ export async function processQueueForRoom(roomId: string) {
           case "update_role":
           case "claim_host":
           case "kick_participant":
-          case "video_ended":
             // Not fully re-mapped yet, keep the structural intent
             break;
         }

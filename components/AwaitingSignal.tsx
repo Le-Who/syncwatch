@@ -33,13 +33,52 @@ export function AwaitingSignal({
               const input = e.currentTarget.elements.namedItem(
                 "urlInput",
               ) as HTMLInputElement;
-              const url = input.value.trim();
+              const targetUrl = input.value.trim();
               const btn = e.currentTarget.querySelector("button");
               if (btn) btn.disabled = true;
 
-              if (url) {
-                const mediaInfo = await MediaApiService.fetchMediaInfo(url);
-                sendCommand("add_item", mediaInfo);
+              if (targetUrl) {
+                let playlistHandled = false;
+                if (
+                  targetUrl.includes("youtube.com") &&
+                  targetUrl.includes("list=")
+                ) {
+                  try {
+                    const urlObj = new URL(targetUrl);
+                    const listId = urlObj.searchParams.get("list");
+                    if (listId) {
+                      const res = await fetch(
+                        `/api/youtube/playlist?listId=${listId}`,
+                      );
+                      if (res.ok) {
+                        const data = await res.json();
+                        if (data.videos && data.videos.length > 0) {
+                          sendCommand("add_items", {
+                            items: data.videos.map((v: any) => ({
+                              url: v.url,
+                              provider: "YouTube",
+                              title: v.title,
+                              duration: v.duration,
+                              startPosition: 0,
+                              thumbnail: v.thumbnail,
+                            })),
+                          });
+                          playlistHandled = true;
+                        }
+                      }
+                    }
+                  } catch (err) {
+                    console.error("Playlist parse error", err);
+                  }
+                }
+
+                if (!playlistHandled) {
+                  const mediaInfo = await MediaApiService.fetchMediaInfo(
+                    targetUrl,
+                  );
+                  sendCommand("add_item", mediaInfo);
+                }
+
                 input.value = "";
               }
               if (btn) btn.disabled = false;

@@ -516,6 +516,17 @@ export default function Player() {
 
                       if (canControl) {
                         emitCommand("seek", { position: seconds });
+                        
+                        // Twitch native player auto-pauses when scrubbing.
+                        // If we were playing before the scrub, auto-resume after a short delay.
+                        if (playing) {
+                           intentManager.ignoreEventsFor(2000); // Suppress incoming Twitch native pause
+                           setTimeout(() => {
+                             if (realPlayerRef.current?.play) {
+                               realPlayerRef.current.play();
+                             }
+                           }, 200);
+                        }
                       }
                     }}
                     onDurationChange={(dur: number) => {

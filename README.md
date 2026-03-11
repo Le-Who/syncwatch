@@ -20,9 +20,11 @@ The system is designed for low-latency synchronization with eventual durability.
 
 Playback mutations (`play`, `pause`, `seek`) are highly sensitive to latency. These commands bypass normal queues and hit Redis directly using a **Lua Script (`lib/redis-lua.ts`)**. This guarantees atomic Validate-and-Apply operations (OCC) that enforce version checks, ensuring that out-of-order client network packets cannot overwrite newer state.
 
-### Write-Behind Queue (The "Slow Path")
+### Write-Behind Queue (The "Slow Path" & Auto-Switching)
 
-Operations like `add_item` or `reorder_playlist` use a reliable background worker (`lib/redis-queue-worker.ts`). State changes are applied to Redis first, then queued in a write-behind buffer (`lib/db-sync.ts`) to be flushed to Supabase. This shields the database from real-time websocket spam and ensures the app remains interactive even if Supabase experiences a temporary outage.
+Operations like `add_item`, `reorder_playlist`, and `video_ended` use a reliable background worker (`lib/redis-queue-worker.ts`). 
+- **Database Synchronization**: State changes are applied to Redis first, then queued in a write-behind buffer (`lib/db-sync.ts`) to be flushed to Supabase. This shields the database from real-time websocket spam.
+- **Auto-Switching**: When a provider (YouTube, Twitch, Vimeo) finishes playing the active media, `Player.tsx` immediately emits a `video_ended` command. The queue worker processes this intelligently: if the room has `autoplayNext` enabled, the worker automatically advances to the next track in the playlist. If not, it pauses on the final frame. Loop logic (`looping` setting) is equally handled server-side here.
 
 ## Data & Control Flow
 
@@ -71,6 +73,7 @@ npm start
 - **Stateful Hosting Required**: SyncWatch relies on persistent WebSocket connections via Socket.IO. It **cannot** be hosted on traditional stateless serverless platforms (e.g., standard Vercel functions). It requires long-running Node.js processes (e.g., Render, Railway, AWS ECS).
 - **Graceful Shutdown**: The service captures `SIGTERM` and `SIGINT` to definitively flush the Redis write-behind queue memory buffer to Postgres before dying. Do not kill processes with `SIGKILL` or recent playlist changes may be lost.
 - **Provider API Quotas**: The system uses a headless worker script to scrape YouTube if the `YOUTUBE_API_KEY` quota exhausts. However, Twitch metadata entirely lacks an oEmbed fallback and relies on raw HTML parsing, which is brittle.
+- **Twitch Native Seek Quirks**: Due to an explicit constraint in the Twitch Embed API v1, scrubbing the native Twitch player timeline *always* forces a `PAUSE` event. SyncWatch implements a client-side micro-debounce (`TwitchPlayer.tsx` / `Player.tsx`) that catches this specific native auto-pause when seeking while playing, overriding it mathematically to maintain sync without trapping the room in pause-loops.
 
 ## Testing Strategy
 

@@ -12,7 +12,7 @@ vi.mock("../lib/redis-rate-limit", () => ({
 vi.mock("../lib/redis-actor", () => ({
   getRedisRoom: vi.fn(),
   setRedisRoomCAS: vi.fn(),
-  publishRoomEvent: vi.fn(),
+  publishRoomEvent: vi.fn().mockResolvedValue(true),
   pubClient: vi.fn().mockReturnValue(null),
 }));
 
@@ -22,8 +22,12 @@ vi.mock("../lib/db-sync", () => ({
   isSystemDegraded: vi.fn().mockResolvedValue(false),
 }));
 
+vi.mock("../lib/redis-queue", () => ({
+  pushSlowCommand: vi.fn().mockResolvedValue(true),
+}));
+
 vi.mock("../lib/redis-lua", () => ({
-  executeFastMutation: vi.fn(),
+  executeFastMutation: vi.fn().mockResolvedValue({ success: true, room: {} }),
 }));
 
 describe("Room Handler Security & Auth Boundary", () => {
@@ -43,7 +47,7 @@ describe("Room Handler Security & Auth Boundary", () => {
 
     mockSocket = {
       id: "mock-socket-id",
-      data: { participantId: "guest_mock-socket-id" },
+      data: { participantId: "fallback_mock-socket-id" },
       handshake: { headers: {}, address: "127.0.0.1" },
       join: vi.fn(),
       emit: vi.fn(),
@@ -61,17 +65,17 @@ describe("Room Handler Security & Auth Boundary", () => {
     vi.restoreAllMocks();
   });
 
-  it("TC-U02: Guest accounts rejected on slow path commands (Privilege Escalation Prevention)", async () => {
+  it("TC-U02: Fallback users command passes socket validation (Guest concept removed)", async () => {
     // ==========================================
-    // ARRANGE: Setup an established room and a Guest user
+    // ARRANGE: Setup an established room and a Fallback user
     // ==========================================
     const roomId = "test-room-auth";
-    const guestId = "guest_123";
+    const fallbackId = "fallback_123";
 
     const mockRoom = createEmptyRoom(roomId, "Auth Room");
-    mockRoom.participants[guestId] = {
-      id: guestId,
-      nickname: "Guest123",
+    mockRoom.participants[fallbackId] = {
+      id: fallbackId,
+      nickname: "Fallback123",
       role: "guest",
       lastSeen: Date.now(),
     };
@@ -80,19 +84,19 @@ describe("Room Handler Security & Auth Boundary", () => {
     (redisActor.setRedisRoomCAS as any).mockResolvedValue(true);
 
     // Simulate join_room to set current keys
-    mockSocket.data.participantId = guestId;
-    await socketEventHandlers["join_room"]({ roomId, nickname: "Guest123" });
+    mockSocket.data.participantId = fallbackId;
+    await socketEventHandlers["join_room"]({ roomId, nickname: "Fallback123" });
 
     // Ensure mock room was fetched and the user successfully joined
     expect(mockSocket.join).toHaveBeenCalledWith(roomId);
 
     // ==========================================
-    // ACT: Guest attempts an unauthorized slow-path mutation (e.g. skip track / add_item)
+    // ACT: Fallback attempts a slow-path mutation (e.g. add_item)
     // ==========================================
     const payload = {
       roomId,
       type: "add_item",
-      payload: { url: "http://malicious.com" },
+      payload: { url: "http://example.com" },
       sequence: 1,
     };
 
@@ -102,10 +106,9 @@ describe("Room Handler Security & Auth Boundary", () => {
     await socketEventHandlers["command"](payload);
 
     // ==========================================
-    // ASSERT: Payload must be rejected purely on role boundaries without reaching Redis queues
+    // ASSERT: Payload must not be rejected at the socket layer.
+    // It should proceed to Lua/Queue checks (which are mocked).
     // ==========================================
-    expect(mockSocket.emit).toHaveBeenCalledWith("error", {
-      message: "Unauthorized command. Guest accounts cannot send commands.",
-    });
+    expect(mockSocket.emit).not.toHaveBeenCalledWith("error", expect.anything());
   });
 });

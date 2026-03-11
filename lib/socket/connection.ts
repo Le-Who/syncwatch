@@ -70,22 +70,17 @@ export function handleConnectionEvents(
       const pId = socket.data.participantId;
       const isFirst = Object.keys(room.participants).length === 0;
 
-      const isGuest = pId.startsWith("guest_");
-
-      if (!isGuest) {
-        const existingParticipant = room.participants[pId];
-        if (existingParticipant) {
-          existingParticipant.lastSeen = Date.now();
-          existingParticipant.nickname =
-            nickname || existingParticipant.nickname;
-        } else {
-          room.participants[pId] = {
-            id: pId,
-            nickname: nickname || `Guest ${Math.floor(Math.random() * 1000)}`,
-            role: isFirst ? "owner" : "guest",
-            lastSeen: Date.now(),
-          };
-        }
+      const existingParticipant = room.participants[pId];
+      if (existingParticipant) {
+        existingParticipant.lastSeen = Date.now();
+        existingParticipant.nickname = nickname || existingParticipant.nickname;
+      } else {
+        room.participants[pId] = {
+          id: pId,
+          nickname: nickname || `Guest ${Math.floor(Math.random() * 1000)}`,
+          role: isFirst ? "owner" : "guest",
+          lastSeen: Date.now(),
+        };
       }
 
       room.version++;
@@ -108,7 +103,6 @@ export function handleConnectionEvents(
     }
 
     const pId = socket.data.participantId;
-    const isGuest = pId.startsWith("guest_");
     socket.join(roomId);
     context.currentRoomId = roomId;
     context.currentParticipantId = pId;
@@ -118,13 +112,11 @@ export function handleConnectionEvents(
       serverTime: Date.now(),
     });
 
-    if (!isGuest) {
-      const joinedInfo = { ...finalRoomState.participants[pId] };
-      publishRoomEvent(roomId, {
-        type: "participant_joined",
-        payload: joinedInfo,
-      }).catch((e) => console.error("Failed publishing join", e));
-    }
+    const joinedInfo = { ...finalRoomState.participants[pId] };
+    publishRoomEvent(roomId, {
+      type: "participant_joined",
+      payload: joinedInfo,
+    }).catch((e) => console.error("Failed publishing join", e));
   });
 
   socket.on("reaction", (payload) => {

@@ -153,12 +153,13 @@ describe("server.ts Real Socket.IO Integration", () => {
     expect(participant.nickname).toBe("OwnerUser");
   });
 
-  it("TC-02: Guest users cannot mutate state", async () => {
-    // Arrange: Create Socket connection
+  it("TC-02: Fallback UUID users can mutate state (Guest concept removed)", async () => {
+    // Arrange: Create Socket connection without a token
     guestSocket = Client(ioServerPath, {
       path: "/socket.io",
       transports: ["websocket"],
       forceNew: true,
+      auth: { participantId: "fallback_123" },
     });
 
     await waitForSocketEvent(guestSocket, "connect");
@@ -167,15 +168,18 @@ describe("server.ts Real Socket.IO Integration", () => {
     const roomStatePromise = waitForSocketEvent(guestSocket, "room_state");
     guestSocket.emit("join_room", {
       roomId: "test-room-2",
-      nickname: "GuestUser",
-      participantId: "guest_123",
+      nickname: "FallbackUser",
+      participantId: "fallback_123",
     });
     await roomStatePromise;
 
-    // Arrange: Prepare to capture the expected error event
-    const errorPromise = waitForSocketEvent(guestSocket, "error");
-
     // Act: Attempt to mutate state via command
+    // We shouldn't get an error, but instead a room_state or state update via redis.
+    // For this test, just ensuring the command doesn't emit an error is enough to prove the firewall is gone.
+    const errorPromise = waitForSocketEvent(guestSocket, "error", 500).catch(
+      () => "NO_ERROR_THROWN",
+    );
+
     guestSocket.emit("command", {
       roomId: "test-room-2",
       type: "play",
@@ -183,11 +187,10 @@ describe("server.ts Real Socket.IO Integration", () => {
       sequence: 1,
     });
 
-    const err = await errorPromise;
+    const errResult = await errorPromise;
 
-    // Assert: Check the error payload
-    expect(err).toBeDefined();
-    expect(err.message).toContain("Guest accounts cannot send commands");
+    // Assert: We expect NO_ERROR_THROWN, meaning the command was accepted and processed or queued.
+    expect(errResult).toBe("NO_ERROR_THROWN");
   });
 
   it("TC-03: Invalid Zod command payload types are rejected immediately", async () => {

@@ -27,6 +27,10 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **YouTube Playlist Expansion**: `AwaitingSignal` now automatically detects YouTube playlist URLs (`list=...`), fetches the full sequence via API, and enqueues all items instead of failing with a single broken 'direct media' record.
+- **Playlist Auto-Switching**: Implemented server-side `video_ended` processing within the Redis queue worker. The room correctly auto-advances to the next video, pauses on the last frame, or loops back to the start in compliance with room `autoplayNext` and `looping` settings.
+- **Twitch Native Seek Quirks**: Mitigated an Embed API v1 flaw where native timeline scrubs forced sequential `PAUSE` events. An `intentManager` micro-debounce now ignores the ghost pause and automatically fires `.play()` to seamlessly maintain sync.
+
 - **Redundant WebSocket Egress**: Eliminated double network bursts on programmatic seeks by replacing standalone `seek` and `play` socket loops with packaged `forceSeek: true` flags.
 - **State Race Conditions**: Closed a closure leakage bug in `handleNativePause` by pulling state immutably from Zustand.
 - **Follower Rubber-banding**: Re-tuned controlled mode followers so the UI doesn't visually stutter through constant hard programmatic rewinds within an acceptable tolerance.
@@ -44,6 +48,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- **Optimistic Sync Firewall**: Redesigned socket authentication to fall back to an unconditionally trusted client-provided UUID string. Completely removed the lethal `guest_` firewall block that caused degraded sessions to silently drop valid playback commands.
 - **Package Identity**: Renamed `package.json` package identifier from `ai-studio-applet` to `syncwatch`.
 - **API Mocks**: Updated Vitest to mock centralized Redis-based rate limiters with 503 expectations.
 - **Backend Code Testability**: Exported `workerInterval` in `server.ts` to allow test suites to cleanly shut down write-behind background loops, preventing event loop leaks.

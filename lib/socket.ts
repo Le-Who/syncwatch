@@ -21,6 +21,7 @@ class RoomSocketService {
   public lastCommand: any = null;
 
   private latestSessionToken: string | null = null;
+  private latestParticipantId: string | null = null;
 
   public on(event: RoomSocketEvent, callback: Listener) {
     if (!this.listeners[event]) this.listeners[event] = [];
@@ -51,7 +52,10 @@ class RoomSocketService {
         transports: ["websocket"], // Force WebSocket to bypass Playwright HTTP interception quirks
         auth: (cb) => {
           // Send token in handshake to bypass strict cookie limits in isolated testing environments
-          cb({ token: this.latestSessionToken });
+          cb({ 
+            token: this.latestSessionToken,
+            participantId: this.latestParticipantId
+          });
         },
       });
 
@@ -102,6 +106,7 @@ class RoomSocketService {
     sessionToken: string | null,
   ) {
     this.latestSessionToken = sessionToken;
+    this.latestParticipantId = pId;
     const socket = this.getSocket();
     if (!socket.connected) {
       socket.connect();
@@ -128,14 +133,6 @@ class RoomSocketService {
     participantId?: string | null,
   ) {
     if (!this.socket || !this.socket.connected) return;
-
-    if (participantId && participantId.startsWith("guest_")) {
-      this.commandQueue.push({ type, payload, roomId, sequence });
-      this.emit("error", {
-        message: "Guest commands blocked, attempting resync",
-      });
-      return;
-    }
 
     this.lastCommand = { type, payload, roomId, sequence };
 

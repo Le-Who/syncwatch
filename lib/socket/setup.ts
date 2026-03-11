@@ -29,19 +29,20 @@ export function setupSocketAuth(io: Server) {
         }
       } else {
         console.warn(
-          "NO TOKEN PROVIDED! Fallback to guest. cookies:",
-          cookies,
+          "NO TOKEN PROVIDED or VERIFY FAILED. Using client-provided UUID.",
           "auth:",
           socket.handshake.auth,
         );
       }
 
-      socket.data.participantId = `guest_${socket.id}`;
+      const clientParticipantId = socket.handshake.auth?.participantId || socket.id;
+      socket.data.participantId = clientParticipantId;
       next();
     } catch (err) {
       console.error("UNKNOWN ERROR IN IO.USE FAILED!", err);
-      // Even on error, allow connection but mark as temporary guest to prevent UI freezes
-      socket.data.participantId = `guest_${socket.id}`;
+      // Even on error, allow connection but mark with client ID to prevent UI freezes
+      const fallbackId = socket.handshake.auth?.participantId || socket.id;
+      socket.data.participantId = fallbackId;
       next();
     }
   });
