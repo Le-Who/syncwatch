@@ -78,7 +78,7 @@ export function handleConnectionEvents(
         room.participants[pId] = {
           id: pId,
           nickname: nickname || `Guest ${Math.floor(Math.random() * 1000)}`,
-          role: isFirst ? "owner" : "guest",
+          role: isFirst ? "owner" : "viewer",
           lastSeen: Date.now(),
         };
       }

@@ -18,7 +18,7 @@ describe("OCC Thrashing Simulation (Phase 1)", () => {
       sequence: 1,
       participants: {
         u1: { id: "u1", role: "owner" },
-        u2: { id: "u2", role: "guest" },
+        u2: { id: "u2", role: "viewer" },
       },
       settings: { controlMode: "open" },
       playlist: [],

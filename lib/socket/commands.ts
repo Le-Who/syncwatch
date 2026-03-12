@@ -162,7 +162,7 @@ export function handleCommandEvents(
                   (jwtPayload.nickname as string) ||
                   oldParticipant?.nickname ||
                   `User`,
-                role: isFirst ? "owner" : "guest",
+                role: isFirst ? "owner" : "viewer",
                 lastSeen: Date.now(),
               };
 

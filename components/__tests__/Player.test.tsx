@@ -84,7 +84,7 @@ describe("Player Component", () => {
           ],
           settings: { controlMode: "open" },
           participants: {
-            user1: { role: "guest" },
+            user1: { role: "viewer" },
           },
         },
         participantId: "user1",
@@ -118,7 +118,7 @@ describe("Player Component", () => {
             rate: 1,
           },
           participants: {
-            user1: { role: "guest" },
+            user1: { role: "viewer" },
           },
         },
         participantId: "user1",
@@ -167,7 +167,7 @@ describe("Player Component", () => {
             baseTimestamp: Date.now() - 5000,
             rate: 1,
           },
-          participants: { user1: { role: "guest" } },
+          participants: { user1: { role: "viewer" } },
         },
         participantId: "user1",
         sendCommand: mockSendCommand,

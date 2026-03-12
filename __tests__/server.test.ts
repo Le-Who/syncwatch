@@ -72,7 +72,7 @@ const waitForSocketEvent = (
 
 describe("server.ts Real Socket.IO Integration", () => {
   let clientSocket: ClientSocket;
-  let guestSocket: ClientSocket;
+  let viewerSocket: ClientSocket;
   let hostileSocket: ClientSocket;
   let recoverySocket: ClientSocket;
 
@@ -103,7 +103,7 @@ describe("server.ts Real Socket.IO Integration", () => {
 
   afterAll(() => {
     if (clientSocket) clientSocket.close();
-    if (guestSocket) guestSocket.close();
+    if (viewerSocket) viewerSocket.close();
     if (hostileSocket) hostileSocket.close();
     if (recoverySocket) recoverySocket.close();
     if (httpServer) httpServer.close();
@@ -155,18 +155,18 @@ describe("server.ts Real Socket.IO Integration", () => {
 
   it("TC-02: Fallback UUID users can mutate state (Guest concept removed)", async () => {
     // Arrange: Create Socket connection without a token
-    guestSocket = Client(ioServerPath, {
+    viewerSocket = Client(ioServerPath, {
       path: "/socket.io",
       transports: ["websocket"],
       forceNew: true,
       auth: { participantId: "fallback_123" },
     });
 
-    await waitForSocketEvent(guestSocket, "connect");
+    await waitForSocketEvent(viewerSocket, "connect");
 
     // Arrange: Join the room (Precondition)
-    const roomStatePromise = waitForSocketEvent(guestSocket, "room_state");
-    guestSocket.emit("join_room", {
+    const roomStatePromise = waitForSocketEvent(viewerSocket, "room_state");
+    viewerSocket.emit("join_room", {
       roomId: "test-room-2",
       nickname: "FallbackUser",
       participantId: "fallback_123",
@@ -176,11 +176,11 @@ describe("server.ts Real Socket.IO Integration", () => {
     // Act: Attempt to mutate state via command
     // We shouldn't get an error, but instead a room_state or state update via redis.
     // For this test, just ensuring the command doesn't emit an error is enough to prove the firewall is gone.
-    const errorPromise = waitForSocketEvent(guestSocket, "error", 500).catch(
+    const errorPromise = waitForSocketEvent(viewerSocket, "error", 500).catch(
       () => "NO_ERROR_THROWN",
     );
 
-    guestSocket.emit("command", {
+    viewerSocket.emit("command", {
       roomId: "test-room-2",
       type: "play",
       payload: { position: 10 },

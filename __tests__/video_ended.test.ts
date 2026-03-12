@@ -55,7 +55,7 @@ describe("Queue Worker: video_ended command", () => {
       },
       participants: {
         "user-1": { id: "user-1", nickname: "Owner", role: "owner", lastSeen: Date.now() },
-        "viewer-1": { id: "viewer-1", nickname: "Viewer", role: "guest", lastSeen: Date.now() }
+        "viewer-1": { id: "viewer-1", nickname: "Viewer", role: "viewer", lastSeen: Date.now() }
       },
       playlist: [
         { id: "item-1", url: "http://vid1.com", title: "Vid1", provider: "youtube", duration: 100, lastPosition: 0, addedBy: "user-1" },

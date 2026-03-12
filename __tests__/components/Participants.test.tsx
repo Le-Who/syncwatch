@@ -32,9 +32,9 @@ describe("Participants Component (Unit Tests)", () => {
         participants: {
           "user-owner": { id: "user-owner", role: "owner", nickname: "Alice" },
           "user-mod": { id: "user-mod", role: "moderator", nickname: "Bob" },
-          "user-guest": {
-            id: "user-guest",
-            role: "guest",
+          "user-viewer": {
+            id: "user-viewer",
+            role: "viewer",
             nickname: "Charlie",
           },
         },
@@ -83,19 +83,19 @@ describe("Participants Component (Unit Tests)", () => {
   });
 
   it("TC-UI-12: Prevents Guests from seeing the manage menu", () => {
-    // Change current user to guest
+    // Change current user to viewer
     (useStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
       room: {
         participants: {
           "user-owner": { id: "user-owner", role: "owner", nickname: "Alice" },
-          "user-guest": {
-            id: "user-guest",
-            role: "guest",
+          "user-viewer": {
+            id: "user-viewer",
+            role: "viewer",
             nickname: "Charlie",
           },
         },
       },
-      participantId: "user-guest",
+      participantId: "user-viewer",
       sendCommand: mockSendCommand,
       setNickname: mockSetNickname,
     });
@@ -119,7 +119,7 @@ describe("Participants Component (Unit Tests)", () => {
     fireEvent.click(promoteBtn);
 
     expect(mockSendCommand).toHaveBeenCalledWith("update_role", {
-      participantId: "user-guest",
+      participantId: "user-viewer",
       role: "moderator",
     });
   });
@@ -135,7 +135,7 @@ describe("Participants Component (Unit Tests)", () => {
 
     expect(mockSendCommand).toHaveBeenCalledWith("update_role", {
       participantId: "user-mod",
-      role: "guest",
+      role: "viewer",
     });
   });
 });

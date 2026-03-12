@@ -30,11 +30,11 @@ export default function Participants() {
   if (!room) return null;
 
   const currentUserRole =
-    room.participants[participantId || ""]?.role || "guest";
+    room.participants[participantId || ""]?.role || "viewer";
   const isOwner = currentUserRole === "owner";
 
   const participants = Object.values(room.participants).sort((a, b) => {
-    const roles = { owner: 3, moderator: 2, guest: 1 };
+    const roles = { owner: 3, moderator: 2, viewer: 1 };
     const wA = roles[a.role as keyof typeof roles] || 0;
     const wB = roles[b.role as keyof typeof roles] || 0;
     if (wA !== wB) return wB - wA;
@@ -153,7 +153,7 @@ export default function Participants() {
                         )}
                         {p.role === "moderator" && (
                           <button
-                            onClick={() => handleRoleChange(p.id, "guest")}
+                            onClick={() => handleRoleChange(p.id, "viewer")}
                             className="text-theme-text flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold tracking-wide transition-colors hover:bg-orange-500/20 hover:text-orange-500"
                           >
                             <ShieldMinus className="h-4 w-4" /> Remove Mod

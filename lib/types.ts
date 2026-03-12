@@ -24,7 +24,7 @@ export interface PlaylistItem {
 export interface Participant {
   id: string;
   nickname: string;
-  role: "owner" | "moderator" | "guest";
+  role: "owner" | "moderator" | "viewer";
   lastSeen: number;
   sessionToken?: string;
 }

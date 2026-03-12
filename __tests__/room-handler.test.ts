@@ -76,7 +76,7 @@ describe("Room Handler Security & Auth Boundary", () => {
     mockRoom.participants[fallbackId] = {
       id: fallbackId,
       nickname: "Fallback123",
-      role: "guest",
+      role: "viewer",
       lastSeen: Date.now(),
     };
 

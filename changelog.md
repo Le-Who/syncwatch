@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- Global refactor: Removed the legacy `guest` terminology and replaced it with `viewer` across the TypeScript interfaces, Socket.io connection logic, and React UI to accurately reflect permission structures.
+- Updated Supabase schema `room_members_role_check` constraint to accept `'viewer'` instead of `'guest'`.
+
+### Fixed
+- Fixed non-idempotent `ADD CONSTRAINT` in the migration `00011_rename_guest_to_viewer.sql` to ensure `supabase db push` safely executes on subsequent runs.
+
 ### Added
 
 - **Continuous Clock Sync**: Implemented dynamic `setInterval` daemon utilizing exponential backoff (1s→30s) and trimmed mean RTT offset calculations for ultra-stable clock parity.

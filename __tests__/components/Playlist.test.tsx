@@ -102,7 +102,7 @@ describe("Playlist Component (Unit Tests)", () => {
         settings: { controlMode: "controlled" }, // Not open
         currentMediaId: "vid-1",
         participants: {
-          "user-guest": { role: "guest" }, // Guest role
+          "user-viewer": { role: "viewer" }, // Viewer role
         },
         playlist: [
           {
@@ -118,7 +118,7 @@ describe("Playlist Component (Unit Tests)", () => {
           rate: 1,
         },
       },
-      participantId: "user-guest",
+      participantId: "user-viewer",
       sendCommand: mockSendCommand,
     });
 
