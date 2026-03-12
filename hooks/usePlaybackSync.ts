@@ -38,10 +38,14 @@ export function usePlaybackSync(props: {
       const playback = state.room?.playback;
       const serverClockOffset = state.serverClockOffset;
 
-      if (!playback || !p.getIsReady() || p.getSeeking()) return;
+      if (!playback || !p.getIsReady() || p.getSeeking()) {
+        syncTimerRef.current = setTimeout(syncPlayback, 200) as any;
+        return;
+      }
 
       if (p.intentManager.isRecentCommand(1500)) {
-        // Optimistic UI barrier
+        // Optimistic UI barrier — reschedule to retry shortly
+        syncTimerRef.current = setTimeout(syncPlayback, 200) as any;
         return;
       }
 

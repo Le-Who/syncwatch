@@ -10,6 +10,9 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 - Fixed non-idempotent `ADD CONSTRAINT` in the migration `00011_rename_guest_to_viewer.sql` to ensure `supabase db push` safely executes on subsequent runs.
+- **Sync Loop Death** (`usePlaybackSync.ts`): Fixed a critical bug where the client sync loop died permanently if the player wasn't ready on the first 500ms tick. Early returns (`!getIsReady()`, `getSeeking()`, `isRecentCommand()`) now always reschedule `setTimeout` with a 200ms retry, keeping the loop alive until the player is ready.
+- **Double Room State Emission** (`commands.ts`): Fixed fast-path commands (play/pause/seek) emitting `room_state` twice — once via direct `io.to().emit()` and again via Redis PubSub. Replaced with conditional logic: PubSub-only broadcast when Redis is available, direct emit as single-node fallback.
+- **PubSub Handler Cross-Fire** (`pubsub.ts`): Fixed two separate `pmessage` handlers on the same ioredis subscriber both firing on every message. The `room_events` handler lacked a channel prefix guard and processed `queue_wakeup` messages. Merged into a single handler with explicit `channel.startsWith()` routing.
 
 ### Added
 

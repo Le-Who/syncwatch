@@ -115,16 +115,22 @@ export function handleCommandEvents(
 
           if (result.success && result.state) {
             const sanitizeFastRoom = sanitizeRoom(result.state);
-            io.to(roomId).emit("room_state", {
-              room: sanitizeFastRoom,
-              serverTime: Date.now(),
-            });
             persistRoomState(result.state, supabase);
 
-            await publishRoomEvent(roomId, {
-              type: "state_update",
-              payload: sanitizeFastRoom,
-            });
+            const pClient = pubClient();
+            if (pClient) {
+              // Multi-node: PubSub handles broadcast (including back to this node)
+              await publishRoomEvent(roomId, {
+                type: "state_update",
+                payload: sanitizeFastRoom,
+              });
+            } else {
+              // Single-node fallback: direct emit when no PubSub available
+              io.to(roomId).emit("room_state", {
+                room: sanitizeFastRoom,
+                serverTime: Date.now(),
+              });
+            }
 
             break;
           } else if (result.error === "VERSION_CONFLICT") {

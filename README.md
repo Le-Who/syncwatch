@@ -91,3 +91,13 @@ npm start
 
 - Current integration tests require a live Redis instance. Consider adding an ephemeral in-memory redis-mock for CI pipelining robustness.
 - `usePlaybackSync` drift parameters (`±15%` max) are currently hardcoded. They could be exposed as room settings for users on high-jitter networks.
+- The `disconnect` handler in `connection.ts` uses a 15-second `setTimeout` before cleanup. During this window a stale participant remains visible.
+- Legacy sync events (`update_duration`, `update_room_name`, `update_nickname`, `update_role`, `claim_host`, `kick_participant`) in `redis-queue-worker.ts` are structurally acknowledged but have empty handlers — they are not yet fully re-implemented.
+
+## Fixed Issues Log
+
+| Issue | File | Description |
+|-------|------|-------------|
+| Sync loop death | `hooks/usePlaybackSync.ts` | Early returns (`!getIsReady()`, `getSeeking()`, `isRecentCommand()`) exited `syncPlayback` without rescheduling `setTimeout`, permanently killing the sync loop. Fixed by rescheduling with 200ms retry on all early exits. |
+| Double room_state emit | `lib/socket/commands.ts` | Fast path success both emitted `room_state` directly to local sockets AND published via PubSub (which re-emitted). Clients on the same node received the event twice. Fixed with conditional logic: PubSub when Redis is available, direct emit as single-node fallback. |
+| PubSub handler cross-fire | `lib/socket/pubsub.ts` | Two separate `pmessage` handlers on the same ioredis subscriber caused both to fire on every message. The `room_events` handler lacked a prefix guard and would process `queue_wakeup` messages. Fixed by merging into a single handler with explicit `channel.startsWith()` routing. |
