@@ -83,10 +83,17 @@ app.prepare().then(() => {
   });
 
   const isProduction = process.env.NODE_ENV === "production";
-  const corsOrigin =
-    isProduction && process.env.APP_URL
-      ? `https://${process.env.APP_URL}`
-      : "*";
+  let corsOrigin = "*";
+  if (isProduction && process.env.APP_URL) {
+    try {
+      const urlString = process.env.APP_URL.startsWith("http")
+        ? process.env.APP_URL
+        : `https://${process.env.APP_URL}`;
+      corsOrigin = new URL(urlString).origin;
+    } catch {
+      corsOrigin = process.env.APP_URL;
+    }
+  }
 
   const io = new SocketIOServer(server, {
     cors: {

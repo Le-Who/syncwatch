@@ -212,8 +212,14 @@ export default function Player() {
     setError(null);
     setIsReady(false);
     setIsBuffering(false);
+    
+    // MEDIA TRANSITION GUARD: Suppress native play/pause events during media 
+    // transition to prevent spurious pause commands from overriding the server's 
+    // "playing" state. YouTube iframe fires a pause during load.
+    intentManager.ignoreEventsFor(3000);
+    
     // Twitch is always fully managed by our UI now to prevent Unmount/Autoplay Policy breakage
-  }, [currentMediaId]);
+  }, [currentMediaId, intentManager]);
 
   // Handle Server-Side OCC Rejections (Race Condition Flashback)
   useEffect(() => {
@@ -501,6 +507,12 @@ export default function Player() {
                       realPlayerRef.current = playerRef.current; // The TwitchPlayer exposes getInternalPlayer etc via its own ref
                       setIsReady(true);
                       setError(null);
+
+                      // Auto-resume if server is playing after media switch
+                      const currentPlayback = useStore.getState().room?.playback;
+                      if (currentPlayback?.status === "playing") {
+                        setPlaying(true);
+                      }
                     }}
                     onError={(e: any) => {
                       console.error("Twitch Player error:", e);
@@ -581,6 +593,12 @@ export default function Player() {
                       realPlayerRef.current = rPlayer;
                       setIsReady(true);
                       setError(null);
+
+                      // Auto-resume if server is playing after media switch
+                      const currentPlayback = useStore.getState().room?.playback;
+                      if (currentPlayback?.status === "playing") {
+                        setPlaying(true);
+                      }
 
                       // Extract HLS Levels if it's a direct stream
                       if (

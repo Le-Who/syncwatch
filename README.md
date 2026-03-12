@@ -26,6 +26,12 @@ Operations like `add_item`, `reorder_playlist`, and `video_ended` use a reliable
 - **Database Synchronization**: State changes are applied to Redis first, then queued in a write-behind buffer (`lib/db-sync.ts`) to be flushed to Supabase. This shields the database from real-time websocket spam.
 - **Auto-Switching**: When a provider (YouTube, Twitch, Vimeo) finishes playing the active media, `Player.tsx` immediately emits a `video_ended` command. The queue worker processes this intelligently: if the room has `autoplayNext` enabled, the worker automatically advances to the next track in the playlist. If not, it pauses on the final frame. Loop logic (`looping` setting) is equally handled server-side here.
 
+### PlaybackIntentManager & Media Transitions
+
+Because Native HTML5, YouTube iframe, and Twitch embed players fire lifecycle events asynchronously, the `PlaybackIntentManager` masks spurious native events from reaching the server.
+- **Media Transitions**: When `currentMediaId` changes during auto-advancement, native iframes often fire a `pause` event during load. The intent manager employs an `ignoreEventsFor(3000)` guard strictly enforcing the server-authoritative "playing" state.
+- **User Scrubber Intent**: Dragging the seeker bar suppresses buffer/pause events protecting against "rubber-banding" server correction locks.
+
 ## Data & Control Flow
 
 1. **Client Action**: User pauses the video. Client creates a unique nonce, optimistically updates local Zustand state, and emits a `pause` websocket command.
@@ -73,6 +79,7 @@ npm start
 - **Stateful Hosting Required**: SyncWatch relies on persistent WebSocket connections via Socket.IO. It **cannot** be hosted on traditional stateless serverless platforms (e.g., standard Vercel functions). It requires long-running Node.js processes (e.g., Render, Railway, AWS ECS).
 - **Graceful Shutdown**: The service captures `SIGTERM` and `SIGINT` to definitively flush the Redis write-behind queue memory buffer to Postgres before dying. Do not kill processes with `SIGKILL` or recent playlist changes may be lost.
 - **Provider API Quotas**: The system uses a headless worker script to scrape YouTube if the `YOUTUBE_API_KEY` quota exhausts. However, Twitch metadata entirely lacks an oEmbed fallback and relies on raw HTML parsing, which is brittle.
+- **Browser Autoplay Policies**: Modern browsers aggressively block autoplay without user interaction. SyncWatch forces a "Initialize Stream Sync" confirmation click before mounting `react-player`.
 - **Twitch Native Seek Quirks**: Due to an explicit constraint in the Twitch Embed API v1, scrubbing the native Twitch player timeline *always* forces a `PAUSE` event. SyncWatch implements a client-side micro-debounce (`TwitchPlayer.tsx` / `Player.tsx`) that catches this specific native auto-pause when seeking while playing, overriding it mathematically to maintain sync without trapping the room in pause-loops.
 
 ## Testing Strategy
