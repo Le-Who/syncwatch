@@ -73,9 +73,8 @@ export function AwaitingSignal({
                 }
 
                 if (!playlistHandled) {
-                  const mediaInfo = await MediaApiService.fetchMediaInfo(
-                    targetUrl,
-                  );
+                  const mediaInfo =
+                    await MediaApiService.fetchMediaInfo(targetUrl);
                   sendCommand("add_item", mediaInfo);
                 }
 

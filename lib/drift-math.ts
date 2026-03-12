@@ -5,8 +5,14 @@ export function calculatePlaybackRate(
   serverPlaybackRate: number,
   isBuffering: boolean,
   isIframeProvider: boolean,
+  providerName?: string,
 ): number {
-  if (isBuffering || isIframeProvider) {
+  const provider = providerName?.toLowerCase() || "";
+  const isTwitch = provider === "twitch";
+  const isYouTube = provider === "youtube";
+
+  // Twitch & Vimeo: no reliable setPlaybackRate API — skip rate correction
+  if (isBuffering || (isIframeProvider && !isYouTube) || isTwitch) {
     return serverPlaybackRate;
   }
 
@@ -23,6 +29,12 @@ export function calculatePlaybackRate(
     } else if (currentDrift > 1.0) {
       adjustment = 0.1; // 10%
     }
+
+    // YouTube iframe: cap at gentle ±3% to avoid user-noticeable speed changes
+    if (isYouTube) {
+      adjustment = Math.min(adjustment, 0.03);
+    }
+
     const rateAdjustment =
       currentPosition < expectedPosition ? 1 + adjustment : 1 - adjustment;
     const finalRate = serverPlaybackRate * rateAdjustment;

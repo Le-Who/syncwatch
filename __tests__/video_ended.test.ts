@@ -54,13 +54,47 @@ describe("Queue Worker: video_ended command", () => {
         autoplayNext: true, // Key setting for these tests
       },
       participants: {
-        "user-1": { id: "user-1", nickname: "Owner", role: "owner", lastSeen: Date.now() },
-        "viewer-1": { id: "viewer-1", nickname: "Viewer", role: "viewer", lastSeen: Date.now() }
+        "user-1": {
+          id: "user-1",
+          nickname: "Owner",
+          role: "owner",
+          lastSeen: Date.now(),
+        },
+        "viewer-1": {
+          id: "viewer-1",
+          nickname: "Viewer",
+          role: "viewer",
+          lastSeen: Date.now(),
+        },
       },
       playlist: [
-        { id: "item-1", url: "http://vid1.com", title: "Vid1", provider: "youtube", duration: 100, lastPosition: 0, addedBy: "user-1" },
-        { id: "item-2", url: "http://vid2.com", title: "Vid2", provider: "twitch", duration: 200, lastPosition: 0, addedBy: "user-1" },
-        { id: "item-3", url: "http://vid3.com", title: "Vid3", provider: "vimeo", duration: 300, lastPosition: 0, addedBy: "user-1" }
+        {
+          id: "item-1",
+          url: "http://vid1.com",
+          title: "Vid1",
+          provider: "youtube",
+          duration: 100,
+          lastPosition: 0,
+          addedBy: "user-1",
+        },
+        {
+          id: "item-2",
+          url: "http://vid2.com",
+          title: "Vid2",
+          provider: "twitch",
+          duration: 200,
+          lastPosition: 0,
+          addedBy: "user-1",
+        },
+        {
+          id: "item-3",
+          url: "http://vid3.com",
+          title: "Vid3",
+          provider: "vimeo",
+          duration: 300,
+          lastPosition: 0,
+          addedBy: "user-1",
+        },
       ],
       currentMediaId: "item-1",
       playback: {
@@ -68,8 +102,8 @@ describe("Queue Worker: video_ended command", () => {
         basePosition: 99,
         rate: 1,
         baseTimestamp: Date.now(),
-        updatedBy: "user-1"
-      }
+        updatedBy: "user-1",
+      },
     };
 
     (redisActor.getRedisRoom as any).mockResolvedValue(mockRoom);
@@ -93,13 +127,14 @@ describe("Queue Worker: video_ended command", () => {
     await runWorkerWithJob(job);
 
     expect(redisActor.setRedisRoom).toHaveBeenCalled();
-    const updatedRoom: RoomState = (redisActor.setRedisRoom as any).mock.calls[0][1];
+    const updatedRoom: RoomState = (redisActor.setRedisRoom as any).mock
+      .calls[0][1];
 
     expect(updatedRoom.currentMediaId).toBe("item-2");
     expect(updatedRoom.playback.status).toBe("playing");
     expect(updatedRoom.playback.basePosition).toBe(0);
     // Verifies saving the previous position
-    expect(updatedRoom.playlist[0].lastPosition).toBeCloseTo(99, 1); 
+    expect(updatedRoom.playlist[0].lastPosition).toBeCloseTo(99, 1);
   });
 
   it("pauses and does not advance when autoplayNext is false", async () => {
@@ -113,7 +148,8 @@ describe("Queue Worker: video_ended command", () => {
     await runWorkerWithJob(job);
 
     expect(redisActor.setRedisRoom).toHaveBeenCalled();
-    const updatedRoom: RoomState = (redisActor.setRedisRoom as any).mock.calls[0][1];
+    const updatedRoom: RoomState = (redisActor.setRedisRoom as any).mock
+      .calls[0][1];
 
     expect(updatedRoom.currentMediaId).toBe("item-1"); // Shouldn't change
     expect(updatedRoom.playback.status).toBe("paused");
@@ -131,7 +167,8 @@ describe("Queue Worker: video_ended command", () => {
     await runWorkerWithJob(job);
 
     expect(redisActor.setRedisRoom).toHaveBeenCalled();
-    const updatedRoom: RoomState = (redisActor.setRedisRoom as any).mock.calls[0][1];
+    const updatedRoom: RoomState = (redisActor.setRedisRoom as any).mock
+      .calls[0][1];
 
     expect(updatedRoom.currentMediaId).toBe("item-1"); // Looped back to start
     expect(updatedRoom.playback.status).toBe("playing");
@@ -149,7 +186,8 @@ describe("Queue Worker: video_ended command", () => {
     await runWorkerWithJob(job);
 
     expect(redisActor.setRedisRoom).toHaveBeenCalled();
-    const updatedRoom: RoomState = (redisActor.setRedisRoom as any).mock.calls[0][1];
+    const updatedRoom: RoomState = (redisActor.setRedisRoom as any).mock
+      .calls[0][1];
 
     expect(updatedRoom.currentMediaId).toBe("item-3"); // Stayed on last
     expect(updatedRoom.playback.status).toBe("paused");

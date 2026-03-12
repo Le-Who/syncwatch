@@ -1,16 +1,32 @@
+import { X } from "lucide-react";
+
 interface UpNextOverlayProps {
   timeRemaining: number;
   nextItem: { title?: string } | null;
   onSkip: () => void;
+  onDismiss: () => void;
 }
 
 export function UpNextOverlay({
   timeRemaining,
   nextItem,
   onSkip,
+  onDismiss,
 }: UpNextOverlayProps) {
   return (
     <div className="bg-theme-bg/95 border-theme-border/50 rounded-theme animate-in fade-in slide-in-from-right-8 pointer-events-auto absolute right-4 bottom-24 z-40 flex items-center space-x-4 border p-4 shadow-[0_10px_40px_rgba(0,0,0,0.5)] backdrop-blur-md">
+      {/* Dismiss button */}
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onDismiss();
+        }}
+        className="text-theme-muted hover:text-theme-text absolute top-1.5 right-1.5 rounded-full p-1 transition-colors"
+        title="Dismiss"
+      >
+        <X className="h-3.5 w-3.5" />
+      </button>
+
       <div className="relative flex h-12 w-12 items-center justify-center">
         <svg className="h-full w-full -rotate-90 transform">
           <circle

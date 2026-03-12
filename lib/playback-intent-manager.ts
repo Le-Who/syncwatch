@@ -11,6 +11,10 @@ export class PlaybackIntentManager {
   private _userIsDraggingScrubber: boolean = false;
   private pauseDebounce: NodeJS.Timeout | null = null;
 
+  // State-based media transition guard (replaces blunt timer)
+  private _mediaTransitionId: string | null = null;
+  private _mediaTransitionTimestamp: number = 0;
+
   public setUserDraggingScrubber(isDragging: boolean) {
     this._userIsDraggingScrubber = isDragging;
   }
@@ -41,8 +45,42 @@ export class PlaybackIntentManager {
     return Date.now() < this.ignoreNativeEventsUntil;
   }
 
+  /**
+   * Begin a state-based transition. Native events are blocked until
+   * `clearMediaTransition(mediaId)` is called with the same ID.
+   * A 10-second hard timeout prevents permanent lockout.
+   */
+  public setMediaTransition(mediaId: string) {
+    this._mediaTransitionId = mediaId;
+    this._mediaTransitionTimestamp = Date.now();
+  }
+
+  /**
+   * Called from onReady — clears the transition guard only if
+   * the ready event is for the media we're actually transitioning to.
+   */
+  public clearMediaTransition(mediaId: string) {
+    if (this._mediaTransitionId === mediaId) {
+      this._mediaTransitionId = null;
+    }
+  }
+
+  public isInMediaTransition(): boolean {
+    if (!this._mediaTransitionId) return false;
+    // Hard timeout: 10s safety net prevents permanent lockout
+    if (Date.now() - this._mediaTransitionTimestamp > 10000) {
+      this._mediaTransitionId = null;
+      return false;
+    }
+    return true;
+  }
+
   public shouldBlockNativeEvent(): boolean {
-    return this.isIgnoringNativeEvents() || this._userIsDraggingScrubber;
+    return (
+      this.isIgnoringNativeEvents() ||
+      this._userIsDraggingScrubber ||
+      this.isInMediaTransition()
+    );
   }
 
   public isRecentCommand(thresholdMs: number = 2000): boolean {

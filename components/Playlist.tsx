@@ -3,6 +3,7 @@
 
 import { useState, useEffect } from "react";
 import { useStore } from "@/lib/store";
+import { formatTime } from "@/lib/utils";
 import {
   Plus,
   Trash2,
@@ -108,16 +109,6 @@ export default function Playlist() {
     } catch {
       return 0;
     }
-  };
-
-  const formatTime = (seconds: number) => {
-    if (!seconds || isNaN(seconds) || seconds < 0) return "0:00";
-    const totalSeconds = Math.max(0, Math.floor(seconds));
-    const hh = Math.floor(totalSeconds / 3600);
-    const mm = Math.floor((totalSeconds % 3600) / 60);
-    const ss = (totalSeconds % 60).toString().padStart(2, "0");
-    if (hh > 0) return `${hh}:${mm.toString().padStart(2, "0")}:${ss}`;
-    return `${mm}:${ss}`;
   };
 
   const handleAdd = async (

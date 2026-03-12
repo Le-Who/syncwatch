@@ -109,6 +109,9 @@ describe("Room Handler Security & Auth Boundary", () => {
     // ASSERT: Payload must not be rejected at the socket layer.
     // It should proceed to Lua/Queue checks (which are mocked).
     // ==========================================
-    expect(mockSocket.emit).not.toHaveBeenCalledWith("error", expect.anything());
+    expect(mockSocket.emit).not.toHaveBeenCalledWith(
+      "error",
+      expect.anything(),
+    );
   });
 });

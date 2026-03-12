@@ -130,6 +130,7 @@ export function usePlaybackSync(props: {
             playback.rate,
             p.getIsBuffering(),
             isIframeProvider,
+            currentMedia?.provider,
           );
           setPlaybackRateDirectly(newRate);
         }

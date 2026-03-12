@@ -149,7 +149,7 @@ export default function RoomPage() {
               Establishing Uplink
             </p>
             <p className="text-theme-muted text-xs tracking-widest uppercase">
-              Handshake in progress...
+              Connecting to room...
             </p>
           </div>
         </div>
@@ -236,7 +236,7 @@ export default function RoomPage() {
       {/* Main Content */}
       <div className="relative mt-1 flex flex-1 flex-col overflow-hidden bg-transparent lg:flex-row">
         {/* Player Area */}
-        <div className="relative z-10 flex min-h-[40vh] flex-1 flex-col p-2 transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] lg:min-h-0 lg:p-4">
+        <div className="relative z-10 flex min-h-[35vh] flex-1 flex-col p-2 transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] lg:min-h-0 lg:p-4">
           <div className="border-theme-border/50 bg-theme-bg rounded-theme shadow-theme relative h-full w-full overflow-hidden border-2">
             <Player />
             <Reactions />
@@ -247,8 +247,8 @@ export default function RoomPage() {
         <div
           className={`group/sidebar z-20 flex shrink-0 flex-col transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] ${
             theaterMode
-              ? "absolute top-0 right-0 bottom-0 w-[90%] translate-x-[calc(100%-20px)] p-2 focus-within:translate-x-0 hover:translate-x-0 sm:w-[400px] lg:p-4 xl:w-[460px]"
-              : "relative h-[50vh] w-full p-2 lg:h-auto lg:w-[400px] lg:p-4 lg:pl-0 xl:w-[460px]"
+              ? "absolute top-0 right-0 bottom-0 w-[90%] translate-x-[calc(100%-40px)] p-2 focus-within:translate-x-0 hover:translate-x-0 sm:w-[400px] lg:p-4 xl:w-[460px]"
+              : "relative max-h-[45vh] w-full p-2 lg:h-auto lg:max-h-none lg:w-[400px] lg:p-4 lg:pl-0 xl:w-[460px]"
           } `}
         >
           {theaterMode && (

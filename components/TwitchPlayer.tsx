@@ -125,12 +125,33 @@ export const TwitchPlayer = forwardRef((props: TwitchPlayerProps, ref) => {
       );
       player.addEventListener(Twitch.Player.ENDED, () => props.onEnded?.());
       // Twitch doesn't have an explicit BUFFERING that perfectly aligns, but PLAYING catches the end of it.
+
+      // Duration polling: Twitch embed API doesn't reliably fire duration events for VODs.
+      // Poll getDuration() every 2s until we get a stable non-zero value.
+      let lastKnownDuration = 0;
+      const durationPollInterval = setInterval(() => {
+        try {
+          const dur = player.getDuration?.() || 0;
+          if (dur > 0 && dur !== lastKnownDuration) {
+            lastKnownDuration = dur;
+            props.onDurationChange?.(dur);
+          }
+        } catch {
+          // Player may not be ready yet
+        }
+      }, 2000);
+
+      // Store interval for cleanup
+      (cleanupContainer as any).__durationPoll = durationPollInterval;
     } catch (e) {
       console.error("Failed to initialize Twitch player", e);
       props.onError?.(e);
     }
 
     return () => {
+      if ((cleanupContainer as any)?.__durationPoll) {
+        clearInterval((cleanupContainer as any).__durationPoll);
+      }
       if (cleanupContainer) {
         cleanupContainer.innerHTML = "";
       }

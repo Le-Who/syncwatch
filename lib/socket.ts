@@ -52,9 +52,9 @@ class RoomSocketService {
         transports: ["websocket"], // Force WebSocket to bypass Playwright HTTP interception quirks
         auth: (cb) => {
           // Send token in handshake to bypass strict cookie limits in isolated testing environments
-          cb({ 
+          cb({
             token: this.latestSessionToken,
-            participantId: this.latestParticipantId
+            participantId: this.latestParticipantId,
           });
         },
       });

@@ -4,17 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **Universal Sync Status Badge**: Added a floating drift indicator visible on all provider types (YouTube, Twitch, Vimeo, direct) showing real-time drift in milliseconds/seconds.
+- **UpNext Overlay Dismissal**: Added an explicit dismiss button to the UpNext overlay that tracks dismissal state per media item.
+- **Twitch Duration Polling**: Implemented an interval-based duration polling mechanism for Twitch VODs since the native embed API lacks reliable duration-change events.
+- **Continuous Clock Sync**: Implemented dynamic `setInterval` daemon utilizing exponential backoff (1s→30s) and trimmed mean RTT offset calculations for ultra-stable clock parity.
+
 ### Changed
+
+- **Sync Media Transition Guard**: Replaced the blunt 3-second `ignoreEventsFor(3000)` timer in `PlaybackIntentManager` with a precise state-based guard that blocks native events until `onReady` fires with the matching media ID.
+- **YouTube Soft Rate Correction**: Added gentle ±3% playback rate adjustments specifically for YouTube iframes in `drift-math.ts` to allow smooth drift correction without noticeable audio distortion.
+- **Player Overlay Interactions**: Redesigned the paused overlay to use `pointer-events: none` on the backdrop and `pointer-events: auto` only on the play button, allowing users to interact with underlying YouTube/Twitch native controls.
+- **Mobile Room Layout**: Optimized mobile responsiveness by reducing player minimum height to 35vh and capping the sidebar at 45vh. Widened the theater mode reveal area for better discoverability.
 - Global refactor: Removed the legacy `guest` terminology and replaced it with `viewer` across the TypeScript interfaces, Socket.io connection logic, and React UI to accurately reflect permission structures.
-- Updated Supabase schema `room_members_role_check` constraint to accept `'viewer'` instead of `'guest'`.
-
-### Fixed
-- Fixed non-idempotent `ADD CONSTRAINT` in the migration `00011_rename_guest_to_viewer.sql` to ensure `supabase db push` safely executes on subsequent runs.
-- **Sync Loop Death** (`usePlaybackSync.ts`): Fixed a critical bug where the client sync loop died permanently if the player wasn't ready on the first 500ms tick. Early returns (`!getIsReady()`, `getSeeking()`, `isRecentCommand()`) now always reschedule `setTimeout` with a 200ms retry, keeping the loop alive until the player is ready.
-- **Double Room State Emission** (`commands.ts`): Fixed fast-path commands (play/pause/seek) emitting `room_state` twice — once via direct `io.to().emit()` and again via Redis PubSub. Replaced with conditional logic: PubSub-only broadcast when Redis is available, direct emit as single-node fallback.
-- **PubSub Handler Cross-Fire** (`pubsub.ts`): Fixed two separate `pmessage` handlers on the same ioredis subscriber both firing on every message. The `room_events` handler lacked a channel prefix guard and processed `queue_wakeup` messages. Merged into a single handler with explicit `channel.startsWith()` routing.
-- **Death Pause Feedback Loop** (`store.ts`, `Player.tsx`, `usePlaybackSync.ts`): Fixed a rare but permanent pause lock caused by three interacting bugs: (1) double nonce — `sendCommand` overwrote `emitCommand`'s nonce, breaking echo protection; (2) command-type/status-type mismatch — `markCommandEmitted("play")` stored `"play"` but guards compared against `"playing"`; (3) sync loop overrode user intent after 1.5s optimistic barrier expired, re-pausing the player and emitting a pause command that reinforced the server's stale "paused" state.
-
 ### Added
 
 - **Continuous Clock Sync**: Implemented dynamic `setInterval` daemon utilizing exponential backoff (1s→30s) and trimmed mean RTT offset calculations for ultra-stable clock parity.

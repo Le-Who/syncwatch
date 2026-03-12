@@ -22,14 +22,16 @@ Playback mutations (`play`, `pause`, `seek`) are highly sensitive to latency. Th
 
 ### Write-Behind Queue (The "Slow Path" & Auto-Switching)
 
-Operations like `add_item`, `reorder_playlist`, and `video_ended` use a reliable background worker (`lib/redis-queue-worker.ts`). 
+Operations like `add_item`, `reorder_playlist`, and `video_ended` use a reliable background worker (`lib/redis-queue-worker.ts`).
+
 - **Database Synchronization**: State changes are applied to Redis first, then queued in a write-behind buffer (`lib/db-sync.ts`) to be flushed to Supabase. This shields the database from real-time websocket spam.
 - **Auto-Switching**: When a provider (YouTube, Twitch, Vimeo) finishes playing the active media, `Player.tsx` immediately emits a `video_ended` command. The queue worker processes this intelligently: if the room has `autoplayNext` enabled, the worker automatically advances to the next track in the playlist. If not, it pauses on the final frame. Loop logic (`looping` setting) is equally handled server-side here.
 
 ### PlaybackIntentManager & Media Transitions
 
 Because Native HTML5, YouTube iframe, and Twitch embed players fire lifecycle events asynchronously, the `PlaybackIntentManager` masks spurious native events from reaching the server.
-- **Media Transitions**: When `currentMediaId` changes during auto-advancement, native iframes often fire a `pause` event during load. The intent manager employs an `ignoreEventsFor(3000)` guard strictly enforcing the server-authoritative "playing" state.
+
+- **Media Transitions**: When `currentMediaId` changes during auto-advancement, native iframes often fire a `pause` event during load. The intent manager employs a precise state-based media transition guard tied to the player's `onReady` event, strictly enforcing the server-authoritative "playing" state without relying on arbitrary timeouts.
 - **User Scrubber Intent**: Dragging the seeker bar suppresses buffer/pause events protecting against "rubber-banding" server correction locks.
 
 ## Data & Control Flow
@@ -80,7 +82,7 @@ npm start
 - **Graceful Shutdown**: The service captures `SIGTERM` and `SIGINT` to definitively flush the Redis write-behind queue memory buffer to Postgres before dying. Do not kill processes with `SIGKILL` or recent playlist changes may be lost.
 - **Provider API Quotas**: The system uses a headless worker script to scrape YouTube if the `YOUTUBE_API_KEY` quota exhausts. However, Twitch metadata entirely lacks an oEmbed fallback and relies on raw HTML parsing, which is brittle.
 - **Browser Autoplay Policies**: Modern browsers aggressively block autoplay without user interaction. SyncWatch forces a "Initialize Stream Sync" confirmation click before mounting `react-player`.
-- **Twitch Native Seek Quirks**: Due to an explicit constraint in the Twitch Embed API v1, scrubbing the native Twitch player timeline *always* forces a `PAUSE` event. SyncWatch implements a client-side micro-debounce (`TwitchPlayer.tsx` / `Player.tsx`) that catches this specific native auto-pause when seeking while playing, overriding it mathematically to maintain sync without trapping the room in pause-loops.
+- **Twitch Native Seek Quirks**: Due to an explicit constraint in the Twitch Embed API v1, scrubbing the native Twitch player timeline _always_ forces a `PAUSE` event. SyncWatch implements a client-side micro-debounce (`TwitchPlayer.tsx` / `Player.tsx`) that catches this specific native auto-pause when seeking while playing, overriding it mathematically to maintain sync without trapping the room in pause-loops.
 
 ## Testing Strategy
 
@@ -96,9 +98,9 @@ npm start
 
 ## Fixed Issues Log
 
-| Issue | File | Description |
-|-------|------|-------------|
-| Sync loop death | `hooks/usePlaybackSync.ts` | Early returns (`!getIsReady()`, `getSeeking()`, `isRecentCommand()`) exited `syncPlayback` without rescheduling `setTimeout`, permanently killing the sync loop. Fixed by rescheduling with 200ms retry on all early exits. |
-| Double room_state emit | `lib/socket/commands.ts` | Fast path success both emitted `room_state` directly to local sockets AND published via PubSub (which re-emitted). Clients on the same node received the event twice. Fixed with conditional logic: PubSub when Redis is available, direct emit as single-node fallback. |
-| PubSub handler cross-fire | `lib/socket/pubsub.ts` | Two separate `pmessage` handlers on the same ioredis subscriber caused both to fire on every message. The `room_events` handler lacked a prefix guard and would process `queue_wakeup` messages. Fixed by merging into a single handler with explicit `channel.startsWith()` routing. |
+| Issue                     | File                                                                | Description                                                                                                                                                                                                                                                                                                                            |
+| ------------------------- | ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Sync loop death           | `hooks/usePlaybackSync.ts`                                          | Early returns (`!getIsReady()`, `getSeeking()`, `isRecentCommand()`) exited `syncPlayback` without rescheduling `setTimeout`, permanently killing the sync loop. Fixed by rescheduling with 200ms retry on all early exits.                                                                                                            |
+| Double room_state emit    | `lib/socket/commands.ts`                                            | Fast path success both emitted `room_state` directly to local sockets AND published via PubSub (which re-emitted). Clients on the same node received the event twice. Fixed with conditional logic: PubSub when Redis is available, direct emit as single-node fallback.                                                               |
+| PubSub handler cross-fire | `lib/socket/pubsub.ts`                                              | Two separate `pmessage` handlers on the same ioredis subscriber caused both to fire on every message. The `room_events` handler lacked a prefix guard and would process `queue_wakeup` messages. Fixed by merging into a single handler with explicit `channel.startsWith()` routing.                                                  |
 | Death pause feedback loop | `lib/store.ts`, `components/Player.tsx`, `hooks/usePlaybackSync.ts` | Three interacting bugs: (1) double nonce — `sendCommand` overwrote `emitCommand`'s nonce, breaking echo protection; (2) command-type/status-type mismatch in `markCommandEmitted`; (3) sync loop overrode user intent after 1.5s barrier expired. Fixed by removing duplicate nonce, normalizing types, and adding intent-aware guard. |

@@ -35,7 +35,8 @@ export function setupSocketAuth(io: Server) {
         );
       }
 
-      const clientParticipantId = socket.handshake.auth?.participantId || socket.id;
+      const clientParticipantId =
+        socket.handshake.auth?.participantId || socket.id;
       socket.data.participantId = clientParticipantId;
       next();
     } catch (err) {

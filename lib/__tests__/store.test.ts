@@ -139,7 +139,10 @@ describe("useStore", () => {
         room: { id: "room1", sequence: 1 } as any,
       });
       // Nonce is now injected by emitCommand (Player.tsx), not sendCommand.
-      result.current.sendCommand("play", { position: 10, nonce: "upstream-nonce" });
+      result.current.sendCommand("play", {
+        position: 10,
+        nonce: "upstream-nonce",
+      });
     });
 
     expect(roomSocketService.sendCommand).toHaveBeenCalledWith(

@@ -50,6 +50,7 @@ import { usePlaybackSync } from "@/hooks/usePlaybackSync";
 import { applyTwitchEventProxy } from "@/lib/player-adapters";
 import { AwaitingSignal } from "./AwaitingSignal";
 import { UpNextOverlay } from "./UpNextOverlay";
+import { SyncStatusBadge } from "./SyncStatusBadge";
 import { PlaybackIntentManager } from "@/lib/playback-intent-manager";
 
 const ReactPlayer = dynamic(() => import("react-player"), {
@@ -208,17 +209,25 @@ export default function Player() {
     }
   };
 
+  // Track upNext dismissal per media item
+  const [upNextDismissedForMedia, setUpNextDismissedForMedia] = useState<
+    string | null
+  >(null);
+
   useEffect(() => {
     setError(null);
     setIsReady(false);
     setIsBuffering(false);
-    
-    // MEDIA TRANSITION GUARD: Suppress native play/pause events during media 
-    // transition to prevent spurious pause commands from overriding the server's 
-    // "playing" state. YouTube iframe fires a pause during load.
-    intentManager.ignoreEventsFor(3000);
-    
-    // Twitch is always fully managed by our UI now to prevent Unmount/Autoplay Policy breakage
+    setUpNextDismissedForMedia(null);
+
+    // STATE-BASED MEDIA TRANSITION GUARD: Block native play/pause events until
+    // onReady fires for this specific media ID. This replaces the old blunt 3s timer.
+    // YouTube iframe fires a pause during load — this guard catches it precisely.
+    if (currentMediaId) {
+      intentManager.setMediaTransition(currentMediaId);
+    }
+    // Safety net: 1.5s ignoreEventsFor as fallback in case onReady never fires
+    intentManager.ignoreEventsFor(1500);
   }, [currentMediaId, intentManager]);
 
   // Handle Server-Side OCC Rejections (Race Condition Flashback)
@@ -521,12 +530,18 @@ export default function Player() {
                     muted={userJoined ? muted : true}
                     controls={true}
                     onReady={(rPlayer: any) => {
-                      realPlayerRef.current = playerRef.current; // The TwitchPlayer exposes getInternalPlayer etc via its own ref
+                      realPlayerRef.current = playerRef.current;
                       setIsReady(true);
                       setError(null);
 
+                      // Clear state-based transition guard for this media
+                      if (currentMediaId) {
+                        intentManager.clearMediaTransition(currentMediaId);
+                      }
+
                       // Auto-resume if server is playing after media switch
-                      const currentPlayback = useStore.getState().room?.playback;
+                      const currentPlayback =
+                        useStore.getState().room?.playback;
                       if (currentPlayback?.status === "playing") {
                         setPlaying(true);
                       }
@@ -545,16 +560,16 @@ export default function Player() {
 
                       if (canControl) {
                         emitCommand("seek", { position: seconds });
-                        
+
                         // Twitch native player auto-pauses when scrubbing.
                         // If we were playing before the scrub, auto-resume after a short delay.
                         if (playing) {
-                           intentManager.ignoreEventsFor(2000); // Suppress incoming Twitch native pause
-                           setTimeout(() => {
-                             if (realPlayerRef.current?.play) {
-                               realPlayerRef.current.play();
-                             }
-                           }, 200);
+                          intentManager.ignoreEventsFor(2000); // Suppress incoming Twitch native pause
+                          setTimeout(() => {
+                            if (realPlayerRef.current?.play) {
+                              realPlayerRef.current.play();
+                            }
+                          }, 200);
                         }
                       }
                     }}
@@ -611,8 +626,14 @@ export default function Player() {
                       setIsReady(true);
                       setError(null);
 
+                      // Clear state-based transition guard for this media
+                      if (currentMediaId) {
+                        intentManager.clearMediaTransition(currentMediaId);
+                      }
+
                       // Auto-resume if server is playing after media switch
-                      const currentPlayback = useStore.getState().room?.playback;
+                      const currentPlayback =
+                        useStore.getState().room?.playback;
                       if (currentPlayback?.status === "playing") {
                         setPlaying(true);
                       }
@@ -715,13 +736,17 @@ export default function Player() {
         </div>
 
         {/* Up Next Overlay Layer */}
-        {showUpNext && (
+        {showUpNext && upNextDismissedForMedia !== currentMediaId && (
           <UpNextOverlay
             timeRemaining={timeRemaining}
             nextItem={nextItem}
             onSkip={handleNext}
+            onDismiss={() => setUpNextDismissedForMedia(currentMediaId ?? null)}
           />
         )}
+
+        {/* Universal Sync Status Badge — visible for ALL providers */}
+        <SyncStatusBadge driftRef={driftRef} />
 
         {/* Thematic Scanline Overlay */}
         {currentMedia.provider?.toLowerCase() !== "youtube" && (
@@ -773,12 +798,18 @@ export default function Player() {
             </div>
           )}
 
-        {/* PAUSED Overlay */}
+        {/* PAUSED Overlay — backdrop is pointer-events-none so YouTube/Twitch native controls remain clickable underneath. Only the play button itself captures clicks. */}
         {!playing && !isBuffering && isReady && !error && userJoined && (
           <div className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/40 backdrop-blur-[2px] transition-opacity duration-300">
-            <div className="bg-theme-bg/80 border-theme-accent text-theme-accent flex h-24 w-24 items-center justify-center rounded-full border-4 shadow-[0_0_30px_var(--color-theme-accent)] backdrop-blur-md">
+            <button
+              className="bg-theme-bg/80 border-theme-accent text-theme-accent pointer-events-auto flex h-24 w-24 cursor-pointer items-center justify-center rounded-full border-4 shadow-[0_0_30px_var(--color-theme-accent)] backdrop-blur-md transition-transform hover:scale-110 active:scale-95"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (canControl) handlePlay();
+              }}
+            >
               <Play className="ml-2 h-12 w-12" />
-            </div>
+            </button>
           </div>
         )}
 
