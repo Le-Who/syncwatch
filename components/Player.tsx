@@ -341,13 +341,17 @@ export default function Player() {
 
   const handleNativePause = useEventCallback(() => {
     setIsBuffering(false);
-    setPlaying(false);
     intentManager.clearPauseDebounce();
 
-    // **INTENT MASK**: Drop events caused by programmatic seek buffer locks or scrubber dragging
+    // **INTENT MASK**: Drop events caused by programmatic seek buffer locks,
+    // scrubber dragging, or media transitions (currentMediaId change).
+    // Must guard BEFORE setPlaying(false) to prevent local state corruption
+    // that causes the player to stay paused after queue advancement.
     if (intentManager.shouldBlockNativeEvent()) {
       return;
     }
+
+    setPlaying(false);
 
     intentManager.setPauseDebounce(() => {
       // Look at local state first

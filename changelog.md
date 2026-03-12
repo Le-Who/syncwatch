@@ -36,7 +36,7 @@ All notable changes to this project will be documented in this file.
 
 - **YouTube Playlist Expansion**: `AwaitingSignal` now automatically detects YouTube playlist URLs (`list=...`), fetches the full sequence via API, and enqueues all items instead of failing with a single broken 'direct media' record.
 - **Playlist Auto-Switching**: Implemented server-side `video_ended` processing within the Redis queue worker. The room correctly auto-advances to the next video, pauses on the last frame, or loops back to the start in compliance with room `autoplayNext` and `looping` settings.
-- **Auto-Pause on Queue Advancement**: Fixed an issue where the second video in a queue would automatically pause immediately after starting. Guarded media transitions with a 3-second `intentManager` mask to drop spurious native `pause` lifecycle events from YouTube iframes.
+- **Auto-Pause on Queue Advancement**: Fixed an issue where the second video in a queue would automatically pause immediately after starting. Root cause: `handleNativePause` set local `playing=false` unconditionally before the `intentManager` guard, corrupting React state even when the event was supposed to be blocked. Fix: moved `setPlaying(false)` after the guard and added a 3-second event mask during media transitions.
 - **Twitch Native Seek Quirks**: Mitigated an Embed API v1 flaw where native timeline scrubs forced sequential `PAUSE` events. An `intentManager` micro-debounce now ignores the ghost pause and automatically fires `.play()` to seamlessly maintain sync.
 
 - **Redundant WebSocket Egress**: Eliminated double network bursts on programmatic seeks by replacing standalone `seek` and `play` socket loops with packaged `forceSeek: true` flags.
