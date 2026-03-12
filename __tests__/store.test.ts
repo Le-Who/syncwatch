@@ -77,20 +77,22 @@ describe("Zustand Store & OCC Flashback", () => {
     expect(stateAfter.occRollbackTick).toBe(1);
   });
 
-  it("TC-03: Should inject nonce for fast-path mutations", () => {
+  it("TC-03: Should pass payload through unchanged for fast-path mutations (nonce injected upstream by emitCommand)", () => {
     useStore.setState({
       isConnected: true,
       room: { id: "test", sequence: 1 } as any,
     });
     const { sendCommand } = useStore.getState();
 
-    sendCommand("play", { position: 10 });
+    // Nonce is now injected by emitCommand (Player.tsx), not sendCommand.
+    // sendCommand should pass the payload through as-is.
+    sendCommand("play", { position: 10, nonce: "upstream-nonce" });
 
     expect(roomSocketService.sendCommand).toHaveBeenCalledWith(
       "test",
       2,
       "play",
-      expect.objectContaining({ position: 10, nonce: expect.any(String) }),
+      expect.objectContaining({ position: 10, nonce: "upstream-nonce" }),
       "test-user-1",
     );
   });

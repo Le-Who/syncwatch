@@ -131,21 +131,22 @@ describe("useStore", () => {
     expect(result.current.room).toBeNull();
   });
 
-  it("should append a unique nonce to fast-path commands to prevent echo rollbacks (TC-101)", () => {
+  it("should pass fast-path command payloads through unchanged — nonce injected upstream by emitCommand (TC-101)", () => {
     const { result } = renderHook(() => useStore());
     act(() => {
       useStore.setState({
         isConnected: true,
         room: { id: "room1", sequence: 1 } as any,
       });
-      result.current.sendCommand("play", { position: 10 });
+      // Nonce is now injected by emitCommand (Player.tsx), not sendCommand.
+      result.current.sendCommand("play", { position: 10, nonce: "upstream-nonce" });
     });
 
     expect(roomSocketService.sendCommand).toHaveBeenCalledWith(
       "room1",
       2,
       "play",
-      expect.objectContaining({ position: 10, nonce: expect.any(String) }),
+      expect.objectContaining({ position: 10, nonce: "upstream-nonce" }),
       null,
     );
   });

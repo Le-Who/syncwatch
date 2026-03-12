@@ -145,6 +145,13 @@ export function usePlaybackSync(props: {
         driftRef.current = currentDrift;
 
         if (p.getPlaying()) {
+          // Don't override to paused if user recently commanded play —
+          // the room_state broadcast may just be lagging behind the server mutation.
+          // This breaks the death-pause feedback loop.
+          if (p.intentManager.getExpectedStatus(undefined) === "playing") {
+            syncTimerRef.current = setTimeout(syncPlayback, 200) as any;
+            return;
+          }
           lastServerStateChangeRef.current = Date.now();
           p.setPlaying(false);
         }

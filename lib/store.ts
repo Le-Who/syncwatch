@@ -289,20 +289,6 @@ export const useStore = create<AppState>((set, get) => ({
     set({ isConnected: false, room: null });
   },
   sendCommand: (type: string, payload?: any) => {
-    const isFastPath = [
-      "play",
-      "pause",
-      "seek",
-      "update_rate",
-      "buffering",
-      "sync_correction",
-    ].includes(type);
-
-    if (isFastPath) {
-      // Inject atomic nonce for action deduplication (Anti-Echo/Rollback)
-      payload = { ...payload, nonce: crypto.randomUUID() };
-    }
-
     const state = get();
     if (!state.room) return;
 
