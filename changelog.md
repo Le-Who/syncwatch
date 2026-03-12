@@ -6,6 +6,25 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **Keyboard Shortcuts**: Arrow Left/Right (seek ±5s, Shift for ±10s), Arrow Up/Down (volume ±5%), F (fullscreen), T (theater mode). Guards against firing when typing in inputs.
+- **Double-Click Fullscreen**: Double-clicking the player area toggles fullscreen mode.
+- **ReconnectingOverlay**: New component shown when WebSocket disconnects, featuring auto-retry countdown, attempt counter, and manual retry button.
+- **Toast Notifications**: Participant join/leave events now show toast notifications via sonner (👋 joined / 🚪 left).
+- **Drift Hysteresis Tests**: Three new unit tests (TC-09, TC-10, TC-11) validating the hysteresis boundary behavior.
+
+### Changed
+
+- **SyncStatusBadge Redesign**: Replaced the old inline drift indicator with a 5-state floating badge (synced/syncing/drift/lost/offline) that shows smooth color transitions and auto-hides an "In Sync ✓" pulse when perfectly synced.
+- **Buffering Overlay**: Now resolves the raw `updatedBy` participant ID to a human-readable nickname ("Waiting for Alice...").
+- **Drift Hysteresis (drift-math.ts)**: `calculatePlaybackRate` now uses hysteresis (start correction at 0.6s, stop at 0.3s) to prevent audible pitch oscillation on YouTube when drift hovers near the correction boundary. Returns `{ rate, isAdjusting }` object.
+- **Playlist Animations**: Playlist items now have smooth enter (fade+scale), exit (slide+fade), and layout reorder animations via motion/react.
+
+### Fixed
+
+- **Media Transition Guard Deadlock**: `PlaybackIntentManager.setMediaTransition()` now includes an active 8-second auto-expiry `setTimeout` to prevent permanent event blocking if `onReady` never fires or fires out of order.
+- **Twitch Phantom Pause**: Added a 500ms `isRecentSeek()` guard in `handleNativePause` that blocks Twitch's asynchronous ghost PAUSE events fired after seek operations.
+- **OCC Rollback Flicker on Owner**: Owner's `sync_correction` emissions in `usePlaybackSync.ts` now include a nonce via `intentManager.markCommandEmitted()`, preventing the broadcast echo-back from triggering a visible UI rollback.
+
 - **Universal Sync Status Badge**: Added a floating drift indicator visible on all provider types (YouTube, Twitch, Vimeo, direct) showing real-time drift in milliseconds/seconds.
 - **UpNext Overlay Dismissal**: Added an explicit dismiss button to the UpNext overlay that tracks dismissal state per media item.
 - **Twitch Duration Polling**: Implemented an interval-based duration polling mechanism for Twitch VODs since the native embed API lacks reliable duration-change events.

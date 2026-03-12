@@ -173,6 +173,13 @@ export const useStore = create<AppState>((set, get) => ({
       roomSocketService.on("participant_joined", (participant: any) => {
         const state = get();
         if (!state.room) return;
+        // B4: Toast notification for participant join (skip self)
+        if (participant.id !== state.participantId) {
+          toast(`${participant.nickname || "Someone"} joined`, {
+            icon: "👋",
+            duration: 3000,
+          });
+        }
         set({
           room: {
             ...state.room,
@@ -187,6 +194,14 @@ export const useStore = create<AppState>((set, get) => ({
       roomSocketService.on("participant_left", ({ participantId }) => {
         const state = get();
         if (!state.room) return;
+        // B4: Toast notification for participant leave
+        const leavingParticipant = state.room.participants[participantId];
+        if (leavingParticipant && participantId !== state.participantId) {
+          toast(`${leavingParticipant.nickname || "Someone"} left`, {
+            icon: "🚪",
+            duration: 3000,
+          });
+        }
         const newParticipants = { ...state.room.participants };
         delete newParticipants[participantId];
         set({ room: { ...state.room, participants: newParticipants } });

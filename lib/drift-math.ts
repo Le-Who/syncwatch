@@ -1,3 +1,7 @@
+// Hysteresis thresholds to prevent rate oscillation at drift boundaries
+const CORRECTION_START = 0.6;
+const CORRECTION_STOP = 0.3;
+
 export function calculatePlaybackRate(
   currentDrift: number,
   currentPosition: number,
@@ -6,23 +10,28 @@ export function calculatePlaybackRate(
   isBuffering: boolean,
   isIframeProvider: boolean,
   providerName?: string,
-): number {
+  previouslyAdjusting: boolean = false,
+): { rate: number; isAdjusting: boolean } {
   const provider = providerName?.toLowerCase() || "";
   const isTwitch = provider === "twitch";
   const isYouTube = provider === "youtube";
 
   // Twitch & Vimeo: no reliable setPlaybackRate API — skip rate correction
   if (isBuffering || (isIframeProvider && !isYouTube) || isTwitch) {
-    return serverPlaybackRate;
+    return { rate: serverPlaybackRate, isAdjusting: false };
   }
 
   // If drift is massive, a hard seek will happen anyway, so reset rate to normal
   if (currentDrift > 3.0) {
-    return serverPlaybackRate;
+    return { rate: serverPlaybackRate, isAdjusting: false };
   }
 
-  // Minor drift threshold
-  if (currentDrift > 0.5) {
+  // Hysteresis: start correction at 0.6s, stop only below 0.3s
+  const shouldAdjust = previouslyAdjusting
+    ? currentDrift > CORRECTION_STOP
+    : currentDrift > CORRECTION_START;
+
+  if (shouldAdjust) {
     let adjustment = 0.05; // 5%
     if (currentDrift > 2.0) {
       adjustment = 0.15; // 15%
@@ -38,9 +47,9 @@ export function calculatePlaybackRate(
     const rateAdjustment =
       currentPosition < expectedPosition ? 1 + adjustment : 1 - adjustment;
     const finalRate = serverPlaybackRate * rateAdjustment;
-    return Math.max(0.5, Math.min(2.0, finalRate));
+    return { rate: Math.max(0.5, Math.min(2.0, finalRate)), isAdjusting: true };
   }
 
   // Perfect sync
-  return serverPlaybackRate;
+  return { rate: serverPlaybackRate, isAdjusting: false };
 }

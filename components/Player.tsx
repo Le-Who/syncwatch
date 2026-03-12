@@ -38,7 +38,6 @@ import {
 import fscreen from "fscreen";
 import { motion } from "motion/react";
 import { formatTime, calculateDrift } from "@/lib/utils";
-import { calculatePlaybackRate } from "@/lib/drift-math";
 import { Scrubber } from "./Scrubber";
 import { MediaApiService } from "@/lib/MediaApiService";
 import { RoomState, PlaybackState, PlaybackStatus } from "@/lib/types";
@@ -373,6 +372,17 @@ export default function Player() {
       return;
     }
 
+    // A3 Fix: Twitch fires a ghost PAUSE after seek ops. Its async pipeline
+    // can delay the event beyond the standard shouldBlockNativeEvent window.
+    // Use a wider 500ms seek-detection window specifically for Twitch.
+    if (
+      currentMedia?.provider?.toLowerCase() === "twitch" &&
+      intentManager.isRecentSeek(500)
+    ) {
+      console.log("[PLAYER] Blocked Twitch phantom pause after recent seek");
+      return;
+    }
+
     setPlaying(false);
 
     intentManager.setPauseDebounce(() => {
@@ -388,6 +398,42 @@ export default function Player() {
     }, 50);
   });
 
+  // C1: Keyboard seek handler
+  const handleKeyboardSeek = useCallback(
+    (delta: number) => {
+      const currentPos = getAccurateTime();
+      const newPos = Math.max(0, Math.min(duration, currentPos + delta));
+      intentManager.ignoreEventsFor(2000);
+      if (
+        realPlayerRef.current &&
+        typeof realPlayerRef.current.seekTo === "function"
+      ) {
+        realPlayerRef.current.seekTo(newPos, "seconds");
+      } else if (playerRef.current) {
+        playerRef.current.currentTime = newPos;
+      }
+      if (canControl) {
+        if (playing) {
+          emitCommand("play", { position: newPos, forceSeek: true });
+        } else {
+          emitCommand("seek", { position: newPos });
+        }
+      }
+    },
+    [getAccurateTime, duration, intentManager, canControl, playing, emitCommand],
+  );
+
+  // C2: Double-click fullscreen toggle
+  const toggleFullscreen = useCallback(() => {
+    if (fscreen.fullscreenEnabled && containerRef.current) {
+      if (fscreen.fullscreenElement) {
+        fscreen.exitFullscreen();
+      } else {
+        fscreen.requestFullscreen(containerRef.current);
+      }
+    }
+  }, []);
+
   usePlayerShortcuts({
     canControl,
     playing,
@@ -395,6 +441,11 @@ export default function Player() {
     handlePlay,
     handlePause,
     setMuted,
+    handleSeek: handleKeyboardSeek,
+    setVolume,
+    getVolume: () => volume,
+    toggleFullscreen,
+    toggleTheaterMode,
   });
 
   const handleSeekMouseDown = () => {
@@ -509,6 +560,12 @@ export default function Player() {
         className="relative h-full min-h-[40vh] w-full flex-1 md:min-h-full"
         onClick={() => {
           if (qualityMenuOpen) setQualityMenuOpen(false);
+        }}
+        onDoubleClick={(e) => {
+          // C2: Double-click to toggle fullscreen (ignore if clicking controls)
+          const target = e.target as HTMLElement;
+          if (target.closest("button") || target.closest("input")) return;
+          toggleFullscreen();
         }}
       >
         <div
@@ -791,9 +848,17 @@ export default function Player() {
             <div className="bg-theme-bg/80 absolute inset-0 z-20 flex flex-col items-center justify-center backdrop-blur-sm">
               <div className="border-theme-accent border-b-theme-danger mb-6 h-16 w-16 animate-spin rounded-full border-4 border-t-transparent" />
               <div className="bg-theme-accent text-theme-bg shadow-theme rounded-full px-4 py-1 text-xs font-bold tracking-[0.2em] uppercase">
-                {playback?.status === "buffering" && !isBuffering
-                  ? `Syncing to ${playback.updatedBy}`
-                  : "Buffering Stream"}
+                {(() => {
+                  if (playback?.status === "buffering" && !isBuffering) {
+                    // Another participant is buffering — resolve nickname
+                    const bufferingParticipant = playback.updatedBy
+                      ? useStore.getState().room?.participants[playback.updatedBy]
+                      : null;
+                    const displayName = bufferingParticipant?.nickname || playback.updatedBy || "someone";
+                    return `Waiting for ${displayName}...`;
+                  }
+                  return "Buffering...";
+                })()}
               </div>
             </div>
           )}

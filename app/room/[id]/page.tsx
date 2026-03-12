@@ -11,6 +11,7 @@ import Playlist from "@/components/Playlist";
 import Participants from "@/components/Participants";
 import RoomSettingsDialog from "@/components/RoomSettingsDialog";
 import Reactions from "@/components/Reactions";
+import { ReconnectingOverlay } from "@/components/ReconnectingOverlay";
 import { useSettingsStore } from "@/lib/store";
 
 export default function RoomPage() {
@@ -158,6 +159,9 @@ export default function RoomPage() {
   }
 
   return (
+    <>
+      {/* B5: Reconnection overlay — shows over room UI when connection drops */}
+      <ReconnectingOverlay />
     <div className="text-theme-text font-theme selection:bg-theme-accent selection:text-theme-bg flex h-dvh flex-col overflow-hidden bg-transparent">
       {/* Header */}
       <header className="border-theme-border bg-theme-card relative z-20 flex h-[72px] shrink-0 items-center justify-between border-b-4 px-4 shadow-[0_4px_32px_var(--color-theme-shadow)] backdrop-blur-xl lg:px-6">
@@ -314,5 +318,6 @@ export default function RoomPage() {
         <RoomSettingsDialog onClose={() => setIsSettingsOpen(false)} />
       )}
     </div>
+    </>
   );
 }

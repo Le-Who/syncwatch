@@ -329,6 +329,11 @@ export default function Playlist() {
               <Reorder.Item
                 key={item.id}
                 value={item}
+                layout
+                initial={{ opacity: 0, scale: 0.95, y: -10 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, x: -20 }}
+                transition={{ duration: 0.2, ease: "easeOut" }}
                 className={`rounded-theme flex items-center border-2 p-2.5 transition-all ${
                   room.currentMediaId === item.id
                     ? "bg-theme-accent/20 border-theme-accent shadow-theme"

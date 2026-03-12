@@ -1,4 +1,5 @@
 export class PlaybackIntentManager {
+  private mediaTransitionTimeout: ReturnType<typeof setTimeout> | null = null;
   private lastCommandEmitTime: number = 0;
   private lastStateEmitted: {
     status: string;
@@ -53,6 +54,18 @@ export class PlaybackIntentManager {
   public setMediaTransition(mediaId: string) {
     this._mediaTransitionId = mediaId;
     this._mediaTransitionTimestamp = Date.now();
+
+    // Active auto-expiry: clears the guard if onReady never fires (e.g., player crash)
+    if (this.mediaTransitionTimeout) {
+      clearTimeout(this.mediaTransitionTimeout);
+    }
+    this.mediaTransitionTimeout = setTimeout(() => {
+      if (this._mediaTransitionId === mediaId) {
+        console.warn('[IntentManager] Auto-clearing stuck media transition after 8s for', mediaId);
+        this._mediaTransitionId = null;
+      }
+      this.mediaTransitionTimeout = null;
+    }, 8000);
   }
 
   /**
@@ -62,6 +75,10 @@ export class PlaybackIntentManager {
   public clearMediaTransition(mediaId: string) {
     if (this._mediaTransitionId === mediaId) {
       this._mediaTransitionId = null;
+      if (this.mediaTransitionTimeout) {
+        clearTimeout(this.mediaTransitionTimeout);
+        this.mediaTransitionTimeout = null;
+      }
     }
   }
 
@@ -89,6 +106,15 @@ export class PlaybackIntentManager {
 
   public isRecentProgrammaticSeek(thresholdMs: number = 1500): boolean {
     return Date.now() - this.lastProgrammaticSeek < thresholdMs;
+  }
+
+  /**
+   * Check if a programmatic seek happened recently within a custom window.
+   * Used by Twitch to detect phantom-pause events fired asynchronously after seek.
+   */
+  public isRecentSeek(windowMs: number = 300): boolean {
+    return this.lastProgrammaticSeek > 0 &&
+      Date.now() - this.lastProgrammaticSeek < windowMs;
   }
 
   public clearPauseDebounce() {

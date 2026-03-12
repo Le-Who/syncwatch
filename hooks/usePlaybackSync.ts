@@ -24,6 +24,7 @@ export function usePlaybackSync(props: {
   const driftRef = useRef(0);
   const syncTimerRef = useRef<any>(null);
   const lastServerStateChangeRef = useRef<number>(0);
+  const isAdjustingRateRef = useRef(false);
   const propsRef = useRef(props);
 
   // Keep a stable ref to props so we don't restart interval on every render
@@ -72,7 +73,10 @@ export function usePlaybackSync(props: {
 
         if (p.getControlMode() === "controlled") {
           if (currentDrift > 0.6 && p.getMyRole() === "owner") {
-            p.emitCommand("sync_correction", { position: currentPosition });
+            // A4 Fix: tag sync_correction with nonce so the echo-back doesn't trigger OCC rollback flicker
+            const nonce = crypto.randomUUID();
+            p.intentManager.markCommandEmitted("playing", currentPosition, nonce);
+            p.emitCommand("sync_correction", { position: currentPosition, nonce });
             return;
           } else if (currentDrift > 3.0) {
             // Followers hard seek locally if drift is massive
@@ -123,7 +127,7 @@ export function usePlaybackSync(props: {
 
           setPlaybackRateDirectly(playback.rate);
         } else {
-          const newRate = calculatePlaybackRate(
+          const { rate: newRate, isAdjusting } = calculatePlaybackRate(
             currentDrift,
             currentPosition,
             expectedPosition,
@@ -131,7 +135,9 @@ export function usePlaybackSync(props: {
             p.getIsBuffering(),
             isIframeProvider,
             currentMedia?.provider,
+            isAdjustingRateRef.current,
           );
+          isAdjustingRateRef.current = isAdjusting;
           setPlaybackRateDirectly(newRate);
         }
       } else if (playback.status === "paused") {
