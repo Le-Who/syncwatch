@@ -89,6 +89,7 @@ export default function Reactions() {
                   setIsOpen(false);
                 }}
                 className="hover:bg-theme-accent/20 ring-theme-accent flex h-10 w-10 origin-center items-center justify-center rounded-full text-xl transition-colors hover:scale-125 focus:outline-none focus-visible:ring-2"
+                aria-label={`React with ${emoji}`}
               >
                 {emoji}
               </button>
@@ -102,6 +103,8 @@ export default function Reactions() {
               ? "bg-theme-accent text-theme-bg border-theme-accent scale-95 shadow-none"
               : "bg-theme-bg/80 hover:bg-theme-accent/20 hover:border-theme-accent"
           }`}
+          aria-expanded={isOpen}
+          aria-label={isOpen ? "Close reactions menu" : "Open reactions menu"}
         >
           <Smile className="h-6 w-6" />
         </button>
