@@ -75,8 +75,15 @@ export function usePlaybackSync(props: {
           if (currentDrift > 0.6 && p.getMyRole() === "owner") {
             // A4 Fix: tag sync_correction with nonce so the echo-back doesn't trigger OCC rollback flicker
             const nonce = crypto.randomUUID();
-            p.intentManager.markCommandEmitted("playing", currentPosition, nonce);
-            p.emitCommand("sync_correction", { position: currentPosition, nonce });
+            p.intentManager.markCommandEmitted(
+              "playing",
+              currentPosition,
+              nonce,
+            );
+            p.emitCommand("sync_correction", {
+              position: currentPosition,
+              nonce,
+            });
             return;
           } else if (currentDrift > 3.0) {
             // Followers hard seek locally if drift is massive
