@@ -18,7 +18,9 @@ const reconnectStore = {
 
   subscribe(listener: () => void) {
     reconnectStore.listeners.add(listener);
-    return () => { reconnectStore.listeners.delete(listener); };
+    return () => {
+      reconnectStore.listeners.delete(listener);
+    };
   },
 
   getSnapshot() {

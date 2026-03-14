@@ -139,7 +139,14 @@ export default function Player() {
   }, [isSleeping]);
 
   useEffect(() => {
+    let lastActivityTime = 0;
+
     const handleUserActivity = () => {
+      const now = Date.now();
+      // Throttle activity checks to once per second to reduce CPU/memory churn
+      if (now - lastActivityTime < 1000) return;
+      lastActivityTime = now;
+
       wakeUp();
       if (idleTimeoutRef.current) clearTimeout(idleTimeoutRef.current);
       idleTimeoutRef.current = setTimeout(
@@ -154,10 +161,12 @@ export default function Player() {
       );
     };
 
-    window.addEventListener("mousemove", handleUserActivity);
-    window.addEventListener("keydown", handleUserActivity);
-    window.addEventListener("touchstart", handleUserActivity);
-    window.addEventListener("click", handleUserActivity);
+    window.addEventListener("mousemove", handleUserActivity, { passive: true });
+    window.addEventListener("keydown", handleUserActivity, { passive: true });
+    window.addEventListener("touchstart", handleUserActivity, {
+      passive: true,
+    });
+    window.addEventListener("click", handleUserActivity, { passive: true });
 
     handleUserActivity();
 
@@ -271,31 +280,34 @@ export default function Player() {
   // Removed ResizeObserver effect
 
   // In strict server state, we don't emit commands from native events
-  const emitCommand = (type: string, payload: any) => {
-    // BACKGROUND TAB FIX: Block false-positive pause/seek events from throttled tabs
-    if (
-      !isDocumentVisibleRef.current &&
-      ["play", "pause", "seek", "buffering"].includes(type)
-    ) {
-      return;
-    }
-    const nonce = crypto.randomUUID(); // Manually create a nonce to track our own UI actions locally before store
-    // Normalize command types to playback statuses for getExpectedStatus comparisons
-    // ("play" → "playing", "pause" → "paused") so guards like
-    // `expectedStatus !== "playing"` work correctly.
-    const statusMap: Record<string, string> = {
-      play: "playing",
-      pause: "paused",
-      seek: "playing",
-      buffering: "buffering",
-    };
-    intentManager.markCommandEmitted(
-      statusMap[type] || type,
-      payload?.position,
-      nonce,
-    );
-    sendCommand(type, { ...payload, nonce });
-  };
+  const emitCommand = useCallback(
+    (type: string, payload: any) => {
+      // BACKGROUND TAB FIX: Block false-positive pause/seek events from throttled tabs
+      if (
+        !isDocumentVisibleRef.current &&
+        ["play", "pause", "seek", "buffering"].includes(type)
+      ) {
+        return;
+      }
+      const nonce = crypto.randomUUID(); // Manually create a nonce to track our own UI actions locally before store
+      // Normalize command types to playback statuses for getExpectedStatus comparisons
+      // ("play" → "playing", "pause" → "paused") so guards like
+      // `expectedStatus !== "playing"` work correctly.
+      const statusMap: Record<string, string> = {
+        play: "playing",
+        pause: "paused",
+        seek: "playing",
+        buffering: "buffering",
+      };
+      intentManager.markCommandEmitted(
+        statusMap[type] || type,
+        payload?.position,
+        nonce,
+      );
+      sendCommand(type, { ...payload, nonce });
+    },
+    [intentManager, sendCommand],
+  );
 
   const { driftRef } = usePlaybackSync({
     realPlayerRef,
@@ -420,7 +432,14 @@ export default function Player() {
         }
       }
     },
-    [getAccurateTime, duration, intentManager, canControl, playing, emitCommand],
+    [
+      getAccurateTime,
+      duration,
+      intentManager,
+      canControl,
+      playing,
+      emitCommand,
+    ],
   );
 
   // C2: Double-click fullscreen toggle
@@ -852,9 +871,14 @@ export default function Player() {
                   if (playback?.status === "buffering" && !isBuffering) {
                     // Another participant is buffering — resolve nickname
                     const bufferingParticipant = playback.updatedBy
-                      ? useStore.getState().room?.participants[playback.updatedBy]
+                      ? useStore.getState().room?.participants[
+                          playback.updatedBy
+                        ]
                       : null;
-                    const displayName = bufferingParticipant?.nickname || playback.updatedBy || "someone";
+                    const displayName =
+                      bufferingParticipant?.nickname ||
+                      playback.updatedBy ||
+                      "someone";
                     return `Waiting for ${displayName}...`;
                   }
                   return "Buffering...";
