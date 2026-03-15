@@ -59,7 +59,6 @@ const ReactPlayer = dynamic(() => import("react-player"), {
 export default function Player() {
   const participantId = useStore((s) => s.participantId);
   const sendCommand = useStore((s) => s.sendCommand);
-  const serverClockOffset = useStore((s) => s.serverClockOffset);
   const currentMediaId = useStore((s) => s.room?.currentMediaId);
   const occRollbackTick = useStore((s) => s.occRollbackTick);
   const isLooping = useStore((s) => s.room?.settings.looping);
@@ -240,7 +239,7 @@ export default function Player() {
         playback.status,
         playback.basePosition,
         playback.baseTimestamp,
-        Date.now() + serverClockOffset,
+        Date.now() + useStore.getState().serverClockOffset,
         accurateCurrentTime,
         playback.rate,
       );
@@ -271,7 +270,7 @@ export default function Player() {
   // Removed ResizeObserver effect
 
   // In strict server state, we don't emit commands from native events
-  const emitCommand = (type: string, payload: any) => {
+  const emitCommand = useCallback((type: string, payload: any) => {
     // BACKGROUND TAB FIX: Block false-positive pause/seek events from throttled tabs
     if (
       !isDocumentVisibleRef.current &&
@@ -295,7 +294,7 @@ export default function Player() {
       nonce,
     );
     sendCommand(type, { ...payload, nonce });
-  };
+  }, [intentManager, sendCommand]);
 
   const { driftRef } = usePlaybackSync({
     realPlayerRef,

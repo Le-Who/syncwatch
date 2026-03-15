@@ -4,8 +4,10 @@ import { vi, describe, beforeEach, it, expect } from "vitest";
 
 // Mock Zustand store hooks
 vi.mock("@/lib/store", () => {
+  const mockStore: any = vi.fn();
+  mockStore.getState = vi.fn(() => ({ serverClockOffset: 0 }));
   return {
-    useStore: vi.fn(),
+    useStore: mockStore,
     useSettingsStore: vi.fn(),
   };
 });

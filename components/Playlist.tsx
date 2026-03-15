@@ -15,9 +15,17 @@ import {
 } from "lucide-react";
 import { motion, Reorder } from "motion/react";
 import ReactPlayer from "react-player";
+import { useShallow } from "zustand/react/shallow";
 
 export default function Playlist() {
-  const { room, participantId, sendCommand } = useStore();
+  const participantId = useStore((s) => s.participantId);
+  const sendCommand = useStore((s) => s.sendCommand);
+  const roomSettings = useStore(useShallow((s) => s.room?.settings));
+  const participants = useStore(useShallow((s) => s.room?.participants));
+  const playlist = useStore(useShallow((s) => s.room?.playlist));
+  const currentMediaId = useStore((s) => s.room?.currentMediaId);
+  const playback = useStore(useShallow((s) => s.room?.playback));
+
   const [url, setUrl] = useState("");
   const [isAdding, setIsAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -54,12 +62,12 @@ export default function Playlist() {
     return () => clearTimeout(timer);
   }, [url]);
 
-  if (!room) return null;
+  if (!playlist || !roomSettings || !participants || !playback) return null;
 
   const canEdit =
-    room.settings.controlMode === "open" ||
-    room.participants[participantId!]?.role === "owner" ||
-    room.participants[participantId!]?.role === "moderator";
+    roomSettings.controlMode === "open" ||
+    participants[participantId!]?.role === "owner" ||
+    participants[participantId!]?.role === "moderator";
 
   const getProviderAndTitle = (
     testUrl: string,
@@ -311,7 +319,7 @@ export default function Playlist() {
       )}
 
       <div className="scrollbar-thin scrollbar-thumb-zinc-700/50 scrollbar-track-transparent flex-1 overflow-y-auto p-3">
-        {room.playlist.length === 0 ? (
+        {playlist.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center space-y-4 text-zinc-600">
             <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-white/5 bg-white/5">
               <PlayCircle className="h-8 w-8 text-zinc-600" />
@@ -321,11 +329,11 @@ export default function Playlist() {
         ) : (
           <Reorder.Group
             axis="y"
-            values={room.playlist}
+            values={playlist}
             onReorder={handleReorder}
             className="space-y-2.5"
           >
-            {room.playlist.map((item) => (
+            {playlist.map((item) => (
               <Reorder.Item
                 key={item.id}
                 value={item}
@@ -335,7 +343,7 @@ export default function Playlist() {
                 exit={{ opacity: 0, scale: 0.95, x: -20 }}
                 transition={{ duration: 0.2, ease: "easeOut" }}
                 className={`rounded-theme flex items-center border-2 p-2.5 transition-all ${
-                  room.currentMediaId === item.id
+                  currentMediaId === item.id
                     ? "bg-theme-accent/20 border-theme-accent shadow-theme"
                     : "bg-theme-bg/40 border-theme-border/30 hover:border-theme-accent hover:bg-theme-bg/60"
                 }`}
@@ -364,7 +372,7 @@ export default function Playlist() {
                 >
                   <p
                     className={`mb-1 truncate text-sm font-bold tracking-wide uppercase transition-colors ${
-                      room.currentMediaId === item.id
+                      currentMediaId === item.id
                         ? "text-theme-accent drop-shadow-sm"
                         : "text-theme-text group-hover:text-theme-accent"
                     }`}
@@ -374,14 +382,14 @@ export default function Playlist() {
 
                   {(() => {
                     let currentPos = item.lastPosition || 0;
-                    if (room.currentMediaId === item.id) {
+                    if (currentMediaId === item.id) {
                       const elapsed =
-                        room.playback.status === "playing"
-                          ? (Date.now() - room.playback.baseTimestamp) / 1000
+                        playback.status === "playing"
+                          ? (Date.now() - playback.baseTimestamp) / 1000
                           : 0;
                       currentPos =
-                        room.playback.basePosition +
-                        elapsed * room.playback.rate;
+                        playback.basePosition +
+                        elapsed * playback.rate;
                     }
                     return (
                       <p className="text-theme-muted mb-1 flex flex-wrap items-center space-x-1.5 truncate text-[11px] font-bold tracking-widest uppercase">
@@ -407,13 +415,13 @@ export default function Playlist() {
                 {/* Progress Bar inside card */}
                 {(() => {
                   let progress = 0;
-                  if (room.currentMediaId === item.id) {
+                  if (currentMediaId === item.id) {
                     const elapsed =
-                      room.playback.status === "playing"
-                        ? (Date.now() - room.playback.baseTimestamp) / 1000
+                      playback.status === "playing"
+                        ? (Date.now() - playback.baseTimestamp) / 1000
                         : 0;
                     const currentPos =
-                      room.playback.basePosition + elapsed * room.playback.rate;
+                      playback.basePosition + elapsed * playback.rate;
                     progress = item.duration
                       ? Math.min((currentPos / item.duration) * 100, 100)
                       : 0;
@@ -429,7 +437,7 @@ export default function Playlist() {
                       <div className="bg-theme-border/30 rounded-b-theme absolute right-0 bottom-0 left-0 h-[3px] overflow-hidden">
                         <div
                           className={`h-full transition-all duration-1000 ${
-                            room.currentMediaId === item.id
+                            currentMediaId === item.id
                               ? "bg-theme-accent shadow-[0_0_8px_var(--color-theme-accent)]"
                               : "bg-theme-muted/50"
                           }`}

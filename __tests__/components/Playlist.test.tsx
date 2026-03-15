@@ -50,32 +50,36 @@ describe("Playlist Component (Unit Tests)", () => {
     vi.clearAllMocks();
 
     // Default store state: User is owner, room has 1 video
-    (useStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
-      room: {
-        settings: { controlMode: "controlled" },
-        currentMediaId: "vid-1",
-        participants: {
-          "user-1": { role: "owner" },
-        },
-        playlist: [
-          {
-            id: "vid-1",
-            title: "Test Video 1",
-            provider: "YouTube",
-            url: "https://youtube.com/watch?v=123",
-            duration: 100,
-            addedBy: "OwnerUser",
+    (useStore as unknown as ReturnType<typeof vi.fn>).mockImplementation((selector: any) => {
+      const state = {
+        room: {
+          settings: { controlMode: "controlled" },
+          currentMediaId: "vid-1",
+          participants: {
+            "user-1": { role: "owner" },
           },
-        ],
-        playback: {
-          status: "playing",
-          basePosition: 10,
-          baseTimestamp: Date.now(),
-          rate: 1,
+          playlist: [
+            {
+              id: "vid-1",
+              title: "Test Video 1",
+              provider: "YouTube",
+              url: "https://youtube.com/watch?v=123",
+              duration: 100,
+              addedBy: "OwnerUser",
+            },
+          ],
+          playback: {
+            status: "playing",
+            basePosition: 10,
+            baseTimestamp: Date.now(),
+            rate: 1,
+          },
         },
-      },
-      participantId: "user-1",
-      sendCommand: mockSendCommand,
+        participantId: "user-1",
+        sendCommand: mockSendCommand,
+      };
+      if (selector && typeof selector === "function") return selector(state);
+      return state;
     });
   });
 
@@ -97,29 +101,33 @@ describe("Playlist Component (Unit Tests)", () => {
 
   it("TC-UI-02: Disables 'Remove' and 'Input' for Guests when not in Open mode", () => {
     // Override store for Guest
-    (useStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
-      room: {
-        settings: { controlMode: "controlled" }, // Not open
-        currentMediaId: "vid-1",
-        participants: {
-          "user-viewer": { role: "viewer" }, // Viewer role
-        },
-        playlist: [
-          {
-            id: "vid-1",
-            title: "Test Video 1",
-            provider: "YouTube",
+    (useStore as unknown as ReturnType<typeof vi.fn>).mockImplementation((selector: any) => {
+      const state = {
+        room: {
+          settings: { controlMode: "controlled" }, // Not open
+          currentMediaId: "vid-1",
+          participants: {
+            "user-viewer": { role: "viewer" }, // Viewer role
           },
-        ],
-        playback: {
-          status: "playing",
-          basePosition: 10,
-          baseTimestamp: Date.now(),
-          rate: 1,
+          playlist: [
+            {
+              id: "vid-1",
+              title: "Test Video 1",
+              provider: "YouTube",
+            },
+          ],
+          playback: {
+            status: "playing",
+            basePosition: 10,
+            baseTimestamp: Date.now(),
+            rate: 1,
+          },
         },
-      },
-      participantId: "user-viewer",
-      sendCommand: mockSendCommand,
+        participantId: "user-viewer",
+        sendCommand: mockSendCommand,
+      };
+      if (selector && typeof selector === "function") return selector(state);
+      return state;
     });
 
     render(<Playlist />);
