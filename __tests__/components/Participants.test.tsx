@@ -27,21 +27,25 @@ describe("Participants Component (Unit Tests)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
-    (useStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
-      room: {
-        participants: {
-          "user-owner": { id: "user-owner", role: "owner", nickname: "Alice" },
-          "user-mod": { id: "user-mod", role: "moderator", nickname: "Bob" },
-          "user-viewer": {
-            id: "user-viewer",
-            role: "viewer",
-            nickname: "Charlie",
+    (useStore as unknown as ReturnType<typeof vi.fn>).mockImplementation((selector: any) => {
+      const state = {
+        room: {
+          participants: {
+            "user-owner": { id: "user-owner", role: "owner", nickname: "Alice" },
+            "user-mod": { id: "user-mod", role: "moderator", nickname: "Bob" },
+            "user-viewer": {
+              id: "user-viewer",
+              role: "viewer",
+              nickname: "Charlie",
+            },
           },
         },
-      },
-      participantId: "user-owner",
-      sendCommand: mockSendCommand,
-      setNickname: mockSetNickname,
+        participantId: "user-owner",
+        sendCommand: mockSendCommand,
+        setNickname: mockSetNickname,
+      };
+      if (selector && typeof selector === "function") return selector(state);
+      return state;
     });
   });
 
@@ -84,20 +88,24 @@ describe("Participants Component (Unit Tests)", () => {
 
   it("TC-UI-12: Prevents Guests from seeing the manage menu", () => {
     // Change current user to viewer
-    (useStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
-      room: {
-        participants: {
-          "user-owner": { id: "user-owner", role: "owner", nickname: "Alice" },
-          "user-viewer": {
-            id: "user-viewer",
-            role: "viewer",
-            nickname: "Charlie",
+    (useStore as unknown as ReturnType<typeof vi.fn>).mockImplementation((selector: any) => {
+      const state = {
+        room: {
+          participants: {
+            "user-owner": { id: "user-owner", role: "owner", nickname: "Alice" },
+            "user-viewer": {
+              id: "user-viewer",
+              role: "viewer",
+              nickname: "Charlie",
+            },
           },
         },
-      },
-      participantId: "user-viewer",
-      sendCommand: mockSendCommand,
-      setNickname: mockSetNickname,
+        participantId: "user-viewer",
+        sendCommand: mockSendCommand,
+        setNickname: mockSetNickname,
+      };
+      if (selector && typeof selector === "function") return selector(state);
+      return state;
     });
 
     render(<Participants />);
