@@ -44,13 +44,15 @@ export function usePlaybackSync(props: {
         return;
       }
 
+      // Consume nonce as early as possible so we clear the "recent command" block
+      // when our own broadcast echo arrives.
+      p.intentManager.checkAndConsumeNonce(playback.lastActionNonce);
+
       if (p.intentManager.isRecentCommand(1500)) {
         // Optimistic UI barrier — reschedule to retry shortly
         syncTimerRef.current = setTimeout(syncPlayback, 200) as any;
         return;
       }
-
-      p.intentManager.checkAndConsumeNonce(playback.lastActionNonce);
 
       const currentServerTime = Date.now() + serverClockOffset;
       const currentPosition = p.getAccurateTime() as unknown as number;

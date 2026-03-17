@@ -279,7 +279,10 @@ export default function Player() {
     ) {
       return;
     }
-    const nonce = crypto.randomUUID(); // Manually create a nonce to track our own UI actions locally before store
+    // Respect existing nonce if provided (e.g. from usePlaybackSync sync_correction),
+    // otherwise generate a fresh one for UI-driven actions.
+    const nonce = payload?.nonce || crypto.randomUUID();
+
     // Normalize command types to playback statuses for getExpectedStatus comparisons
     // ("play" → "playing", "pause" → "paused") so guards like
     // `expectedStatus !== "playing"` work correctly.
@@ -288,6 +291,7 @@ export default function Player() {
       pause: "paused",
       seek: "playing",
       buffering: "buffering",
+      sync_correction: "playing",
     };
     intentManager.markCommandEmitted(
       statusMap[type] || type,
