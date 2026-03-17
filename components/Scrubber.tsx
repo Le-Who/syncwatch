@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useStore } from "@/lib/store";
 import { formatTime } from "@/lib/utils";
+import { PlayerMethods } from "@/lib/types";
 
 interface ScrubberProps {
-  playerRef: React.RefObject<any>;
+  playerRef: React.RefObject<PlayerMethods | null>;
   duration: number;
   canControl: boolean;
   onSeekStart: () => void;

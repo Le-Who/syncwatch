@@ -40,7 +40,12 @@ import { motion } from "motion/react";
 import { formatTime, calculateDrift } from "@/lib/utils";
 import { Scrubber } from "./Scrubber";
 import { MediaApiService } from "@/lib/MediaApiService";
-import { RoomState, PlaybackState, PlaybackStatus } from "@/lib/types";
+import {
+  RoomState,
+  PlaybackState,
+  PlaybackStatus,
+  PlayerMethods,
+} from "@/lib/types";
 import { TwitchPlayer } from "./TwitchPlayer";
 import { usePlayerShortcuts } from "@/hooks/usePlayerShortcuts";
 import { useFlashback } from "@/hooks/useFlashback";
@@ -93,8 +98,8 @@ export default function Player() {
 
   const { volume, muted, theaterMode, setVolume, setMuted, toggleTheaterMode } =
     useSettingsStore();
-  const playerRef = useRef<any>(null); // React component wrapper ref
-  const realPlayerRef = useRef<any>(null); // Actual ReactPlayer instance
+  const playerRef = useRef<PlayerMethods | null>(null); // React component wrapper ref
+  const realPlayerRef = useRef<PlayerMethods | null>(null); // Actual ReactPlayer instance
   const containerRef = useRef<HTMLDivElement>(null);
   const [playing, setPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
@@ -586,7 +591,7 @@ export default function Player() {
                     volume={volume}
                     muted={userJoined ? muted : true}
                     controls={true}
-                    onReady={(rPlayer: any) => {
+                    onReady={(rPlayer: PlayerMethods) => {
                       realPlayerRef.current = playerRef.current;
                       setIsReady(true);
                       setError(null);
@@ -678,7 +683,7 @@ export default function Player() {
                     playing={userJoined ? playing : false}
                     volume={volume}
                     muted={userJoined ? muted : true}
-                    onReady={(rPlayer: any) => {
+                    onReady={(rPlayer: PlayerMethods) => {
                       realPlayerRef.current = rPlayer;
                       setIsReady(true);
                       setError(null);
@@ -702,10 +707,10 @@ export default function Player() {
                         currentMedia.provider?.toLowerCase() !== "vimeo"
                       ) {
                         try {
-                          const el = playerRef.current as any;
+                          const el = playerRef.current;
                           if (el && el.levels) {
                             setHlsLevels(el.levels);
-                            setCurrentHlsLevel(el.currentLevel);
+                            setCurrentHlsLevel(el.currentLevel ?? -1);
                           }
                         } catch (e) {
                           console.log(
@@ -1082,9 +1087,10 @@ export default function Player() {
                             if (
                               currentMedia.provider?.toLowerCase() === "youtube"
                             ) {
-                              const internal = (
-                                realPlayerRef.current as any
-                              )?.getInternalPlayer("youtube");
+                              const internal =
+                                realPlayerRef.current?.getInternalPlayer?.(
+                                  "youtube",
+                                );
                               if (internal?.getAvailableQualityLevels) {
                                 const levels =
                                   internal.getAvailableQualityLevels();
@@ -1098,9 +1104,10 @@ export default function Player() {
                             } else if (
                               currentMedia.provider?.toLowerCase() === "twitch"
                             ) {
-                              const internal = (
-                                realPlayerRef.current as any
-                              )?.getInternalPlayer("twitch");
+                              const internal =
+                                realPlayerRef.current?.getInternalPlayer?.(
+                                  "twitch",
+                                );
                               if (internal?.getQualities) {
                                 const levels = internal.getQualities();
                                 setProviderQualities(
@@ -1147,15 +1154,15 @@ export default function Player() {
                                       currentMedia.provider?.toLowerCase() ===
                                       "youtube"
                                     ) {
-                                      (realPlayerRef.current as any)
-                                        ?.getInternalPlayer("youtube")
+                                      realPlayerRef.current
+                                        ?.getInternalPlayer?.("youtube")
                                         ?.setPlaybackQualityRange?.("auto");
                                     } else if (
                                       currentMedia.provider?.toLowerCase() ===
                                       "twitch"
                                     ) {
-                                      (realPlayerRef.current as any)
-                                        ?.getInternalPlayer("twitch")
+                                      realPlayerRef.current
+                                        ?.getInternalPlayer?.("twitch")
                                         ?.setQuality?.("auto");
                                     }
                                   } catch (err) {}
@@ -1176,15 +1183,15 @@ export default function Player() {
                                         currentMedia.provider?.toLowerCase() ===
                                         "youtube"
                                       ) {
-                                        (realPlayerRef.current as any)
-                                          ?.getInternalPlayer("youtube")
+                                        realPlayerRef.current
+                                          ?.getInternalPlayer?.("youtube")
                                           ?.setPlaybackQualityRange?.(q, q);
                                       } else if (
                                         currentMedia.provider?.toLowerCase() ===
                                         "twitch"
                                       ) {
-                                        (realPlayerRef.current as any)
-                                          ?.getInternalPlayer("twitch")
+                                        realPlayerRef.current
+                                          ?.getInternalPlayer?.("twitch")
                                           ?.setQuality?.(q);
                                       }
                                     } catch (err) {}
@@ -1218,7 +1225,7 @@ export default function Player() {
                                   e.stopPropagation();
                                   setCurrentHlsLevel(-1);
                                   try {
-                                    const internal = playerRef.current as any;
+                                    const internal = playerRef.current;
                                     if (internal) internal.currentLevel = -1;
                                   } catch (err) {}
                                   setQualityMenuOpen(false);
@@ -1234,7 +1241,7 @@ export default function Player() {
                                     e.stopPropagation();
                                     setCurrentHlsLevel(idx);
                                     try {
-                                      const internal = playerRef.current as any;
+                                      const internal = playerRef.current;
                                       if (internal) internal.currentLevel = idx;
                                     } catch (err) {}
                                     setQualityMenuOpen(false);

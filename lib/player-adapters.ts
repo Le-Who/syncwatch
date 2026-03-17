@@ -1,6 +1,8 @@
+import { PlayerMethods } from "./types";
+
 export function applyTwitchEventProxy(
-  playerRef: any,
-  realPlayerRef: any,
+  playerRef: React.RefObject<PlayerMethods | null>,
+  realPlayerRef: React.RefObject<PlayerMethods | null>,
   handleNativePlay: () => void,
   handleNativePause: () => void,
 ) {

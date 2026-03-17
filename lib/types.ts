@@ -47,3 +47,21 @@ export interface RoomState {
   sequence: number;
   lastActivity: number;
 }
+
+export interface PlayerMethods {
+  getCurrentTime?: () => number;
+  getDuration?: () => number;
+  seekTo?: (position: number, type?: "seconds" | "fraction") => void;
+  play?: () => void;
+  pause?: () => void;
+  getInternalPlayer?: (provider?: string) => any;
+  currentTime?: number;
+  playbackRate?: number;
+  levels?: any[];
+  currentLevel?: number;
+  dataset?: DOMStringMap;
+  addEventListener?: (type: string, listener: (event: any) => void) => void;
+  setPlaybackRate?: (rate: number) => void;
+  setQuality?: (quality: string) => void;
+  setPlaybackQualityRange?: (min: string, max?: string) => void;
+}
