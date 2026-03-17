@@ -3,10 +3,11 @@ import { useStore } from "@/lib/store";
 import { calculateDrift } from "@/lib/utils";
 import { calculatePlaybackRate } from "@/lib/drift-math";
 import { PlaybackIntentManager } from "@/lib/playback-intent-manager";
+import { PlayerMethods } from "@/lib/types";
 
 export function usePlaybackSync(props: {
-  realPlayerRef: React.MutableRefObject<any>;
-  playerRef: React.MutableRefObject<any>;
+  realPlayerRef: React.RefObject<PlayerMethods | null>;
+  playerRef: React.RefObject<PlayerMethods | null>;
   getAccurateTime: () => void;
   getPlaying: () => boolean;
   setPlaying: (p: boolean) => void;
