@@ -167,4 +167,68 @@ describe("Playback Rate Adjustment (lib/drift-math.ts)", () => {
     expect(rate).toBe(1.0);
     expect(isAdjusting).toBe(false);
   });
+
+  it("TC-12: Does NOT start correction at exact CORRECTION_START (0.6s) boundary", () => {
+    // Drift = 0.6s, exactly at the start threshold
+    const { rate, isAdjusting } = calculatePlaybackRate(
+      0.6,
+      10.0,
+      10.6,
+      SERVER_RATE,
+      false,
+      false,
+      undefined,
+      false,
+    );
+    expect(rate).toBe(1.0);
+    expect(isAdjusting).toBe(false);
+  });
+
+  it("TC-13: STARTS correction just above CORRECTION_START (0.61s) boundary", () => {
+    // Drift = 0.61s, just above the start threshold
+    const { rate, isAdjusting } = calculatePlaybackRate(
+      0.61,
+      10.0,
+      10.61,
+      SERVER_RATE,
+      false,
+      false,
+      undefined,
+      false,
+    );
+    expect(rate).toBeGreaterThan(1.0);
+    expect(isAdjusting).toBe(true);
+  });
+
+  it("TC-14: STOPS correction at exact CORRECTION_STOP (0.3s) boundary even when previously adjusting", () => {
+    // Drift = 0.3s, exactly at the stop threshold
+    const { rate, isAdjusting } = calculatePlaybackRate(
+      0.3,
+      10.0,
+      10.3,
+      SERVER_RATE,
+      false,
+      false,
+      undefined,
+      true,
+    );
+    expect(rate).toBe(1.0);
+    expect(isAdjusting).toBe(false);
+  });
+
+  it("TC-15: CONTINUES correction just above CORRECTION_STOP (0.31s) boundary when previously adjusting", () => {
+    // Drift = 0.31s, just above the stop threshold
+    const { rate, isAdjusting } = calculatePlaybackRate(
+      0.31,
+      10.0,
+      10.31,
+      SERVER_RATE,
+      false,
+      false,
+      undefined,
+      true,
+    );
+    expect(rate).toBeGreaterThan(1.0);
+    expect(isAdjusting).toBe(true);
+  });
 });
