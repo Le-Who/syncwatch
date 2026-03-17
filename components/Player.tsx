@@ -260,34 +260,39 @@ export default function Player() {
   // Removed ResizeObserver effect
 
   // In strict server state, we don't emit commands from native events
-  const emitCommand = useCallback((type: string, payload: any) => {
-    // BACKGROUND TAB FIX: Block false-positive pause/seek events from throttled tabs
-    const isHidden = typeof document !== "undefined" && document.hidden;
-    const isPiP = typeof document !== "undefined" && !!document.pictureInPictureElement;
+  const emitCommand = useCallback(
+    (type: string, payload: any) => {
+      // BACKGROUND TAB FIX: Block false-positive pause/seek events from throttled tabs
+      const isHidden = typeof document !== "undefined" && document.hidden;
+      const isPiP =
+        typeof document !== "undefined" && !!document.pictureInPictureElement;
 
-    if (
-      isHidden && !isPiP &&
-      ["play", "pause", "seek", "buffering"].includes(type)
-    ) {
-      return;
-    }
-    const nonce = crypto.randomUUID(); // Manually create a nonce to track our own UI actions locally before store
-    // Normalize command types to playback statuses for getExpectedStatus comparisons
-    // ("play" → "playing", "pause" → "paused") so guards like
-    // `expectedStatus !== "playing"` work correctly.
-    const statusMap: Record<string, string> = {
-      play: "playing",
-      pause: "paused",
-      seek: "playing",
-      buffering: "buffering",
-    };
-    intentManager.markCommandEmitted(
-      statusMap[type] || type,
-      payload?.position,
-      nonce,
-    );
-    sendCommand(type, { ...payload, nonce });
-  }, [intentManager, sendCommand]);
+      if (
+        isHidden &&
+        !isPiP &&
+        ["play", "pause", "seek", "buffering"].includes(type)
+      ) {
+        return;
+      }
+      const nonce = crypto.randomUUID(); // Manually create a nonce to track our own UI actions locally before store
+      // Normalize command types to playback statuses for getExpectedStatus comparisons
+      // ("play" → "playing", "pause" → "paused") so guards like
+      // `expectedStatus !== "playing"` work correctly.
+      const statusMap: Record<string, string> = {
+        play: "playing",
+        pause: "paused",
+        seek: "playing",
+        buffering: "buffering",
+      };
+      intentManager.markCommandEmitted(
+        statusMap[type] || type,
+        payload?.position,
+        nonce,
+      );
+      sendCommand(type, { ...payload, nonce });
+    },
+    [intentManager, sendCommand],
+  );
 
   const { driftRef } = usePlaybackSync({
     realPlayerRef,
@@ -366,10 +371,11 @@ export default function Player() {
 
     // A3 Fix: Twitch fires a ghost PAUSE after seek ops. Its async pipeline
     // can delay the event beyond the standard shouldBlockNativeEvent window.
-    // Use a wider 500ms seek-detection window specifically for Twitch.
+    // Use a wider 2500ms seek-detection window specifically for Twitch.
     if (
       currentMedia?.provider?.toLowerCase() === "twitch" &&
-      intentManager.isRecentSeek(500)
+      (intentManager.isRecentProgrammaticSeek(2500) ||
+        intentManager.isRecentCommand(2500))
     ) {
       console.log("[PLAYER] Blocked Twitch phantom pause after recent seek");
       return;
@@ -412,7 +418,14 @@ export default function Player() {
         }
       }
     },
-    [getAccurateTime, duration, intentManager, canControl, playing, emitCommand],
+    [
+      getAccurateTime,
+      duration,
+      intentManager,
+      canControl,
+      playing,
+      emitCommand,
+    ],
   );
 
   // C2: Double-click fullscreen toggle
@@ -844,9 +857,14 @@ export default function Player() {
                   if (playback?.status === "buffering" && !isBuffering) {
                     // Another participant is buffering — resolve nickname
                     const bufferingParticipant = playback.updatedBy
-                      ? useStore.getState().room?.participants[playback.updatedBy]
+                      ? useStore.getState().room?.participants[
+                          playback.updatedBy
+                        ]
                       : null;
-                    const displayName = bufferingParticipant?.nickname || playback.updatedBy || "someone";
+                    const displayName =
+                      bufferingParticipant?.nickname ||
+                      playback.updatedBy ||
+                      "someone";
                     return `Waiting for ${displayName}...`;
                   }
                   return "Buffering...";

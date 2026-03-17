@@ -178,6 +178,12 @@ export async function processQueueForRoom(roomId: string) {
             // Reconcile arrays instead of blind overwrite (Concurrency Fix)
             const reconciledPlaylist = [];
 
+            // O(N) Preprocessing for fast lookup during reconciliation
+            const playlistMap = new Map();
+            for (const item of room.playlist) {
+              playlistMap.set(item.id, item);
+            }
+
             // 1. Maintain items that exist in both, in the new order
             for (const id of newOrderIds) {
               const item = itemMap.get(id);

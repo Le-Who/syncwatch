@@ -33,6 +33,10 @@ describe("formatTime", () => {
   it("should appropriately round down floating point seconds", () => {
     expect(formatTime(45.9)).toBe("0:45");
   });
+
+  it("should format extremely large durations correctly", () => {
+    expect(formatTime(90000)).toBe("25:00:00");
+  });
 });
 
 describe("calculateDrift", () => {
