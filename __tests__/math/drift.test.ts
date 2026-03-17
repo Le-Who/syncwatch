@@ -66,7 +66,7 @@ describe("Playback Rate Adjustment (lib/drift-math.ts)", () => {
 
   it("TC-05: Returns to normal rate if drift is MASSIVE (> 3 seconds)", () => {
     // Huge drift -> hard seek is incoming. Do not speed up to 1.05.
-    const { rate } = calculatePlaybackRate(
+    const { rate, isAdjusting } = calculatePlaybackRate(
       4.5,
       10.0,
       14.5,
@@ -75,6 +75,23 @@ describe("Playback Rate Adjustment (lib/drift-math.ts)", () => {
       false,
     );
     expect(rate).toBe(1.0);
+    expect(isAdjusting).toBe(false);
+  });
+
+  it("TC-05b: Returns to normal rate and stops adjusting if drift is MASSIVE (> 3 seconds) even if previously adjusting", () => {
+    // Huge drift -> hard seek is incoming. Must reset isAdjusting to false.
+    const { rate, isAdjusting } = calculatePlaybackRate(
+      4.5,
+      10.0,
+      14.5,
+      SERVER_RATE,
+      false,
+      false,
+      undefined,
+      true, // previously adjusting
+    );
+    expect(rate).toBe(1.0);
+    expect(isAdjusting).toBe(false);
   });
 
   it("TC-06: ACCELERATES playback if local position is BEHIND expected position (drift > 0.6s, not previously adjusting)", () => {
