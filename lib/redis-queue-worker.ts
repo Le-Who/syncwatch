@@ -85,14 +85,13 @@ export async function processQueueForRoom(roomId: string) {
             const availableSlots = 500 - room.playlist.length;
             if (availableSlots <= 0) break;
             const itemsToProcess = payload.items.slice(0, availableSlots);
+            const existingUrls = new Set(room.playlist.map((pi: any) => pi.url));
             const uniqueUrls = new Set<string>();
             const dedupedItemsToProcess = [];
             for (const item of itemsToProcess) {
               if (typeof item.url !== "string" || !item.url.trim()) continue;
-              const alreadyExists = room.playlist.some(
-                (pi: any) => pi.url === item.url,
-              );
-              if (!uniqueUrls.has(item.url) && !alreadyExists) {
+
+              if (!existingUrls.has(item.url) && !uniqueUrls.has(item.url)) {
                 uniqueUrls.add(item.url);
                 dedupedItemsToProcess.push(item);
               }
