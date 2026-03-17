@@ -3,10 +3,11 @@ import { useStore } from "@/lib/store";
 import { calculateDrift } from "@/lib/utils";
 import { calculatePlaybackRate } from "@/lib/drift-math";
 import { PlaybackIntentManager } from "@/lib/playback-intent-manager";
+import { PlayerMethods } from "@/lib/types";
 
 export function usePlaybackSync(props: {
-  realPlayerRef: React.MutableRefObject<any>;
-  playerRef: React.MutableRefObject<any>;
+  realPlayerRef: React.RefObject<PlayerMethods | null>;
+  playerRef: React.RefObject<PlayerMethods | null>;
   getAccurateTime: () => void;
   getPlaying: () => boolean;
   setPlaying: (p: boolean) => void;
@@ -77,8 +78,15 @@ export function usePlaybackSync(props: {
           if (currentDrift > 0.6 && p.getMyRole() === "owner") {
             // A4 Fix: tag sync_correction with nonce so the echo-back doesn't trigger OCC rollback flicker
             const nonce = crypto.randomUUID();
-            p.intentManager.markCommandEmitted("playing", currentPosition, nonce);
-            p.emitCommand("sync_correction", { position: currentPosition, nonce });
+            p.intentManager.markCommandEmitted(
+              "playing",
+              currentPosition,
+              nonce,
+            );
+            p.emitCommand("sync_correction", {
+              position: currentPosition,
+              nonce,
+            });
             return;
           } else if (currentDrift > 3.0) {
             // Followers hard seek locally if drift is massive
