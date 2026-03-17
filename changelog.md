@@ -37,6 +37,7 @@ All notable changes to this project will be documented in this file.
 - **Player Overlay Interactions**: Redesigned the paused overlay to use `pointer-events: none` on the backdrop and `pointer-events: auto` only on the play button, allowing users to interact with underlying YouTube/Twitch native controls.
 - **Mobile Room Layout**: Optimized mobile responsiveness by reducing player minimum height to 35vh and capping the sidebar at 45vh. Widened the theater mode reveal area for better discoverability.
 - Global refactor: Removed the legacy `guest` terminology and replaced it with `viewer` across the TypeScript interfaces, Socket.io connection logic, and React UI to accurately reflect permission structures.
+
 ### Added
 
 - **Continuous Clock Sync**: Implemented dynamic `setInterval` daemon utilizing exponential backoff (1s→30s) and trimmed mean RTT offset calculations for ultra-stable clock parity.

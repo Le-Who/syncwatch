@@ -61,7 +61,10 @@ export class PlaybackIntentManager {
     }
     this.mediaTransitionTimeout = setTimeout(() => {
       if (this._mediaTransitionId === mediaId) {
-        console.warn('[IntentManager] Auto-clearing stuck media transition after 8s for', mediaId);
+        console.warn(
+          "[IntentManager] Auto-clearing stuck media transition after 8s for",
+          mediaId,
+        );
         this._mediaTransitionId = null;
       }
       this.mediaTransitionTimeout = null;
@@ -113,8 +116,10 @@ export class PlaybackIntentManager {
    * Used by Twitch to detect phantom-pause events fired asynchronously after seek.
    */
   public isRecentSeek(windowMs: number = 300): boolean {
-    return this.lastProgrammaticSeek > 0 &&
-      Date.now() - this.lastProgrammaticSeek < windowMs;
+    return (
+      this.lastProgrammaticSeek > 0 &&
+      Date.now() - this.lastProgrammaticSeek < windowMs
+    );
   }
 
   public clearPauseDebounce() {
