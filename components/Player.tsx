@@ -114,22 +114,6 @@ export default function Player() {
   const { flashbacks, registerPossibleFlashback, popFlashback } =
     useFlashback();
 
-  const isDocumentVisibleRef = useRef(true);
-
-  useEffect(() => {
-    if (typeof document !== "undefined") {
-      const handleVisibilityChange = () => {
-        isDocumentVisibleRef.current = !document.hidden;
-      };
-      document.addEventListener("visibilitychange", handleVisibilityChange);
-      return () =>
-        document.removeEventListener(
-          "visibilitychange",
-          handleVisibilityChange,
-        );
-    }
-  }, []);
-
   const [isSleeping, setIsSleeping] = useState(false);
   const idleTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -276,10 +260,13 @@ export default function Player() {
   // Removed ResizeObserver effect
 
   // In strict server state, we don't emit commands from native events
-  const emitCommand = (type: string, payload: any) => {
+  const emitCommand = useCallback((type: string, payload: any) => {
     // BACKGROUND TAB FIX: Block false-positive pause/seek events from throttled tabs
+    const isHidden = typeof document !== "undefined" && document.hidden;
+    const isPiP = typeof document !== "undefined" && !!document.pictureInPictureElement;
+
     if (
-      !isDocumentVisibleRef.current &&
+      isHidden && !isPiP &&
       ["play", "pause", "seek", "buffering"].includes(type)
     ) {
       return;
@@ -300,7 +287,7 @@ export default function Player() {
       nonce,
     );
     sendCommand(type, { ...payload, nonce });
-  };
+  }, [intentManager, sendCommand]);
 
   const { driftRef } = usePlaybackSync({
     realPlayerRef,
