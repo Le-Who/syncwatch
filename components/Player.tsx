@@ -961,6 +961,7 @@ export default function Player() {
                       playing ? handlePause() : handlePlay();
                     }}
                     disabled={!canControl}
+                    aria-label={playing ? "Pause" : "Play"}
                     className={`ring-theme-accent rounded-theme flex h-10 w-10 items-center justify-center border-2 border-inherit transition-all outline-none focus-visible:ring-2 ${
                       canControl
                         ? "border-theme-accent text-theme-accent hover:bg-theme-accent hover:text-theme-bg shadow-theme active:translate-y-0.5 active:shadow-none"
@@ -981,6 +982,7 @@ export default function Player() {
                       handleNext();
                     }}
                     disabled={!canControl}
+                    aria-label="Next media"
                     className={`ring-theme-accent rounded-full transition-all outline-none hover:scale-110 focus-visible:ring-2 ${canControl ? "text-theme-accent hover:text-theme-danger" : "text-theme-muted cursor-not-allowed"}`}
                   >
                     <SkipForward className="h-5 w-5 fill-current" />
@@ -991,6 +993,7 @@ export default function Player() {
                     flashbacks.some((f) => f.mediaId === currentMediaId) && (
                       <button
                         title="Undo accidental seek"
+                        aria-label="Undo accidental seek"
                         onClick={(e) => {
                           e.stopPropagation();
                           const restoredPos = popFlashback(currentMediaId!);
@@ -1006,7 +1009,10 @@ export default function Player() {
 
                   {/* Playback Speed */}
                   <div className="group/speed relative flex items-center space-x-2">
-                    <button className="text-theme-accent hover:text-theme-danger ring-theme-accent border-theme-accent/30 rounded-sm border px-1.5 py-1 text-[10px] font-bold tracking-widest uppercase transition-colors outline-none focus-visible:ring-2">
+                    <button
+                      aria-label="Playback speed"
+                      className="text-theme-accent hover:text-theme-danger ring-theme-accent border-theme-accent/30 rounded-sm border px-1.5 py-1 text-[10px] font-bold tracking-widest uppercase transition-colors outline-none focus-visible:ring-2"
+                    >
                       {playback?.rate || 1}x
                     </button>
                     {/* Add a transparent bridge area using pb-2 on the outer container so hovering the gap keeps it open */}
@@ -1047,6 +1053,7 @@ export default function Player() {
                         e.stopPropagation();
                         setMuted(!muted);
                       }}
+                      aria-label={muted || volume === 0 ? "Unmute" : "Mute"}
                       className="text-theme-accent hover:text-theme-danger ring-theme-accent rounded-full transition-colors outline-none focus-visible:ring-2"
                     >
                       {muted || volume === 0 ? (
@@ -1065,6 +1072,7 @@ export default function Player() {
                         min={0}
                         max={1}
                         step="any"
+                        aria-label="Volume slider"
                         onChange={(e) => {
                           setVolume(parseFloat(e.target.value));
                           if (muted && parseFloat(e.target.value) > 0) {
@@ -1090,6 +1098,8 @@ export default function Player() {
                   {/* Quality Settings */}
                   <div className="group/quality relative flex items-center space-x-2">
                     <button
+                      aria-label="Quality settings"
+                      aria-expanded={qualityMenuOpen}
                       className={`text-theme-accent hover:text-theme-danger ring-theme-accent relative rounded-full p-2 transition-transform duration-500 outline-none focus-visible:ring-2 ${qualityMenuOpen ? "text-theme-danger rotate-90" : ""}`}
                       onClick={(e) => {
                         e.stopPropagation();
@@ -1307,6 +1317,9 @@ export default function Player() {
                   {/* Theater Mode */}
                   <button
                     onClick={toggleTheaterMode}
+                    aria-label={
+                      theaterMode ? "Exit theater mode" : "Enter theater mode"
+                    }
                     className={`ring-theme-accent rounded-full p-2 transition-colors outline-none hover:scale-110 focus-visible:ring-2 ${
                       theaterMode
                         ? "text-theme-danger"
@@ -1328,6 +1341,7 @@ export default function Player() {
                         }
                       }
                     }}
+                    aria-label="Toggle fullscreen"
                     className="text-theme-accent hover:text-theme-danger ring-theme-accent rounded-full p-2 transition-colors outline-none hover:scale-110 focus-visible:ring-2"
                   >
                     <Maximize className="h-5 w-5" />
