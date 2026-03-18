@@ -170,6 +170,19 @@ export default function Player() {
 
   const [intentManager] = useState(() => new PlaybackIntentManager());
 
+  const isDocumentVisibleRef = useRef(true);
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      isDocumentVisibleRef.current = document.visibilityState === "visible";
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    // Set initial value inside useEffect to ensure it runs only on client
+    handleVisibilityChange();
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, []);
+
   useEffect(() => {
     intentManager.setUserDraggingScrubber(seeking);
   }, [seeking, intentManager]);

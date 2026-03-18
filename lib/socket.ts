@@ -1,6 +1,6 @@
 import { io, Socket } from "socket.io-client";
 
-export type RoomSocketEvent =
+type RoomSocketEvent =
   | "connected"
   | "disconnected"
   | "room_state"

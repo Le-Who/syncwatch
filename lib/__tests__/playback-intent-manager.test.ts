@@ -63,7 +63,7 @@ describe("PlaybackIntentManager", () => {
         status: "playing",
         position: 10.5,
         time: 10000,
-        nonce: "nonce123"
+        nonce: "nonce123",
       });
 
       vi.advanceTimersByTime(2000);
@@ -151,13 +151,18 @@ describe("PlaybackIntentManager", () => {
     });
 
     it("should auto-clear stuck media transition after 8s", () => {
-      const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const consoleWarnSpy = vi
+        .spyOn(console, "warn")
+        .mockImplementation(() => {});
       manager.setMediaTransition("media123");
       expect(manager.isInMediaTransition()).toBe(true);
 
       vi.advanceTimersByTime(8000);
 
-      expect(consoleWarnSpy).toHaveBeenCalledWith('[IntentManager] Auto-clearing stuck media transition after 8s for', 'media123');
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        "[IntentManager] Auto-clearing stuck media transition after 8s for",
+        "media123",
+      );
       expect(manager.isInMediaTransition()).toBe(false);
 
       consoleWarnSpy.mockRestore();

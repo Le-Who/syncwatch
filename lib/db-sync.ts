@@ -6,7 +6,7 @@ import { v5 as uuidv5 } from "uuid";
 
 const SYNCWATCH_NAMESPACE = "1b671a64-40d5-491e-99b0-da01ff1f3341";
 
-export function getDeterministicUUID(roomId: string): string {
+function getDeterministicUUID(roomId: string): string {
   if (
     roomId.length === 36 &&
     roomId.match(
@@ -18,7 +18,7 @@ export function getDeterministicUUID(roomId: string): string {
   return uuidv5(roomId, SYNCWATCH_NAMESPACE);
 }
 
-export const writeBehindQueue = new Set<string>();
+const writeBehindQueue = new Set<string>();
 
 export async function isSystemDegraded(): Promise<boolean> {
   const redisClient = getRedisClient();
@@ -52,7 +52,7 @@ export const persistRoomState = (
   markRoomForSync(room.id);
 };
 
-export const forcePersistRoom = async (
+const forcePersistRoom = async (
   room: RoomState,
   supabase: SupabaseClient | null,
 ) => {

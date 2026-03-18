@@ -1,4 +1,4 @@
-export interface MediaInfo {
+interface MediaInfo {
   provider: string;
   title: string;
   duration: number;
