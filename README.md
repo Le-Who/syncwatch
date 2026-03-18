@@ -68,14 +68,14 @@ The drift correction system (`lib/drift-math.ts`) uses hysteresis to prevent aud
 
 ```bash
 # Install dependencies
-npm install
+pnpm install
 
 # Start development server
-npm run dev
+pnpm run dev
 
 # Production build and run
-npm run build
-npm start
+pnpm run build
+pnpm start
 ```
 
 ### Configuration Environment Variables
