@@ -227,6 +227,7 @@ export default function Playlist() {
                 <input
                   type="text"
                   placeholder="Search YouTube or paste any media URL..."
+                  aria-label="Search YouTube or paste any media URL"
                   value={url}
                   onChange={(e) => {
                     setUrl(e.target.value);
@@ -243,7 +244,8 @@ export default function Playlist() {
                 <button
                   type="submit"
                   disabled={!url.trim() || isAdding}
-                  className="bg-theme-accent text-theme-bg rounded-theme shadow-theme hover:shadow-theme-hover flex min-w-[44px] items-center justify-center p-2.5 transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
+                  aria-label="Search or Add to playlist"
+                  className="bg-theme-accent text-theme-bg rounded-theme shadow-theme hover:shadow-theme-hover ring-theme-accent flex min-w-[44px] items-center justify-center p-2.5 transition-all outline-none focus-visible:ring-2 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
                   title="Search or Add to playlist"
                 >
                   {isAdding ? (
@@ -444,7 +446,8 @@ export default function Playlist() {
                 {canEdit && (
                   <button
                     onClick={() => handleRemove(item.id)}
-                    className="hover:text-theme-danger hover:bg-theme-danger/10 rounded-theme z-10 p-2 opacity-50 transition-all hover:opacity-100"
+                    aria-label={`Remove ${item.title}`}
+                    className="hover:text-theme-danger hover:bg-theme-danger/10 rounded-theme ring-theme-danger z-10 p-2 opacity-50 transition-all outline-none hover:opacity-100 focus-visible:ring-2"
                     title="Remove"
                   >
                     <Trash2 className="h-4 w-4" />
