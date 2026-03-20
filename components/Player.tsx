@@ -273,7 +273,7 @@ export default function Player() {
   // Removed ResizeObserver effect
 
   // In strict server state, we don't emit commands from native events
-  const emitCommand = (type: string, payload: any) => {
+  const emitCommand = useCallback((type: string, payload: any) => {
     // BACKGROUND TAB FIX: Block false-positive pause/seek events from throttled tabs
     if (
       !isDocumentVisibleRef.current &&
@@ -301,7 +301,7 @@ export default function Player() {
       nonce,
     );
     sendCommand(type, { ...payload, nonce });
-  };
+  }, [intentManager, sendCommand]);
 
   const { driftRef } = usePlaybackSync({
     realPlayerRef,
