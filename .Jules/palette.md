@@ -1,1 +1,3 @@
-# Palette's Journal
+## 2024-05-16 - Contextualizing Global Controls
+**Learning:** Generic labels like "Toggle Theme" on global controls offer poor context for screen readers and lack discoverability for mouse users when the outcome isn't immediately obvious. A single control switching between two distinct states (like "Cyber" vs "Cotton" theme) should explicitly describe the *action* that will occur upon activation.
+**Action:** Always prefer action-oriented, state-aware labels (`Switch to [Next State]`) over generic descriptors (`Toggle [Feature]`) for binary global controls. Implement `title` attributes that mirror this specific action to provide identical clarity to mouse users via tooltips.
