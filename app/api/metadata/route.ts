@@ -2,26 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { checkRedisRateLimit } from "@/lib/redis-rate-limit";
 import dns from "dns/promises";
 import { Parser } from "htmlparser2";
-import ipaddr from "ipaddr.js";
-
-function isBogon(ipStr: string): boolean {
-  try {
-    const ip = ipaddr.process(ipStr);
-    const range = ip.range();
-    return [
-      "private",
-      "loopback",
-      "linkLocal",
-      "multicast",
-      "unspecified",
-      "carrierGradeNat",
-      "broadcast",
-    ].includes(range);
-  } catch (e) {
-    // If it can't be parsed, treat it as a potential risk and block it
-    return true;
-  }
-}
+import { isBogon } from "@/lib/ip";
 
 export async function GET(request: NextRequest) {
   const ip = request.headers.get("x-forwarded-for") || "unknown";
