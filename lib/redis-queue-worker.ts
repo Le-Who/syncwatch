@@ -169,34 +169,28 @@ export async function processQueueForRoom(roomId: string) {
 
           case "reorder_playlist":
             if (!canEditPlaylist || !Array.isArray(payload.playlist)) break;
-            const oldIds = new Set(room.playlist.map((i: any) => i.id));
-            const newOrderIds = payload.playlist.map((i: any) => i.id);
 
-            // Create a map for O(1) lookups
-            const itemMap = new Map(room.playlist.map((i: any) => [i.id, i]));
+            // Create a map for O(1) lookups and track items not yet placed
+            const itemMap = new Map();
+            for (const item of room.playlist) {
+              itemMap.set(item.id, item);
+            }
 
             // Reconcile arrays instead of blind overwrite (Concurrency Fix)
             const reconciledPlaylist = [];
 
-            // O(N) Preprocessing for fast lookup during reconciliation
-            const playlistMap = new Map();
-            for (const item of room.playlist) {
-              playlistMap.set(item.id, item);
-            }
-
             // 1. Maintain items that exist in both, in the new order
-            for (const id of newOrderIds) {
-              const item = itemMap.get(id);
+            for (const newItem of payload.playlist) {
+              const item = itemMap.get(newItem.id);
               if (item) {
                 reconciledPlaylist.push(item);
-                oldIds.delete(id);
+                itemMap.delete(newItem.id);
               }
             }
 
-            // 2. Append items that were concurrently added (exist in oldIds but not in payload)
-            for (const leftoverId of oldIds) {
-              const item = itemMap.get(leftoverId);
-              if (item) reconciledPlaylist.push(item);
+            // 2. Append items that were concurrently added (still in itemMap)
+            for (const leftoverItem of itemMap.values()) {
+              reconciledPlaylist.push(leftoverItem);
             }
 
             room.playlist = reconciledPlaylist;
