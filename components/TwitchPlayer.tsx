@@ -22,7 +22,7 @@ interface TwitchPlayerProps {
   onDurationChange?: (duration: number) => void;
   onPlaying?: () => void;
   onWaiting?: () => void;
-  onError?: (e: any) => void;
+  onError?: (e: unknown) => void;
   onEnded?: () => void;
 }
 

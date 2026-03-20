@@ -617,7 +617,7 @@ export default function Player() {
                         setPlaying(true);
                       }
                     }}
-                    onError={(e: any) => {
+                    onError={(e: unknown) => {
                       console.error("Twitch Player error:", e);
                       setError("SYSTEM FAILURE. SIGNAL LOST.");
                       setIsBuffering(false);
@@ -728,7 +728,7 @@ export default function Player() {
                         }
                       }
                     }}
-                    onError={(e: any) => {
+                    onError={(e: unknown) => {
                       console.error("Player error:", e);
                       setError("SYSTEM FAILURE. SIGNAL LOST.");
                       setIsBuffering(false);
