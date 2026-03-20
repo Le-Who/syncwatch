@@ -794,7 +794,7 @@ export default function Player() {
                           origin:
                             typeof window !== "undefined"
                               ? window.location.origin
-                              : "https://69.tri.mom",
+                              : process.env.NEXT_PUBLIC_APP_URL,
                           enablejsapi: 1,
                         },
                       },

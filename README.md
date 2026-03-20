@@ -85,7 +85,7 @@ pnpm start
 | `NEXT_PUBLIC_SUPABASE_URL`  | Yes      | URL of the Supabase instance.                                |
 | `SUPABASE_SERVICE_ROLE_KEY` | Yes      | Admin key for server components to bypass RLS.               |
 | `JWT_SECRET`                | Yes      | Cryptographic secret for signing session JWTs.               |
-| `APP_URL`                   | Yes      | Public bounds for CORS via Socket.io.                        |
+| `NEXT_PUBLIC_APP_URL`       | Yes      | Public bounds for CORS and YouTube origin.                   |
 | `REDIS_URL`                 | No       | URI for Redis. System degrades gracefully to memory without. |
 | `YOUTUBE_API_KEY`           | No       | Enables stable YouTube searches (bypasses scraper worker).   |
 
