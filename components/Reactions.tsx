@@ -88,6 +88,7 @@ export default function Reactions() {
                   sendReaction(emoji);
                   setIsOpen(false);
                 }}
+                aria-label={`React with ${emoji}`}
                 className="hover:bg-theme-accent/20 ring-theme-accent flex h-10 w-10 origin-center items-center justify-center rounded-full text-xl transition-colors hover:scale-125 focus:outline-none focus-visible:ring-2"
               >
                 {emoji}
@@ -97,6 +98,8 @@ export default function Reactions() {
         )}
         <button
           onClick={() => setIsOpen(!isOpen)}
+          aria-label="Toggle reactions menu"
+          aria-expanded={isOpen}
           className={`text-theme-text ring-theme-accent border-theme-border/50 shadow-theme flex h-12 w-12 items-center justify-center rounded-full border-2 backdrop-blur-md transition-all focus:outline-none focus-visible:ring-2 ${
             isOpen
               ? "bg-theme-accent text-theme-bg border-theme-accent scale-95 shadow-none"
