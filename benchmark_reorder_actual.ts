@@ -75,7 +75,10 @@ function runBenchmark(size: number) {
   // Warmup
   for (let i = 0; i < 1000; i++) {
     currentReorder({ playlist: [...items] }, { playlist: [...shuffledItems] });
-    optimizedReorder({ playlist: [...items] }, { playlist: [...shuffledItems] });
+    optimizedReorder(
+      { playlist: [...items] },
+      { playlist: [...shuffledItems] },
+    );
   }
 
   let start = performance.now();
@@ -86,14 +89,23 @@ function runBenchmark(size: number) {
 
   start = performance.now();
   for (let i = 0; i < ITERATIONS; i++) {
-    optimizedReorder({ playlist: [...items] }, { playlist: [...shuffledItems] });
+    optimizedReorder(
+      { playlist: [...items] },
+      { playlist: [...shuffledItems] },
+    );
   }
   const optimizedTime = performance.now() - start;
 
   console.log(`Playlist Size: ${size}`);
-  console.log(`Current Time (${ITERATIONS} iter): ${currentTime.toFixed(2)} ms`);
-  console.log(`Optimized Time (${ITERATIONS} iter): ${optimizedTime.toFixed(2)} ms`);
-  console.log(`Improvement: ${(currentTime / optimizedTime).toFixed(2)}x faster\n`);
+  console.log(
+    `Current Time (${ITERATIONS} iter): ${currentTime.toFixed(2)} ms`,
+  );
+  console.log(
+    `Optimized Time (${ITERATIONS} iter): ${optimizedTime.toFixed(2)} ms`,
+  );
+  console.log(
+    `Improvement: ${(currentTime / optimizedTime).toFixed(2)}x faster\n`,
+  );
 }
 
 console.log("--- Benchmark Results ---");
