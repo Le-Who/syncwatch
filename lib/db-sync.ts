@@ -191,14 +191,24 @@ export function startDbSyncWorker(supabase: SupabaseClient | null) {
     const BATCH_SIZE = 10;
     for (let i = 0; i < queue.length; i += BATCH_SIZE) {
       const batch = queue.slice(i, i + BATCH_SIZE);
-      const promises = batch.map(async (roomId) => {
+
+      // 1. Fetch all room states concurrently first
+      const roomStrs = await Promise.allSettled(
+        batch.map((roomId) => getRedisRoom(roomId)),
+      );
+
+      // 2. Process the batch
+      const promises = batch.map(async (roomId, index) => {
         let room;
-        const roomStr = await getRedisRoom(roomId);
-        if (roomStr) room = roomStr;
+        const result = roomStrs[index];
+        if (result.status === "fulfilled" && result.value) {
+          room = result.value;
+        }
 
         if (!room) {
-          if (redisClient)
+          if (redisClient) {
             await redisClient.zrem("pending_db_syncs", roomId).catch(() => {});
+          }
           return;
         }
 
@@ -216,6 +226,7 @@ export function startDbSyncWorker(supabase: SupabaseClient | null) {
           if (lockAcquired !== "OK") return;
 
           await forcePersistRoom(room, supabase);
+
           if (redisClient) {
             await redisClient.zrem("pending_db_syncs", roomId).catch(() => {});
             await redisClient.del(`db_sync_lock:${roomId}`).catch(() => {});
