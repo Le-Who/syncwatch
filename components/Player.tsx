@@ -277,6 +277,7 @@ export default function Player() {
     // BACKGROUND TAB FIX: Block false-positive pause/seek events from throttled tabs
     if (
       !isDocumentVisibleRef.current &&
+      payload?.fromNative &&
       ["play", "pause", "seek", "buffering"].includes(type)
     ) {
       return;
@@ -362,7 +363,7 @@ export default function Player() {
     const expectedStatus = intentManager.getExpectedStatus(playback?.status);
 
     if (canControl && expectedStatus !== "playing") {
-      emitCommand("play", { position: getAccurateTime() });
+      emitCommand("play", { position: getAccurateTime(), fromNative: true });
     }
   });
 
@@ -400,7 +401,7 @@ export default function Player() {
       );
 
       if (canControl && expectedStatus !== "paused") {
-        emitCommand("pause", { position: getAccurateTime() });
+        emitCommand("pause", { position: getAccurateTime(), fromNative: true });
       }
     }, 50);
   });
@@ -630,7 +631,7 @@ export default function Player() {
                       if (intentManager.isRecentCommand(1500)) return;
 
                       if (canControl) {
-                        emitCommand("seek", { position: seconds });
+                        emitCommand("seek", { position: seconds, fromNative: true });
 
                         // Twitch native player auto-pauses when scrubbing.
                         // If we were playing before the scrub, auto-resume after a short delay.
@@ -665,6 +666,7 @@ export default function Player() {
                       if (canControl) {
                         emitCommand("buffering", {
                           position: getAccurateTime(),
+                          fromNative: true,
                         });
                       }
                     }}
@@ -738,7 +740,7 @@ export default function Player() {
                       if (intentManager.isRecentCommand(1500)) return;
 
                       if (canControl) {
-                        emitCommand("seek", { position: seconds });
+                        emitCommand("seek", { position: seconds, fromNative: true });
                       }
                     }}
                     onSeeked={(e: any) => {
@@ -770,6 +772,7 @@ export default function Player() {
                       if (canControl) {
                         emitCommand("buffering", {
                           position: getAccurateTime(),
+                          fromNative: true,
                         });
                       }
                     }}
