@@ -21,6 +21,7 @@ export function UpNextOverlay({
           e.stopPropagation();
           onDismiss();
         }}
+        aria-label="Dismiss up next overlay"
         className="text-theme-muted hover:text-theme-text absolute top-1.5 right-1.5 rounded-full p-1 transition-colors"
         title="Dismiss"
       >
