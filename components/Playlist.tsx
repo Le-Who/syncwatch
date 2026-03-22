@@ -319,6 +319,11 @@ export default function Playlist() {
               <PlayCircle className="h-8 w-8 text-zinc-600" />
             </div>
             <p className="text-sm font-light">Playlist is empty</p>
+            {canEdit && (
+              <p className="max-w-[200px] text-center text-xs text-zinc-500">
+                Search or paste a media link above to start watching
+              </p>
+            )}
           </div>
         ) : (
           <Reorder.Group

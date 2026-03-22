@@ -1,0 +1,4 @@
+#!/bin/bash
+pnpm format
+pnpm lint
+pnpm test

@@ -273,36 +273,39 @@ export default function Player() {
   // Removed ResizeObserver effect
 
   // In strict server state, we don't emit commands from native events
-  const emitCommand = useCallback((type: string, payload: any) => {
-    // BACKGROUND TAB FIX: Block false-positive pause/seek events from throttled tabs
-    if (
-      !isDocumentVisibleRef.current &&
-      payload?.fromNative &&
-      ["play", "pause", "seek", "buffering"].includes(type)
-    ) {
-      return;
-    }
-    // Respect existing nonce if provided (e.g. from usePlaybackSync sync_correction),
-    // otherwise generate a fresh one for UI-driven actions.
-    const nonce = payload?.nonce || crypto.randomUUID();
+  const emitCommand = useCallback(
+    (type: string, payload: any) => {
+      // BACKGROUND TAB FIX: Block false-positive pause/seek events from throttled tabs
+      if (
+        !isDocumentVisibleRef.current &&
+        payload?.fromNative &&
+        ["play", "pause", "seek", "buffering"].includes(type)
+      ) {
+        return;
+      }
+      // Respect existing nonce if provided (e.g. from usePlaybackSync sync_correction),
+      // otherwise generate a fresh one for UI-driven actions.
+      const nonce = payload?.nonce || crypto.randomUUID();
 
-    // Normalize command types to playback statuses for getExpectedStatus comparisons
-    // ("play" → "playing", "pause" → "paused") so guards like
-    // `expectedStatus !== "playing"` work correctly.
-    const statusMap: Record<string, string> = {
-      play: "playing",
-      pause: "paused",
-      seek: "playing",
-      buffering: "buffering",
-      sync_correction: "playing",
-    };
-    intentManager.markCommandEmitted(
-      statusMap[type] || type,
-      payload?.position,
-      nonce,
-    );
-    sendCommand(type, { ...payload, nonce });
-  }, [intentManager, sendCommand]);
+      // Normalize command types to playback statuses for getExpectedStatus comparisons
+      // ("play" → "playing", "pause" → "paused") so guards like
+      // `expectedStatus !== "playing"` work correctly.
+      const statusMap: Record<string, string> = {
+        play: "playing",
+        pause: "paused",
+        seek: "playing",
+        buffering: "buffering",
+        sync_correction: "playing",
+      };
+      intentManager.markCommandEmitted(
+        statusMap[type] || type,
+        payload?.position,
+        nonce,
+      );
+      sendCommand(type, { ...payload, nonce });
+    },
+    [intentManager, sendCommand],
+  );
 
   const { driftRef } = usePlaybackSync({
     realPlayerRef,
@@ -631,7 +634,10 @@ export default function Player() {
                       if (intentManager.isRecentCommand(1500)) return;
 
                       if (canControl) {
-                        emitCommand("seek", { position: seconds, fromNative: true });
+                        emitCommand("seek", {
+                          position: seconds,
+                          fromNative: true,
+                        });
 
                         // Twitch native player auto-pauses when scrubbing.
                         // If we were playing before the scrub, auto-resume after a short delay.
@@ -740,7 +746,10 @@ export default function Player() {
                       if (intentManager.isRecentCommand(1500)) return;
 
                       if (canControl) {
-                        emitCommand("seek", { position: seconds, fromNative: true });
+                        emitCommand("seek", {
+                          position: seconds,
+                          fromNative: true,
+                        });
                       }
                     }}
                     onSeeked={(e: any) => {
