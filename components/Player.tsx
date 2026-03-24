@@ -1019,7 +1019,7 @@ export default function Player() {
                       {playback?.rate || 1}x
                     </button>
                     {/* Add a transparent bridge area using pb-2 on the outer container so hovering the gap keeps it open */}
-                    <div className="absolute bottom-full left-1/2 z-50 hidden -translate-x-1/2 flex-col pb-2 group-hover/speed:flex">
+                    <div className="absolute bottom-full left-1/2 z-50 hidden -translate-x-1/2 flex-col pb-2 group-hover/speed:flex group-focus-within/speed:flex">
                       <div className="bg-theme-bg/95 border-theme-border/50 rounded-theme flex flex-col overflow-hidden border-2 shadow-xl backdrop-blur-md">
                         <div className="text-theme-muted border-theme-border/30 bg-theme-bg/50 border-b py-1.5 text-center text-[9px] font-bold tracking-widest uppercase">
                           SPEED
@@ -1065,7 +1065,7 @@ export default function Player() {
                         <Volume2 className="h-5 w-5" />
                       )}
                     </button>
-                    <div className="bg-theme-bg border-theme-border/30 rounded-theme relative h-2 w-0 overflow-hidden border transition-all duration-300 group-hover/volume:w-24">
+                    <div className="bg-theme-bg ring-theme-accent border-theme-border/30 rounded-theme relative h-2 w-0 overflow-hidden border transition-all duration-300 group-hover/volume:w-24 group-focus-within/volume:w-24 group-focus-within/volume:ring-2">
                       <div
                         className="bg-theme-accent rounded-theme absolute top-0 left-0 h-full"
                         style={{ width: `${(muted ? 0 : volume) * 100}%` }}
@@ -1082,7 +1082,7 @@ export default function Player() {
                             setMuted(false);
                           }
                         }}
-                        className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                        className="absolute inset-0 h-full w-full cursor-pointer opacity-0 focus-visible:outline-none"
                       />
                     </div>
                   </div>
