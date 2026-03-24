@@ -1,1 +1,3 @@
-# Palette's Journal
+## 2024-05-24 - Accessibility on overlay buttons
+**Learning:** Next.js dev server auto-generates `next-env.d.ts` which is tracked in Git, so running dev server can create unintended git diffs. Icon-only action overlays (like the large central play button in `components/Player.tsx`) often lack native semantic meaning for screen readers.
+**Action:** When adding micro-UX accessibility touches, remember to add `aria-label` to interactive visual overlays that lack explicit text. Also, ensure Next.js dev artifacts (like `next-env.d.ts`) are not accidentally staged.
