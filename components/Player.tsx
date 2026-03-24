@@ -273,36 +273,39 @@ export default function Player() {
   // Removed ResizeObserver effect
 
   // In strict server state, we don't emit commands from native events
-  const emitCommand = useCallback((type: string, payload: any) => {
-    // BACKGROUND TAB FIX: Block false-positive pause/seek events from throttled tabs
-    if (
-      !isDocumentVisibleRef.current &&
-      payload?.fromNative &&
-      ["play", "pause", "seek", "buffering"].includes(type)
-    ) {
-      return;
-    }
-    // Respect existing nonce if provided (e.g. from usePlaybackSync sync_correction),
-    // otherwise generate a fresh one for UI-driven actions.
-    const nonce = payload?.nonce || crypto.randomUUID();
+  const emitCommand = useCallback(
+    (type: string, payload: any) => {
+      // BACKGROUND TAB FIX: Block false-positive pause/seek events from throttled tabs
+      if (
+        !isDocumentVisibleRef.current &&
+        payload?.fromNative &&
+        ["play", "pause", "seek", "buffering"].includes(type)
+      ) {
+        return;
+      }
+      // Respect existing nonce if provided (e.g. from usePlaybackSync sync_correction),
+      // otherwise generate a fresh one for UI-driven actions.
+      const nonce = payload?.nonce || crypto.randomUUID();
 
-    // Normalize command types to playback statuses for getExpectedStatus comparisons
-    // ("play" → "playing", "pause" → "paused") so guards like
-    // `expectedStatus !== "playing"` work correctly.
-    const statusMap: Record<string, string> = {
-      play: "playing",
-      pause: "paused",
-      seek: "playing",
-      buffering: "buffering",
-      sync_correction: "playing",
-    };
-    intentManager.markCommandEmitted(
-      statusMap[type] || type,
-      payload?.position,
-      nonce,
-    );
-    sendCommand(type, { ...payload, nonce });
-  }, [intentManager, sendCommand]);
+      // Normalize command types to playback statuses for getExpectedStatus comparisons
+      // ("play" → "playing", "pause" → "paused") so guards like
+      // `expectedStatus !== "playing"` work correctly.
+      const statusMap: Record<string, string> = {
+        play: "playing",
+        pause: "paused",
+        seek: "playing",
+        buffering: "buffering",
+        sync_correction: "playing",
+      };
+      intentManager.markCommandEmitted(
+        statusMap[type] || type,
+        payload?.position,
+        nonce,
+      );
+      sendCommand(type, { ...payload, nonce });
+    },
+    [intentManager, sendCommand],
+  );
 
   const { driftRef } = usePlaybackSync({
     realPlayerRef,
@@ -631,7 +634,10 @@ export default function Player() {
                       if (intentManager.isRecentCommand(1500)) return;
 
                       if (canControl) {
-                        emitCommand("seek", { position: seconds, fromNative: true });
+                        emitCommand("seek", {
+                          position: seconds,
+                          fromNative: true,
+                        });
 
                         // Twitch native player auto-pauses when scrubbing.
                         // If we were playing before the scrub, auto-resume after a short delay.
@@ -740,7 +746,10 @@ export default function Player() {
                       if (intentManager.isRecentCommand(1500)) return;
 
                       if (canControl) {
-                        emitCommand("seek", { position: seconds, fromNative: true });
+                        emitCommand("seek", {
+                          position: seconds,
+                          fromNative: true,
+                        });
                       }
                     }}
                     onSeeked={(e: any) => {
@@ -894,6 +903,7 @@ export default function Player() {
                 e.stopPropagation();
                 if (canControl) handlePlay();
               }}
+              aria-label="Play"
             >
               <Play className="ml-2 h-12 w-12" />
             </button>
@@ -908,6 +918,7 @@ export default function Player() {
                 e.stopPropagation();
                 setUserJoined(true);
               }}
+              aria-label="Initialize Stream Sync"
               className="bg-theme-accent text-theme-bg flex items-center gap-3 rounded-full px-8 py-4 font-bold tracking-widest uppercase shadow-[0_0_40px_var(--color-theme-accent)] transition-all hover:scale-105 active:scale-95"
             >
               <MonitorPlay className="h-6 w-6" />
