@@ -116,17 +116,45 @@ export const commandSchema = z.discriminatedUnion("type", [
     payload: z.object({ token: z.string() }),
   }),
 
-  // Allow Legacy intents currently marked as no-op to pass cleanly
+  // Legacy Commands (now fully implemented)
   z.object({
-    type: z.enum([
-      "update_duration",
-      "update_room_name",
-      "update_nickname",
-      "update_role",
-      "claim_host",
-      "kick_participant",
-      "video_ended",
-    ]),
-    payload: z.any(),
+    type: z.literal("update_duration"),
+    payload: z.object({
+      mediaId: z.string().uuid(),
+      duration: z.number().min(0),
+    }),
+  }),
+  z.object({
+    type: z.literal("update_room_name"),
+    payload: z.object({
+      name: z.string().min(1).max(100),
+    }),
+  }),
+  z.object({
+    type: z.literal("update_nickname"),
+    payload: z.object({
+      nickname: z.string().min(1).max(50),
+    }),
+  }),
+  z.object({
+    type: z.literal("update_role"),
+    payload: z.object({
+      targetParticipantId: z.string(),
+      role: z.enum(["moderator", "viewer"]),
+    }),
+  }),
+  z.object({
+    type: z.literal("claim_host"),
+    payload: z.any().optional(),
+  }),
+  z.object({
+    type: z.literal("kick_participant"),
+    payload: z.object({
+      targetParticipantId: z.string(),
+    }),
+  }),
+  z.object({
+    type: z.literal("video_ended"),
+    payload: z.any().optional(),
   }),
 ]);

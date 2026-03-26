@@ -6,21 +6,37 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **Player.tsx Decomposition**: Extracted 9 components/hooks from the 1360-line god component, reducing it to 757 lines (44% reduction):
+  - `SleepOverlay`, `BufferingOverlay`, `PausedOverlay`, `UserGestureGuard`, `ErrorOverlay` → `components/overlays/`
+  - `QualityMenu`, `PlayerControlBar` → `components/`
+  - `LivePosition` → `components/LivePosition.tsx` (real-time position ticker for active playlist item)
+  - `usePlayerEvents` → `hooks/usePlayerEvents.ts` (shared TwitchPlayer/ReactPlayer event handlers)
+- **Legacy Command Handlers**: Fully implemented 6 room management commands in `redis-queue-worker.ts` with authorization checks: `update_duration`, `update_room_name`, `update_nickname`, `update_role`, `claim_host`, `kick_participant`.
+- **Zod Schema Validation**: Replaced `z.any()` catch-all for legacy commands with individual per-command schemas including field-level validation (UUID, string length, enum constraints).
+- **Selective Event Passthrough**: `PlaybackIntentManager.ignoreEventsFor()` accepts `passThroughUserActions` flag, allowing deliberate user play/pause clicks during post-seek ignore windows.
+- **Clock Sync Cold-Start Guard**: Added `clockSyncReady` flag in `store.ts` to prevent spurious hard seeks on join before RTT samples are collected.
 - **Keyboard Shortcuts**: Arrow Left/Right (seek ±5s, Shift for ±10s), Arrow Up/Down (volume ±5%), F (fullscreen), T (theater mode). Guards against firing when typing in inputs.
 - **Double-Click Fullscreen**: Double-clicking the player area toggles fullscreen mode.
 - **ReconnectingOverlay**: New component shown when WebSocket disconnects, featuring auto-retry countdown, attempt counter, and manual retry button.
 - **Toast Notifications**: Participant join/leave events now show toast notifications via sonner (👋 joined / 🚪 left).
 - **Drift Hysteresis Tests**: Three new unit tests (TC-09, TC-10, TC-11) validating the hysteresis boundary behavior.
 
+
 ### Changed
 
+- **Follower Hard-Seek Threshold**: Tightened from 3.0s to 2.0s in `usePlaybackSync.ts` for tighter follower synchronization.
+- **PlayerControlBar Volume Sync**: Volume/muted state now uses `useSettingsStore` instead of local `useState`, fixing desync with keyboard shortcuts and enabling persistence across sessions.
+- **Zod Boundary Tests (TC-06)**: Expanded from 1 assertion to 8, covering positive and negative validation for all legacy command schemas.
 - **SyncStatusBadge Redesign**: Replaced the old inline drift indicator with a 5-state floating badge (synced/syncing/drift/lost/offline) that shows smooth color transitions and auto-hides an "In Sync ✓" pulse when perfectly synced.
-- **Buffering Overlay**: Now resolves the raw `updatedBy` participant ID to a human-readable nickname ("Waiting for Alice...").
+- **Buffering Overlay**: Now resolves the raw `updatedBy` participant ID to a human-readable nickname ("Waiting for Alice...") via reactive Zustand selector (was `getState()` in render).
 - **Drift Hysteresis (drift-math.ts)**: `calculatePlaybackRate` now uses hysteresis (start correction at 0.6s, stop at 0.3s) to prevent audible pitch oscillation on YouTube when drift hovers near the correction boundary. Returns `{ rate, isAdjusting }` object.
 - **Playlist Animations**: Playlist items now have smooth enter (fade+scale), exit (slide+fade), and layout reorder animations via motion/react.
 
 ### Fixed
 
+- **Stale wakeUp Closure (P5)**: `wakeUp` function closed over stale `isSleeping` state causing event listener churn on every render. Fixed by using `isSleepingRef` for stable identity.
+- **Clock Sync Cold-Start (P2)**: First `room_state` payload computed clock offset as 0, causing spurious hard seeks. Fixed with `clockSyncReady` flag.
+- **Sequence Capture Race (P4)**: `sendCommand` read `sequence` before `set()` applied the increment. Fixed by reading after state update.
 - **Media Transition Guard Deadlock**: `PlaybackIntentManager.setMediaTransition()` now includes an active 8-second auto-expiry `setTimeout` to prevent permanent event blocking if `onReady` never fires or fires out of order.
 - **Twitch Phantom Pause**: Added a 500ms `isRecentSeek()` guard in `handleNativePause` that blocks Twitch's asynchronous ghost PAUSE events fired after seek operations.
 - **OCC Rollback Flicker on Owner**: Owner's `sync_correction` emissions in `usePlaybackSync.ts` now include a nonce via `intentManager.markCommandEmitted()`, preventing the broadcast echo-back from triggering a visible UI rollback.

@@ -9,6 +9,7 @@ export class PlaybackIntentManager {
   } | null = null;
   private lastProgrammaticSeek: number = 0;
   private ignoreNativeEventsUntil: number = 0;
+  private _allowUserActionsDuringIgnore: boolean = false;
   private _userIsDraggingScrubber: boolean = false;
   private pauseDebounce: NodeJS.Timeout | null = null;
 
@@ -38,8 +39,16 @@ export class PlaybackIntentManager {
     this.lastProgrammaticSeek = Date.now();
   }
 
-  public ignoreEventsFor(ms: number) {
+  /**
+   * Suppress native player events for `ms` milliseconds.
+   * @param passThroughUserActions When true, user-initiated play/pause clicks
+   *   are NOT suppressed during this window — only programmatic/buffer events are.
+   *   This prevents the "eaten click" UX bug where a user clicks play/pause
+   *   during a post-seek ignore window and nothing happens.
+   */
+  public ignoreEventsFor(ms: number, passThroughUserActions: boolean = false) {
     this.ignoreNativeEventsUntil = Date.now() + ms;
+    this._allowUserActionsDuringIgnore = passThroughUserActions;
   }
 
   public isIgnoringNativeEvents(): boolean {
@@ -95,7 +104,22 @@ export class PlaybackIntentManager {
     return true;
   }
 
-  public shouldBlockNativeEvent(): boolean {
+  /**
+   * @param isUserInitiated When true, the event came from a deliberate user action
+   *   (e.g., clicking play/pause button). User-initiated events bypass the
+   *   time-based ignore window when `_allowUserActionsDuringIgnore` is active.
+   */
+  public shouldBlockNativeEvent(isUserInitiated: boolean = false): boolean {
+    // User clicks always pass through if the ignore window was set with passthrough
+    if (
+      isUserInitiated &&
+      this._allowUserActionsDuringIgnore &&
+      this.isIgnoringNativeEvents()
+    ) {
+      // Clear the ignore window since user took deliberate action
+      this.ignoreNativeEventsUntil = 0;
+      return false;
+    }
     return (
       this.isIgnoringNativeEvents() ||
       this._userIsDraggingScrubber ||

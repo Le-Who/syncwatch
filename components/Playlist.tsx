@@ -4,6 +4,7 @@
 import { useState, useEffect } from "react";
 import { useStore } from "@/lib/store";
 import { formatTime } from "@/lib/utils";
+import { LivePosition } from "./LivePosition";
 import {
   Plus,
   Trash2,
@@ -375,16 +376,7 @@ export default function Playlist() {
                   </p>
 
                   {(() => {
-                    let currentPos = item.lastPosition || 0;
-                    if (room.currentMediaId === item.id) {
-                      const elapsed =
-                        room.playback.status === "playing"
-                          ? (Date.now() - room.playback.baseTimestamp) / 1000
-                          : 0;
-                      currentPos =
-                        room.playback.basePosition +
-                        elapsed * room.playback.rate;
-                    }
+                    const isActive = room.currentMediaId === item.id;
                     return (
                       <p className="text-theme-muted mb-1 flex flex-wrap items-center space-x-1.5 truncate text-[11px] font-bold tracking-widest uppercase">
                         <span className="text-theme-text/70">
@@ -395,10 +387,20 @@ export default function Playlist() {
                         {item.duration > 0 && (
                           <>
                             <span className="border-theme-border/50 mx-1 h-3 border-l-2 opacity-30"></span>
-                            <span className="text-theme-accent/80">
-                              {formatTime(currentPos)} /{" "}
-                              {formatTime(item.duration)}
-                            </span>
+                            {isActive ? (
+                              <LivePosition
+                                basePosition={room.playback.basePosition}
+                                baseTimestamp={room.playback.baseTimestamp}
+                                rate={room.playback.rate}
+                                isPlaying={room.playback.status === "playing"}
+                                duration={item.duration}
+                              />
+                            ) : (
+                              <span className="text-theme-accent/80">
+                                {formatTime(item.lastPosition || 0)} /{" "}
+                                {formatTime(item.duration)}
+                              </span>
+                            )}
                           </>
                         )}
                       </p>

@@ -88,11 +88,12 @@ export function usePlaybackSync(props: {
               nonce,
             });
             return;
-          } else if (currentDrift > 3.0) {
-            // Followers hard seek locally if drift is massive
+          } else if (currentDrift > 2.0) {
+            // P3 Fix: Followers hard seek locally if drift exceeds 2.0s (lowered from 3.0s).
+            // The purpose is keeping all viewers in sync — followers must actively correct drift.
             p.performProgrammaticSeek(playback.basePosition);
           }
-          // Note: followers fall through to rate adjustment for 0.6 - 3.0s drift
+          // Note: followers fall through to rate adjustment for 0.6 - 2.0s drift
         }
 
         const currentMedia = p.getCurrentMedia();

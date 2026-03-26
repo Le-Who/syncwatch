@@ -379,15 +379,93 @@ export async function processQueueForRoom(roomId: string) {
             }
             break;
 
-          // Legacy Sync Events remaining
-          case "update_duration":
-          case "update_room_name":
-          case "update_nickname":
-          case "update_role":
-          case "claim_host":
-          case "kick_participant":
-            // Not fully re-mapped yet, keep the structural intent
+          // ========== P7: Implemented Legacy Commands ==========
+
+          case "update_duration": {
+            const { mediaId, duration: newDuration } = cmd.payload;
+            const mediaItem = room.playlist.find((i: any) => i.id === mediaId);
+            if (mediaItem && typeof newDuration === "number" && newDuration > 0) {
+              mediaItem.duration = newDuration;
+              stateChanged = true;
+            }
             break;
+          }
+
+          case "update_room_name": {
+            const { name: newName } = cmd.payload;
+            // Only owner or moderator can rename
+            const renameParticipant = room.participants[cmd.participantId];
+            if (
+              renameParticipant &&
+              (renameParticipant.role === "owner" || renameParticipant.role === "moderator") &&
+              typeof newName === "string" &&
+              newName.trim().length > 0
+            ) {
+              room.name = newName.trim().slice(0, 100);
+              stateChanged = true;
+            }
+            break;
+          }
+
+          case "update_nickname": {
+            const { nickname: newNick } = cmd.payload;
+            const nickParticipant = room.participants[cmd.participantId];
+            if (
+              nickParticipant &&
+              typeof newNick === "string" &&
+              newNick.trim().length > 0
+            ) {
+              nickParticipant.nickname = newNick.trim().slice(0, 50);
+              stateChanged = true;
+            }
+            break;
+          }
+
+          case "update_role": {
+            const { targetParticipantId, role: newRole } = cmd.payload;
+            // Only owner can change roles
+            const roleChanger = room.participants[cmd.participantId];
+            const targetParticipant = room.participants[targetParticipantId];
+            if (
+              roleChanger?.role === "owner" &&
+              targetParticipant &&
+              targetParticipantId !== cmd.participantId &&
+              ["moderator", "viewer"].includes(newRole)
+            ) {
+              targetParticipant.role = newRole;
+              stateChanged = true;
+            }
+            break;
+          }
+
+          case "claim_host": {
+            // Claim owner role if no current owner exists
+            const hasOwner = Object.values(room.participants).some(
+              (p: any) => p.role === "owner"
+            );
+            const claimer = room.participants[cmd.participantId];
+            if (!hasOwner && claimer) {
+              claimer.role = "owner";
+              stateChanged = true;
+            }
+            break;
+          }
+
+          case "kick_participant": {
+            const { targetParticipantId: kickTargetId } = cmd.payload;
+            // Only owner can kick
+            const kicker = room.participants[cmd.participantId];
+            const kickTarget = room.participants[kickTargetId];
+            if (
+              kicker?.role === "owner" &&
+              kickTarget &&
+              kickTargetId !== cmd.participantId
+            ) {
+              delete room.participants[kickTargetId];
+              stateChanged = true;
+            }
+            break;
+          }
         }
 
         if (stateChanged) room.sequence++;

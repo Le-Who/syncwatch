@@ -22,23 +22,8 @@ function useEventCallback<Args extends unknown[], Return>(
   });
   return useCallback((...args: Args) => ref.current(...args), []);
 }
-import {
-  Play,
-  Pause,
-  SkipForward,
-  SkipBack,
-  Volume2,
-  VolumeX,
-  Maximize,
-  MonitorPlay,
-  AlertCircle,
-  Settings,
-  ExternalLink,
-} from "lucide-react";
 import fscreen from "fscreen";
-import { motion } from "motion/react";
-import { formatTime, calculateDrift } from "@/lib/utils";
-import { Scrubber } from "./Scrubber";
+import { calculateDrift } from "@/lib/utils";
 import { MediaApiService } from "@/lib/MediaApiService";
 import {
   RoomState,
@@ -49,13 +34,21 @@ import {
 import { TwitchPlayer } from "./TwitchPlayer";
 import { usePlayerShortcuts } from "@/hooks/usePlayerShortcuts";
 import { useFlashback } from "@/hooks/useFlashback";
-import { Undo2 } from "lucide-react";
 import { usePlaybackSync } from "@/hooks/usePlaybackSync";
+import { usePlayerEvents } from "@/hooks/usePlayerEvents";
 import { applyTwitchEventProxy } from "@/lib/player-adapters";
 import { AwaitingSignal } from "./AwaitingSignal";
 import { UpNextOverlay } from "./UpNextOverlay";
 import { SyncStatusBadge } from "./SyncStatusBadge";
+import { PlayerControlBar } from "./PlayerControlBar";
 import { PlaybackIntentManager } from "@/lib/playback-intent-manager";
+import {
+  SleepOverlay,
+  BufferingOverlay,
+  PausedOverlay,
+  UserGestureGuard,
+  ErrorOverlay,
+} from "./overlays";
 
 const ReactPlayer = dynamic(() => import("react-player"), {
   ssr: false,
@@ -115,17 +108,24 @@ export default function Player() {
     useFlashback();
 
   const [isSleeping, setIsSleeping] = useState(false);
+  const isSleepingRef = useRef(false);
   const idleTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  // P5 Fix: Sync ref with state so event handlers never read stale closure
+  useEffect(() => {
+    isSleepingRef.current = isSleeping;
+  }, [isSleeping]);
+
+  // P5 Fix: wakeUp uses ref — stable identity, no event listener churn
   const wakeUp = useCallback(() => {
-    if (isSleeping) {
+    if (isSleepingRef.current) {
       setIsSleeping(false);
       const state = useStore.getState();
       if (state.room && !state.isConnected) {
         state.connect(state.room.id, state.nickname);
       }
     }
-  }, [isSleeping]);
+  }, []);
 
   useEffect(() => {
     const handleUserActivity = () => {
@@ -158,13 +158,6 @@ export default function Player() {
       if (idleTimeoutRef.current) clearTimeout(idleTimeoutRef.current);
     };
   }, [wakeUp]);
-
-  const [qualityMenuOpen, setQualityMenuOpen] = useState(false);
-  const [providerQualities, setProviderQualities] = useState<string[]>([]);
-  const [currentProviderQuality, setCurrentProviderQuality] =
-    useState<string>("auto");
-  const [hlsLevels, setHlsLevels] = useState<{ height: number }[]>([]);
-  const [currentHlsLevel, setCurrentHlsLevel] = useState<number>(-1);
 
   // Removed ResizeObserver dimensions
 
@@ -406,12 +399,32 @@ export default function Player() {
     }, 50);
   });
 
+  const playerEvents = usePlayerEvents({
+    intentManager,
+    realPlayerRef,
+    playerRef,
+    currentMediaId,
+    canControl,
+    playing,
+    isBuffering,
+    setIsReady,
+    setError,
+    setIsBuffering,
+    setPlaying,
+    setDuration,
+    getAccurateTime,
+    emitCommand,
+    handleNativePlay,
+    handleNativePause,
+  });
+
   // C1: Keyboard seek handler
   const handleKeyboardSeek = useCallback(
     (delta: number) => {
       const currentPos = getAccurateTime();
       const newPos = Math.max(0, Math.min(duration, currentPos + delta));
-      intentManager.ignoreEventsFor(2000);
+      // P6: Allow user play/pause clicks during seek ignore window
+      intentManager.ignoreEventsFor(2000, true);
       if (
         realPlayerRef.current &&
         typeof realPlayerRef.current.seekTo === "function"
@@ -477,7 +490,8 @@ export default function Player() {
     }
 
     // **INTENT MASK**: Vital for preventing rewind rollback. Drop native buffering events caused by this manual seek.
-    intentManager.ignoreEventsFor(2000);
+    // P6: Allow user play/pause clicks during this window
+    intentManager.ignoreEventsFor(2000, true);
 
     if (
       realPlayerRef.current &&
@@ -574,7 +588,7 @@ export default function Player() {
       <div
         className="relative h-full min-h-[40vh] w-full flex-1 md:min-h-full"
         onClick={() => {
-          if (qualityMenuOpen) setQualityMenuOpen(false);
+          // Click outside player area — no-op (quality menu is now self-contained)
         }}
         onDoubleClick={(e) => {
           // C2: Double-click to toggle fullscreen (ignore if clicking controls)
@@ -601,86 +615,15 @@ export default function Player() {
                     volume={volume}
                     muted={userJoined ? muted : true}
                     controls={true}
-                    onReady={(rPlayer: PlayerMethods) => {
-                      realPlayerRef.current = playerRef.current;
-                      setIsReady(true);
-                      setError(null);
-
-                      // Clear state-based transition guard for this media
-                      if (currentMediaId) {
-                        intentManager.clearMediaTransition(currentMediaId);
-                      }
-
-                      // Auto-resume if server is playing after media switch
-                      const currentPlayback =
-                        useStore.getState().room?.playback;
-                      if (currentPlayback?.status === "playing") {
-                        setPlaying(true);
-                      }
-                    }}
-                    onError={(e: unknown) => {
-                      console.error("Twitch Player error:", e);
-                      setError("SYSTEM FAILURE. SIGNAL LOST.");
-                      setIsBuffering(false);
-                    }}
-                    onSeek={(seconds: number) => {
-                      // If it's a programmatic seek responding to the server, ignore it.
-                      if (intentManager.isRecentProgrammaticSeek(1500)) return;
-
-                      // If it's a local seek via scrubber, it would have already emitted
-                      if (intentManager.isRecentCommand(1500)) return;
-
-                      if (canControl) {
-                        emitCommand("seek", { position: seconds, fromNative: true });
-
-                        // Twitch native player auto-pauses when scrubbing.
-                        // If we were playing before the scrub, auto-resume after a short delay.
-                        if (playing) {
-                          intentManager.ignoreEventsFor(2000); // Suppress incoming Twitch native pause
-                          setTimeout(() => {
-                            if (realPlayerRef.current?.play) {
-                              realPlayerRef.current.play();
-                            }
-                          }, 200);
-                        }
-                      }
-                    }}
-                    onDurationChange={(dur: number) => {
-                      setDuration(dur);
-                      if (canControl && currentMediaId) {
-                        emitCommand("update_duration", {
-                          itemId: currentMediaId,
-                          duration: dur,
-                        });
-                      }
-                    }}
-                    onEnded={() => {
-                      if (canControl) {
-                        emitCommand("video_ended", {
-                          currentMediaId,
-                        });
-                      }
-                    }}
-                    onWaiting={() => {
-                      setIsBuffering(true);
-                      if (canControl) {
-                        emitCommand("buffering", {
-                          position: getAccurateTime(),
-                          fromNative: true,
-                        });
-                      }
-                    }}
-                    onPlaying={() => {
-                      setIsBuffering(false);
-                    }}
-                    onPlay={() => {
-                      // removed undefined lastCommandEmitTimeRef debug log
-                      handleNativePlay();
-                    }}
-                    onPause={() => {
-                      // removed undefined lastCommandEmitTimeRef debug log
-                      handleNativePause();
-                    }}
+                    onReady={(rPlayer: PlayerMethods) => playerEvents.handleReady(rPlayer, true)}
+                    onError={playerEvents.handleError}
+                    onSeek={(seconds: number) => playerEvents.handleSeek(seconds, true)}
+                    onDurationChange={playerEvents.handleDurationChange}
+                    onEnded={playerEvents.handleEnded}
+                    onWaiting={playerEvents.handleWaiting}
+                    onPlaying={playerEvents.handlePlaying}
+                    onPlay={playerEvents.handleNativePlay}
+                    onPause={playerEvents.handleNativePause}
                   />
                 ) : (
                   <ReactPlayer
@@ -694,97 +637,16 @@ export default function Player() {
                     playing={userJoined ? playing : false}
                     volume={volume}
                     muted={userJoined ? muted : true}
-                    onReady={(rPlayer: PlayerMethods) => {
-                      realPlayerRef.current = rPlayer;
-                      setIsReady(true);
-                      setError(null);
-
-                      // Clear state-based transition guard for this media
-                      if (currentMediaId) {
-                        intentManager.clearMediaTransition(currentMediaId);
-                      }
-
-                      // Auto-resume if server is playing after media switch
-                      const currentPlayback =
-                        useStore.getState().room?.playback;
-                      if (currentPlayback?.status === "playing") {
-                        setPlaying(true);
-                      }
-
-                      // Extract HLS Levels if it's a direct stream
-                      if (
-                        currentMedia.provider?.toLowerCase() !== "youtube" &&
-                        currentMedia.provider?.toLowerCase() !== "twitch" &&
-                        currentMedia.provider?.toLowerCase() !== "vimeo"
-                      ) {
-                        try {
-                          const el = playerRef.current;
-                          if (el && el.levels) {
-                            setHlsLevels(el.levels);
-                            setCurrentHlsLevel(el.currentLevel ?? -1);
-                          }
-                        } catch (e) {
-                          console.log(
-                            "Not an HLS stream or levels unavailable.",
-                          );
-                        }
-                      }
-                    }}
-                    onError={(e: unknown) => {
-                      console.error("Player error:", e);
-                      setError("SYSTEM FAILURE. SIGNAL LOST.");
-                      setIsBuffering(false);
-                    }}
-                    onSeek={(seconds: number) => {
-                      if (intentManager.isRecentProgrammaticSeek(1500)) return;
-                      if (intentManager.isRecentCommand(1500)) return;
-
-                      if (canControl) {
-                        emitCommand("seek", { position: seconds, fromNative: true });
-                      }
-                    }}
-                    onSeeked={(e: any) => {
-                      if (isBuffering) setIsBuffering(false);
-                    }}
-                    onDurationChange={(e: any) => {
-                      const dur =
-                        realPlayerRef.current?.getDuration?.() ||
-                        e?.target?.duration ||
-                        e?.duration ||
-                        0;
-                      setDuration(dur);
-                      if (canControl && currentMediaId) {
-                        emitCommand("update_duration", {
-                          itemId: currentMediaId,
-                          duration: dur,
-                        });
-                      }
-                    }}
-                    onEnded={() => {
-                      if (canControl) {
-                        emitCommand("video_ended", {
-                          currentMediaId,
-                        });
-                      }
-                    }}
-                    onWaiting={() => {
-                      setIsBuffering(true);
-                      if (canControl) {
-                        emitCommand("buffering", {
-                          position: getAccurateTime(),
-                          fromNative: true,
-                        });
-                      }
-                    }}
-                    onPlaying={() => {
-                      setIsBuffering(false);
-                    }}
-                    onPlay={() => {
-                      handleNativePlay();
-                    }}
-                    onPause={() => {
-                      handleNativePause();
-                    }}
+                    onReady={(rPlayer: PlayerMethods) => playerEvents.handleReady(rPlayer, false)}
+                    onError={playerEvents.handleError}
+                    onSeek={(seconds: number) => playerEvents.handleSeek(seconds, false)}
+                    onSeeked={playerEvents.handleSeeked}
+                    onDurationChange={playerEvents.handleDurationChange}
+                    onEnded={playerEvents.handleEnded}
+                    onWaiting={playerEvents.handleWaiting}
+                    onPlaying={playerEvents.handlePlaying}
+                    onPlay={playerEvents.handleNativePlay}
+                    onPause={playerEvents.handleNativePause}
                     style={{ position: "absolute", top: 0, left: 0 }}
                     config={{
                       youtube: {
@@ -833,11 +695,8 @@ export default function Player() {
             <>
               {/* Main click capture layer */}
               <div
-                className={`absolute inset-0 z-10 ${canControl ? "cursor-pointer" : "cursor-default"} ${qualityMenuOpen ? "pointer-events-none" : ""}`}
+                className={`absolute inset-0 z-10 ${canControl ? "cursor-pointer" : "cursor-default"}`}
                 onClick={() => {
-                  if (qualityMenuOpen) {
-                    return;
-                  }
                   if (canControl) {
                     playing ? handlePause() : handlePlay();
                   }
@@ -846,514 +705,52 @@ export default function Player() {
             </>
           )}
 
-        {error && (
-          <div className="bg-theme-bg/95 border-theme-danger absolute inset-0 z-20 flex flex-col items-center justify-center border-4 shadow-[inset_0_0_50px_var(--color-theme-danger)] backdrop-blur-sm">
-            <AlertCircle className="text-theme-danger mb-4 h-16 w-16 animate-pulse" />
-            <div className="bg-theme-danger text-theme-bg mb-2 rounded-full px-4 py-1 text-sm font-bold tracking-[0.2em] uppercase">
-              Critical Error
-            </div>
-            <p className="text-theme-danger font-theme max-w-md text-center text-lg tracking-wider uppercase">
-              {error}
-            </p>
-          </div>
-        )}
+        {error && <ErrorOverlay message={error} />}
 
         {/* Buffering Overlay - Yield to explicit Pause state */}
         {(isBuffering || playback?.status === "buffering") &&
           playing &&
           !error && (
-            <div className="bg-theme-bg/80 absolute inset-0 z-20 flex flex-col items-center justify-center backdrop-blur-sm">
-              <div className="border-theme-accent border-b-theme-danger mb-6 h-16 w-16 animate-spin rounded-full border-4 border-t-transparent" />
-              <div className="bg-theme-accent text-theme-bg shadow-theme rounded-full px-4 py-1 text-xs font-bold tracking-[0.2em] uppercase">
-                {(() => {
-                  if (playback?.status === "buffering" && !isBuffering) {
-                    // Another participant is buffering — resolve nickname
-                    const bufferingParticipant = playback.updatedBy
-                      ? useStore.getState().room?.participants[
-                          playback.updatedBy
-                        ]
-                      : null;
-                    const displayName =
-                      bufferingParticipant?.nickname ||
-                      playback.updatedBy ||
-                      "someone";
-                    return `Waiting for ${displayName}...`;
-                  }
-                  return "Buffering...";
-                })()}
-              </div>
-            </div>
+            <BufferingOverlay playback={playback} isLocalBuffering={isBuffering} />
           )}
 
-        {/* PAUSED Overlay — backdrop is pointer-events-none so YouTube/Twitch native controls remain clickable underneath. Only the play button itself captures clicks. */}
+        {/* PAUSED Overlay */}
         {!playing && !isBuffering && isReady && !error && userJoined && (
-          <div className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/40 backdrop-blur-[2px] transition-opacity duration-300">
-            <button
-              className="bg-theme-bg/80 border-theme-accent text-theme-accent pointer-events-auto flex h-24 w-24 cursor-pointer items-center justify-center rounded-full border-4 shadow-[0_0_30px_var(--color-theme-accent)] backdrop-blur-md transition-transform hover:scale-110 active:scale-95"
-              onClick={(e) => {
-                e.stopPropagation();
-                if (canControl) handlePlay();
-              }}
-            >
-              <Play className="ml-2 h-12 w-12" />
-            </button>
-          </div>
+          <PausedOverlay canControl={canControl} onPlay={handlePlay} />
         )}
 
         {/* User Gesture Guard Overlay */}
         {!userJoined && (
-          <div className="pointer-events-auto absolute inset-0 z-40 flex flex-col items-center justify-center bg-black/80 backdrop-blur-md">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setUserJoined(true);
-              }}
-              className="bg-theme-accent text-theme-bg flex items-center gap-3 rounded-full px-8 py-4 font-bold tracking-widest uppercase shadow-[0_0_40px_var(--color-theme-accent)] transition-all hover:scale-105 active:scale-95"
-            >
-              <MonitorPlay className="h-6 w-6" />
-              Initialize Stream Sync
-            </button>
-            <p className="text-theme-muted mt-6 text-xs tracking-widest uppercase">
-              Browser policy requires manual activation
-            </p>
-          </div>
+          <UserGestureGuard onActivate={() => setUserJoined(true)} />
         )}
 
         {/* Smart Sleep Mode Overlay */}
-        {isSleeping && (
-          <div
-            className="absolute inset-0 z-50 flex cursor-pointer flex-col items-center justify-center bg-black/90 backdrop-blur-md"
-            onClick={wakeUp}
-          >
-            <MonitorPlay className="text-theme-muted mb-6 h-16 w-16 opacity-50" />
-            <h2 className="text-theme-text mb-2 text-2xl font-bold tracking-widest uppercase">
-              Sleep Mode
-            </h2>
-            <p className="text-theme-muted text-sm tracking-wider uppercase">
-              Connection paused to save resources.
-            </p>
-            <p className="text-theme-accent mt-6 animate-pulse text-xs font-bold tracking-widest uppercase">
-              Click anywhere to awake
-            </p>
-          </div>
-        )}
+        {isSleeping && <SleepOverlay onWakeUp={wakeUp} />}
       </div>
 
       {/* Custom Controls Panel */}
       {currentMedia.provider?.toLowerCase() !== "youtube" &&
         currentMedia.provider?.toLowerCase() !== "twitch" && (
-          <div className="font-theme absolute right-0 bottom-0 left-0 z-50 p-4 opacity-0 transition-opacity duration-300 group-hover:opacity-100 focus-within:opacity-100">
-            <div className="bg-theme-bg/80 border-theme-border/50 rounded-theme border-2 p-3 shadow-lg backdrop-blur-md">
-              {/* Timeline */}
-              <div className="mb-3 flex items-center space-x-4">
-                <Scrubber
-                  playerRef={realPlayerRef}
-                  duration={duration}
-                  canControl={canControl}
-                  onSeekStart={handleSeekMouseDown}
-                  onSeekEnd={handleSeekMouseUp}
-                />
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-6">
-                  {/* Play/Pause */}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      playing ? handlePause() : handlePlay();
-                    }}
-                    disabled={!canControl}
-                    aria-label={playing ? "Pause" : "Play"}
-                    className={`ring-theme-accent rounded-theme flex h-10 w-10 items-center justify-center border-2 border-inherit transition-all outline-none focus-visible:ring-2 ${
-                      canControl
-                        ? "border-theme-accent text-theme-accent hover:bg-theme-accent hover:text-theme-bg shadow-theme active:translate-y-0.5 active:shadow-none"
-                        : "border-theme-border text-theme-muted cursor-not-allowed"
-                    }`}
-                  >
-                    {playing ? (
-                      <Pause className="h-5 w-5 fill-current" />
-                    ) : (
-                      <Play className="ml-1 h-5 w-5 fill-current" />
-                    )}
-                  </button>
-
-                  {/* Next */}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleNext();
-                    }}
-                    disabled={!canControl}
-                    aria-label="Next media"
-                    className={`ring-theme-accent rounded-full transition-all outline-none hover:scale-110 focus-visible:ring-2 ${canControl ? "text-theme-accent hover:text-theme-danger" : "text-theme-muted cursor-not-allowed"}`}
-                  >
-                    <SkipForward className="h-5 w-5 fill-current" />
-                  </button>
-
-                  {/* Undo Seek (Flashback) */}
-                  {canControl &&
-                    flashbacks.some((f) => f.mediaId === currentMediaId) && (
-                      <button
-                        title="Undo accidental seek"
-                        aria-label="Undo accidental seek"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          const restoredPos = popFlashback(currentMediaId!);
-                          if (restoredPos !== null) {
-                            emitCommand("seek", { position: restoredPos });
-                          }
-                        }}
-                        className="text-theme-bg bg-theme-accent hover:bg-theme-danger animate-in fade-in zoom-in ring-theme-accent rounded-full p-2 transition-all outline-none focus-visible:ring-2"
-                      >
-                        <Undo2 className="h-5 w-5" />
-                      </button>
-                    )}
-
-                  {/* Playback Speed */}
-                  <div className="group/speed relative flex items-center space-x-2">
-                    <button
-                      aria-label="Playback speed"
-                      className="text-theme-accent hover:text-theme-danger ring-theme-accent border-theme-accent/30 rounded-sm border px-1.5 py-1 text-[10px] font-bold tracking-widest uppercase transition-colors outline-none focus-visible:ring-2"
-                    >
-                      {playback?.rate || 1}x
-                    </button>
-                    {/* Add a transparent bridge area using pb-2 on the outer container so hovering the gap keeps it open */}
-                    <div className="absolute bottom-full left-1/2 z-50 hidden -translate-x-1/2 flex-col pb-2 group-hover/speed:flex">
-                      <div className="bg-theme-bg/95 border-theme-border/50 rounded-theme flex flex-col overflow-hidden border-2 shadow-xl backdrop-blur-md">
-                        <div className="text-theme-muted border-theme-border/30 bg-theme-bg/50 border-b py-1.5 text-center text-[9px] font-bold tracking-widest uppercase">
-                          SPEED
-                        </div>
-                        {[0.5, 1, 1.25, 1.5, 2].map((r) => (
-                          <button
-                            key={r}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (canControl) {
-                                emitCommand("update_rate", { rate: r });
-                              }
-                            }}
-                            disabled={!canControl}
-                            className={`border-theme-border/10 hover:bg-theme-accent/20 border-b px-4 py-2.5 text-xs font-bold transition-all last:border-0 ${
-                              !canControl ? "cursor-not-allowed opacity-50" : ""
-                            } ${
-                              playback?.rate === r
-                                ? "text-theme-accent bg-theme-accent/10 shadow-[inset_2px_0_0_var(--color-theme-accent)]"
-                                : "text-theme-text"
-                            }`}
-                          >
-                            {r}x
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Volume */}
-                  <div className="group/volume relative flex items-center space-x-3">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setMuted(!muted);
-                      }}
-                      aria-label={muted || volume === 0 ? "Unmute" : "Mute"}
-                      className="text-theme-accent hover:text-theme-danger ring-theme-accent rounded-full transition-colors outline-none focus-visible:ring-2"
-                    >
-                      {muted || volume === 0 ? (
-                        <VolumeX className="h-5 w-5" />
-                      ) : (
-                        <Volume2 className="h-5 w-5" />
-                      )}
-                    </button>
-                    <div className="bg-theme-bg border-theme-border/30 rounded-theme relative h-2 w-0 overflow-hidden border transition-all duration-300 group-hover/volume:w-24">
-                      <div
-                        className="bg-theme-accent rounded-theme absolute top-0 left-0 h-full"
-                        style={{ width: `${(muted ? 0 : volume) * 100}%` }}
-                      />
-                      <input
-                        type="range"
-                        min={0}
-                        max={1}
-                        step="any"
-                        aria-label="Volume slider"
-                        onChange={(e) => {
-                          setVolume(parseFloat(e.target.value));
-                          if (muted && parseFloat(e.target.value) > 0) {
-                            setMuted(false);
-                          }
-                        }}
-                        className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Meta */}
-                  <div className="bg-theme-accent text-theme-bg ml-4 hidden rounded-full px-3 py-0.5 text-[10px] font-bold tracking-wider uppercase shadow-sm md:flex">
-                    {currentMedia.provider}
-                  </div>
-
-                  <div className="text-theme-text ml-2 max-w-[150px] truncate text-xs font-bold tracking-wide uppercase drop-shadow-sm lg:max-w-xs xl:max-w-md">
-                    {currentMedia.title}
-                  </div>
-                </div>
-
-                <div className="flex items-center space-x-4">
-                  {/* Quality Settings */}
-                  <div className="group/quality relative flex items-center space-x-2">
-                    <button
-                      aria-label="Quality settings"
-                      aria-expanded={qualityMenuOpen}
-                      className={`text-theme-accent hover:text-theme-danger ring-theme-accent relative rounded-full p-2 transition-transform duration-500 outline-none focus-visible:ring-2 ${qualityMenuOpen ? "text-theme-danger rotate-90" : ""}`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const willOpen = !qualityMenuOpen;
-                        setQualityMenuOpen(willOpen);
-
-                        if (willOpen && currentMedia) {
-                          try {
-                            if (
-                              currentMedia.provider?.toLowerCase() === "youtube"
-                            ) {
-                              const internal =
-                                realPlayerRef.current?.getInternalPlayer?.(
-                                  "youtube",
-                                );
-                              if (internal?.getAvailableQualityLevels) {
-                                const levels =
-                                  internal.getAvailableQualityLevels();
-                                setProviderQualities(
-                                  levels.filter((l: string) => l !== "auto"),
-                                );
-                                setCurrentProviderQuality(
-                                  internal.getPlaybackQuality() || "auto",
-                                );
-                              }
-                            } else if (
-                              currentMedia.provider?.toLowerCase() === "twitch"
-                            ) {
-                              const internal =
-                                realPlayerRef.current?.getInternalPlayer?.(
-                                  "twitch",
-                                );
-                              if (internal?.getQualities) {
-                                const levels = internal.getQualities();
-                                setProviderQualities(
-                                  levels.map((l: any) => l.group),
-                                );
-                                setCurrentProviderQuality(
-                                  internal.getQuality() || "auto",
-                                );
-                              }
-                            }
-                          } catch (err) {
-                            console.error("Provider bridge API error:", err);
-                          }
-                        }
-                      }}
-                    >
-                      <Settings className="h-5 w-5" />
-                      {currentProviderQuality !== "auto" &&
-                        providerQualities.length > 0 && (
-                          <div className="bg-theme-accent absolute top-1 right-1 h-2 w-2 animate-pulse rounded-full shadow-[0_0_8px_var(--color-theme-accent)]" />
-                        )}
-                    </button>
-
-                    {/* Quality Menu Dialog */}
-                    {qualityMenuOpen && (
-                      <div className="absolute right-0 bottom-full z-50 mb-4 flex flex-col items-end pb-2">
-                        <div className="bg-theme-bg/95 border-theme-border/50 rounded-theme animate-in slide-in-from-bottom-2 fade-in flex min-w-[220px] flex-col overflow-hidden border shadow-[0_0_40px_rgba(0,0,0,0.5)] backdrop-blur-xl">
-                          <div className="text-theme-muted border-theme-border/30 bg-theme-bg/50 border-b px-4 py-2 text-[10px] font-bold tracking-widest uppercase">
-                            Video Quality
-                          </div>
-
-                          {providerQualities.length > 0 && (
-                            <div className="flex flex-col">
-                              <div className="text-theme-muted border-theme-border/10 border-b px-4 py-2 text-[9px] tracking-widest uppercase">
-                                Native Core Provider
-                              </div>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setCurrentProviderQuality("auto");
-                                  setQualityMenuOpen(false);
-                                  try {
-                                    if (
-                                      currentMedia.provider?.toLowerCase() ===
-                                      "youtube"
-                                    ) {
-                                      realPlayerRef.current
-                                        ?.getInternalPlayer?.("youtube")
-                                        ?.setPlaybackQualityRange?.("auto");
-                                    } else if (
-                                      currentMedia.provider?.toLowerCase() ===
-                                      "twitch"
-                                    ) {
-                                      realPlayerRef.current
-                                        ?.getInternalPlayer?.("twitch")
-                                        ?.setQuality?.("auto");
-                                    }
-                                  } catch (err) {}
-                                }}
-                                className={`border-theme-border/10 hover:bg-theme-accent/20 flex items-center justify-between border-b px-4 py-3 text-left text-xs font-bold transition-all ${currentProviderQuality === "auto" ? "text-theme-accent bg-theme-accent/10 shadow-[inset_2px_0_0_var(--color-theme-accent)]" : "text-theme-text"}`}
-                              >
-                                Auto (Provider Default)
-                              </button>
-                              {providerQualities.map((q) => (
-                                <button
-                                  key={q}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setCurrentProviderQuality(q);
-                                    setQualityMenuOpen(false);
-                                    try {
-                                      if (
-                                        currentMedia.provider?.toLowerCase() ===
-                                        "youtube"
-                                      ) {
-                                        realPlayerRef.current
-                                          ?.getInternalPlayer?.("youtube")
-                                          ?.setPlaybackQualityRange?.(q, q);
-                                      } else if (
-                                        currentMedia.provider?.toLowerCase() ===
-                                        "twitch"
-                                      ) {
-                                        realPlayerRef.current
-                                          ?.getInternalPlayer?.("twitch")
-                                          ?.setQuality?.(q);
-                                      }
-                                    } catch (err) {}
-                                  }}
-                                  className={`border-theme-border/10 hover:bg-theme-accent/20 flex items-center justify-between border-b px-4 py-3 text-left text-xs font-bold transition-all ${currentProviderQuality === q ? "text-theme-accent bg-theme-accent/10 shadow-[inset_2px_0_0_var(--color-theme-accent)]" : "text-theme-text"}`}
-                                >
-                                  <span
-                                    className={
-                                      q === "highres" ? "text-theme-accent" : ""
-                                    }
-                                  >
-                                    {q === "highres"
-                                      ? "Target Ultra/4K"
-                                      : q.replace(/hd/, "").toUpperCase()}
-                                  </span>
-                                  {currentProviderQuality === q && (
-                                    <div className="bg-theme-accent h-2 w-2 rounded-full shadow-[0_0_5px_currentColor]"></div>
-                                  )}
-                                </button>
-                              ))}
-                            </div>
-                          )}
-
-                          {hlsLevels.length > 0 && (
-                            <div className="flex flex-col">
-                              <div className="text-theme-muted border-theme-border/10 border-b px-4 py-2 text-[9px] tracking-widest uppercase">
-                                Stream Manifest Levels
-                              </div>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setCurrentHlsLevel(-1);
-                                  try {
-                                    const internal = playerRef.current;
-                                    if (internal) internal.currentLevel = -1;
-                                  } catch (err) {}
-                                  setQualityMenuOpen(false);
-                                }}
-                                className={`border-theme-border/10 hover:bg-theme-accent/20 border-b px-4 py-3 text-left text-xs font-bold transition-all ${currentHlsLevel === -1 ? "text-theme-accent bg-theme-accent/10 shadow-[inset_2px_0_0_var(--color-theme-accent)]" : "text-theme-text"}`}
-                              >
-                                Auto (Adaptive)
-                              </button>
-                              {hlsLevels.map((level, idx) => (
-                                <button
-                                  key={idx}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setCurrentHlsLevel(idx);
-                                    try {
-                                      const internal = playerRef.current;
-                                      if (internal) internal.currentLevel = idx;
-                                    } catch (err) {}
-                                    setQualityMenuOpen(false);
-                                  }}
-                                  className={`border-theme-border/10 hover:bg-theme-accent/20 border-b px-4 py-3 text-left text-xs font-bold transition-all last:border-b-0 ${currentHlsLevel === idx ? "text-theme-accent bg-theme-accent/10 shadow-[inset_2px_0_0_var(--color-theme-accent)]" : "text-theme-text"}`}
-                                >
-                                  {level.height}p Rate
-                                </button>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Sync Status Badge */}
-                  {driftRef.current >= 0.5 && (
-                    <div className="bg-theme-bg/80 border-theme-border/50 rounded-theme animate-in fade-in mr-2 hidden min-w-[120px] items-center justify-center space-x-2 border px-3 py-1.5 text-[10px] font-bold uppercase shadow-sm md:flex">
-                      <div
-                        className={`h-2 w-2 rounded-full ${
-                          driftRef.current < 2
-                            ? "bg-theme-danger shadow-[0_0_8px_var(--color-theme-danger)]"
-                            : "bg-red-500 shadow-[0_0_8px_rgb(239,68,68)]"
-                        }`}
-                      />
-                      <span
-                        className={`hidden sm:inline-block ${
-                          driftRef.current < 2
-                            ? "text-theme-danger"
-                            : "text-red-500"
-                        }`}
-                      >
-                        {driftRef.current < 2 ? "Sync: Locking" : "Sync: Lost"}
-                      </span>
-                    </div>
-                  )}
-
-                  {playback?.updatedBy && (
-                    <span className="text-theme-muted border-theme-border/30 hidden border-l pl-4 text-[10px] tracking-wider uppercase xl:inline-block">
-                      CMD: {playback.status === "playing" ? "PLAY" : "PAUSE"}
-                      {" // "}
-                      <strong className="text-theme-accent inline-block max-w-[100px] truncate align-bottom">
-                        {playback.updatedBy}
-                      </strong>
-                    </span>
-                  )}
-
-                  {/* Theater Mode */}
-                  <button
-                    onClick={toggleTheaterMode}
-                    aria-label={
-                      theaterMode ? "Exit theater mode" : "Enter theater mode"
-                    }
-                    className={`ring-theme-accent rounded-full p-2 transition-colors outline-none hover:scale-110 focus-visible:ring-2 ${
-                      theaterMode
-                        ? "text-theme-danger"
-                        : "text-theme-accent hover:text-theme-danger"
-                    }`}
-                    title="Theater Mode"
-                  >
-                    <MonitorPlay className="h-5 w-5" />
-                  </button>
-
-                  {/* Fullscreen */}
-                  <button
-                    onClick={() => {
-                      if (fscreen.fullscreenEnabled && containerRef.current) {
-                        if (fscreen.fullscreenElement) {
-                          fscreen.exitFullscreen();
-                        } else {
-                          fscreen.requestFullscreen(containerRef.current);
-                        }
-                      }
-                    }}
-                    aria-label="Toggle fullscreen"
-                    className="text-theme-accent hover:text-theme-danger ring-theme-accent rounded-full p-2 transition-colors outline-none hover:scale-110 focus-visible:ring-2"
-                  >
-                    <Maximize className="h-5 w-5" />
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
+          <PlayerControlBar
+            playerRef={realPlayerRef}
+            containerRef={containerRef}
+            duration={duration}
+            playing={playing}
+            canControl={canControl}
+            currentMedia={currentMedia}
+            playback={playback}
+            driftRef={driftRef}
+            currentMediaId={currentMediaId ?? null}
+            flashbacks={flashbacks}
+            popFlashback={popFlashback}
+            onPlay={handlePlay}
+            onPause={handlePause}
+            onNext={handleNext}
+            onSeekStart={handleSeekMouseDown}
+            onSeekEnd={handleSeekMouseUp}
+          />
         )}
     </div>
   );
 }
+

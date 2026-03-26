@@ -43,6 +43,7 @@ interface AppState {
   sessionToken: string | null;
   nickname: string;
   commandSequence: number;
+  clockSyncReady: boolean;
   occRollbackTick: number;
   isResyncing: boolean;
   resyncSession: () => Promise<void>;
@@ -62,6 +63,7 @@ export const useStore = create<AppState>((set, get) => ({
   sessionToken: null,
   nickname: "",
   commandSequence: 1,
+  clockSyncReady: false,
   occRollbackTick: 0,
   isResyncing: false,
   triggerOccRollback: () =>
@@ -154,15 +156,19 @@ export const useStore = create<AppState>((set, get) => ({
       });
 
       roomSocketService.on("room_state", (payload: any) => {
-        const { serverClockOffset } = get();
+        const { serverClockOffset, clockSyncReady } = get();
         let newOffset = serverClockOffset;
-        if (serverClockOffset === 0) {
+        // P2 Fix: Use a dedicated flag instead of checking `=== 0`.
+        // Before the first clock_sync response arrives, compute an initial offset
+        // from the room_state payload to prevent spurious hard seeks on first sync cycle.
+        if (!clockSyncReady) {
           newOffset = payload.serverTime - Date.now();
         }
         set({
           room: payload.room,
           serverClockOffset: newOffset,
           commandSequence: payload.room.sequence,
+          clockSyncReady: true,
         });
       });
 
@@ -311,9 +317,12 @@ export const useStore = create<AppState>((set, get) => ({
       commandSequence: s.commandSequence + 1,
     }));
 
+    // P4 Fix: Read the UPDATED sequence from the store after set()
+    const newSequence = get().commandSequence;
+
     roomSocketService.sendCommand(
       state.room.id,
-      state.commandSequence + 1,
+      newSequence,
       type,
       payload,
       state.participantId,

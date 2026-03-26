@@ -82,17 +82,49 @@ describe("Websocket Zod Security Boundary", () => {
     }
   });
 
-  it("TC-06: Should validate legacy events gracefully", () => {
-    // Arrange
+  it("TC-06: Should validate legacy events with proper schemas", () => {
+    // update_duration requires mediaId (uuid) and duration (number >= 0)
     const updateDuration = {
       type: "update_duration",
-      payload: { duration: 15.0 },
+      payload: { mediaId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890", duration: 15.0 },
     };
+    expect(commandSchema.safeParse(updateDuration).success).toBe(true);
 
-    // Act
-    const result = commandSchema.safeParse(updateDuration);
+    // Should reject update_duration without mediaId
+    const badDuration = { type: "update_duration", payload: { duration: 15.0 } };
+    expect(commandSchema.safeParse(badDuration).success).toBe(false);
 
-    // Assert
-    expect(result.success).toBe(true);
+    // update_room_name requires name string (1-100 chars)
+    const updateName = { type: "update_room_name", payload: { name: "New Room" } };
+    expect(commandSchema.safeParse(updateName).success).toBe(true);
+
+    // update_nickname requires nickname string (1-50 chars)
+    const updateNick = { type: "update_nickname", payload: { nickname: "NewNick" } };
+    expect(commandSchema.safeParse(updateNick).success).toBe(true);
+
+    // update_role requires targetParticipantId and role enum
+    const updateRole = {
+      type: "update_role",
+      payload: { targetParticipantId: "user-123", role: "moderator" },
+    };
+    expect(commandSchema.safeParse(updateRole).success).toBe(true);
+
+    // Should reject invalid role values
+    const badRole = {
+      type: "update_role",
+      payload: { targetParticipantId: "user-123", role: "admin" },
+    };
+    expect(commandSchema.safeParse(badRole).success).toBe(false);
+
+    // claim_host can have empty/optional payload
+    const claimHost = { type: "claim_host", payload: {} };
+    expect(commandSchema.safeParse(claimHost).success).toBe(true);
+
+    // kick_participant requires targetParticipantId
+    const kick = {
+      type: "kick_participant",
+      payload: { targetParticipantId: "user-456" },
+    };
+    expect(commandSchema.safeParse(kick).success).toBe(true);
   });
 });
