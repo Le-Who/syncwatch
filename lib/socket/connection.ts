@@ -131,6 +131,20 @@ export function handleConnectionEvents(
   socket.on("disconnect", () => {
     if (context.currentRoomId && context.currentParticipantId) {
       const { currentRoomId, currentParticipantId } = context;
+
+      // P7 Fix: Emit immediate disconnect notification so clients can dim
+      // the participant's avatar instantly, before the 15s cleanup window.
+      io.to(currentRoomId).emit("participant_disconnected", {
+        participantId: currentParticipantId,
+      });
+      const pClientNow = pubClient();
+      if (pClientNow) {
+        publishRoomEvent(currentRoomId, {
+          type: "participant_disconnected",
+          payload: { participantId: currentParticipantId },
+        }).catch(() => {});
+      }
+
       setTimeout(async () => {
         let retries = 5;
         while (retries > 0) {

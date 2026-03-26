@@ -37,6 +37,7 @@ import { useFlashback } from "@/hooks/useFlashback";
 import { usePlaybackSync } from "@/hooks/usePlaybackSync";
 import { usePlayerEvents } from "@/hooks/usePlayerEvents";
 import { applyTwitchEventProxy } from "@/lib/player-adapters";
+import { PAUSE_DEBOUNCE_MS } from "@/lib/sync-config";
 import { AwaitingSignal } from "./AwaitingSignal";
 import { UpNextOverlay } from "./UpNextOverlay";
 import { SyncStatusBadge } from "./SyncStatusBadge";
@@ -297,6 +298,9 @@ export default function Player() {
     sendCommand(type, { ...payload, nonce });
   }, [intentManager, sendCommand]);
 
+  // P4 Fix: Capture join time for clock sync grace period
+  const [joinedAt] = useState(() => Date.now());
+
   const { driftRef } = usePlaybackSync({
     realPlayerRef,
     playerRef,
@@ -313,6 +317,7 @@ export default function Player() {
     getCurrentMedia: () => currentMedia,
     getDuration: () => duration,
     emitCommand,
+    joinedAt,
   });
 
   const handlePlay = () => {
@@ -396,7 +401,7 @@ export default function Player() {
       if (canControl && expectedStatus !== "paused") {
         emitCommand("pause", { position: getAccurateTime(), fromNative: true });
       }
-    }, 50);
+    }, PAUSE_DEBOUNCE_MS);
   });
 
   const playerEvents = usePlayerEvents({
@@ -532,14 +537,14 @@ export default function Player() {
 
   // formatTime is now imported from @/lib/utils
 
-  const nextItem = useStore((s) => {
+  const nextItem = useStore(useShallow((s) => {
     if (!s.room || !currentMediaId) return null;
     const idx = s.room.playlist.findIndex((i) => i.id === currentMediaId);
     if (idx === -1) return null;
     let n = s.room.playlist[idx + 1];
     if (!n && s.room.settings.looping) n = s.room.playlist[0];
     return n;
-  });
+  }));
 
   const [upNextState, setUpNextState] = useState({ show: false, remaining: 0 });
 

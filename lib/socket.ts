@@ -6,6 +6,7 @@ type RoomSocketEvent =
   | "room_state"
   | "participant_joined"
   | "participant_left"
+  | "participant_disconnected"
   | "session_upgraded"
   | "clock_sync"
   | "error";
@@ -88,6 +89,11 @@ class RoomSocketService {
 
     socket.on("participant_left", ({ participantId }) => {
       this.emit("participant_left", { participantId });
+    });
+
+    // P7: Forward immediate disconnect notification for UI dimming
+    socket.on("participant_disconnected", ({ participantId }) => {
+      this.emit("participant_disconnected", { participantId });
     });
 
     socket.on("session_upgraded", ({ participantId }) => {

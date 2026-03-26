@@ -1,6 +1,10 @@
-// Hysteresis thresholds to prevent rate oscillation at drift boundaries
-const CORRECTION_START = 0.6;
-const CORRECTION_STOP = 0.3;
+import {
+  CORRECTION_START,
+  CORRECTION_STOP,
+  RATE_CORRECTION_SKIP,
+  RATE_ADJUSTMENT_TIERS,
+  YOUTUBE_MAX_RATE_ADJUSTMENT,
+} from "./sync-config";
 
 export function calculatePlaybackRate(
   currentDrift: number,
@@ -22,26 +26,28 @@ export function calculatePlaybackRate(
   }
 
   // If drift is massive, a hard seek will happen anyway, so reset rate to normal
-  if (currentDrift > 3.0) {
+  if (currentDrift > RATE_CORRECTION_SKIP) {
     return { rate: serverPlaybackRate, isAdjusting: false };
   }
 
-  // Hysteresis: start correction at 0.6s, stop only below 0.3s
+  // Hysteresis: start correction at CORRECTION_START, stop only below CORRECTION_STOP
   const shouldAdjust = previouslyAdjusting
     ? currentDrift > CORRECTION_STOP
     : currentDrift > CORRECTION_START;
 
   if (shouldAdjust) {
-    let adjustment = 0.05; // 5%
-    if (currentDrift > 2.0) {
-      adjustment = 0.15; // 15%
-    } else if (currentDrift > 1.0) {
-      adjustment = 0.1; // 10%
+    // Walk the tier table to find the appropriate adjustment percentage
+    let adjustment = RATE_ADJUSTMENT_TIERS[RATE_ADJUSTMENT_TIERS.length - 1][1];
+    for (const [threshold, pct] of RATE_ADJUSTMENT_TIERS) {
+      if (currentDrift > threshold) {
+        adjustment = pct;
+        break;
+      }
     }
 
-    // YouTube iframe: cap at gentle ±3% to avoid user-noticeable speed changes
+    // YouTube iframe: cap at gentle adjustment to avoid user-noticeable speed changes
     if (isYouTube) {
-      adjustment = Math.min(adjustment, 0.03);
+      adjustment = Math.min(adjustment, YOUTUBE_MAX_RATE_ADJUSTMENT);
     }
 
     const rateAdjustment =

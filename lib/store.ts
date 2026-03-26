@@ -213,6 +213,26 @@ export const useStore = create<AppState>((set, get) => ({
         set({ room: { ...state.room, participants: newParticipants } });
       });
 
+      // P7: Mark participant as disconnected (dimmed in UI) while
+      // preserving their entry for the 15s reconnection window.
+      roomSocketService.on("participant_disconnected", ({ participantId }) => {
+        const state = get();
+        if (!state.room || !state.room.participants[participantId]) return;
+        if (participantId === state.participantId) return; // Don't dim self
+        set({
+          room: {
+            ...state.room,
+            participants: {
+              ...state.room.participants,
+              [participantId]: {
+                ...state.room.participants[participantId],
+                disconnected: true,
+              },
+            },
+          },
+        });
+      });
+
       roomSocketService.on("session_upgraded", ({ participantId }) => {
         set({ participantId });
       });
@@ -220,11 +240,6 @@ export const useStore = create<AppState>((set, get) => ({
       roomSocketService.on("error", (error: any) => {
         const msg = error.message || "An error occurred";
         if (msg === "VERSION_CONFLICT") {
-          toast("Sync Adjustment", {
-            description:
-              "Another user changed the state first. Rolling back to server time.",
-            icon: "⏪",
-          });
           get().triggerOccRollback();
           return;
         }
