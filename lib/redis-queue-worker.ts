@@ -27,6 +27,18 @@ export async function processQueueForRoom(roomId: string) {
     const items = await redisClient.lrange(queueKey, 0, -1);
     if (!items || items.length === 0) return;
 
+    // Lazily evaluated dictionary index for O(1) playlist lookups
+    let playlistIndex: Record<string, number> | null = null;
+    const getPlaylistIndex = () => {
+      if (!playlistIndex) {
+        playlistIndex = {};
+        for (let i = 0; i < room.playlist.length; i++) {
+          playlistIndex[room.playlist[i].id] = i;
+        }
+      }
+      return playlistIndex;
+    };
+
     for (const item of items) {
       try {
         const cmd = JSON.parse(item);
@@ -70,6 +82,7 @@ export async function processQueueForRoom(roomId: string) {
               thumbnail: payload.thumbnail,
             };
             room.playlist.push(newItem);
+            playlistIndex = null; // Invalidate index on mutation
             if (!room.currentMediaId) {
               room.currentMediaId = newItem.id;
               room.playback.basePosition = newItem.startPosition || 0;
@@ -115,6 +128,7 @@ export async function processQueueForRoom(roomId: string) {
                 thumbnail: item.thumbnail,
               };
               room.playlist.push(newBulkItem);
+              playlistIndex = null; // Invalidate index on mutation
               if (!room.currentMediaId) {
                 room.currentMediaId = newBulkItem.id;
                 room.playback.basePosition = newBulkItem.startPosition || 0;
@@ -129,9 +143,8 @@ export async function processQueueForRoom(roomId: string) {
           case "remove_item":
             if (!canEditPlaylist) break;
             if (room.currentMediaId === payload.itemId) {
-              const currentItem = room.playlist.find(
-                (i: any) => i.id === payload.itemId,
-              );
+              const idx = getPlaylistIndex()[payload.itemId];
+              const currentItem = idx !== undefined ? room.playlist[idx] : undefined;
               if (currentItem && room.playback.status === "playing") {
                 const elapsed =
                   (Date.now() - room.playback.baseTimestamp) / 1000;
@@ -144,14 +157,17 @@ export async function processQueueForRoom(roomId: string) {
               (item: any) => item.id !== payload.itemId,
             );
             if (room.playlist.length < initialLength) {
+              playlistIndex = null; // Invalidate index on mutation
               if (room.currentMediaId === payload.itemId) {
                 room.currentMediaId =
                   room.playlist.length > 0 ? room.playlist[0].id : null;
                 room.playback.status =
                   room.playback.status === "playing" ? "playing" : "paused";
-                const newHead = room.currentMediaId
-                  ? room.playlist.find((i: any) => i.id === room.currentMediaId)
-                  : null;
+                let newHead = null;
+                if (room.currentMediaId) {
+                  const newHeadIdx = getPlaylistIndex()[room.currentMediaId];
+                  newHead = newHeadIdx !== undefined ? room.playlist[newHeadIdx] : null;
+                }
                 let startHead = newHead
                   ? newHead.lastPosition || newHead.startPosition || 0
                   : 0;
@@ -197,14 +213,14 @@ export async function processQueueForRoom(roomId: string) {
             }
 
             room.playlist = reconciledPlaylist;
+            playlistIndex = null; // Invalidate index on mutation
             stateChanged = true;
             break;
 
           case "set_media":
             if (!canControlPlayback && !canEditPlaylist) break;
-            const activeItemSet = room.playlist.find(
-              (i: any) => i.id === room.currentMediaId,
-            );
+            const activeIdxSet = room.currentMediaId ? getPlaylistIndex()[room.currentMediaId] : undefined;
+            const activeItemSet = activeIdxSet !== undefined ? room.playlist[activeIdxSet] : undefined;
             if (activeItemSet) {
               const elapsed =
                 room.playback.status === "playing"
@@ -214,9 +230,8 @@ export async function processQueueForRoom(roomId: string) {
                 room.playback.basePosition + elapsed * room.playback.rate;
             }
             room.currentMediaId = payload.itemId;
-            const targetItemForSet = room.playlist.find(
-              (i: any) => i.id === payload.itemId,
-            );
+            const targetIdxSet = payload.itemId ? getPlaylistIndex()[payload.itemId] : undefined;
+            const targetItemForSet = targetIdxSet !== undefined ? room.playlist[targetIdxSet] : undefined;
             room.playback.status =
               room.playback.status === "playing" ? "playing" : "paused";
             let startSet =
@@ -240,9 +255,8 @@ export async function processQueueForRoom(roomId: string) {
           case "next":
             if (!canControlPlayback) break;
             if (payload.currentMediaId !== room.currentMediaId) break;
-            const activeItemNext = room.playlist.find(
-              (i: any) => i.id === room.currentMediaId,
-            );
+            const activeIdxNext = room.currentMediaId ? getPlaylistIndex()[room.currentMediaId] : undefined;
+            const activeItemNext = activeIdxNext !== undefined ? room.playlist[activeIdxNext] : undefined;
             if (activeItemNext) {
               const elapsed =
                 room.playback.status === "playing"
@@ -251,11 +265,9 @@ export async function processQueueForRoom(roomId: string) {
               activeItemNext.lastPosition =
                 room.playback.basePosition + elapsed * room.playback.rate;
             }
-            const currentIndex = room.playlist.findIndex(
-              (i: any) => i.id === room.currentMediaId,
-            );
+            const currentIndex = room.currentMediaId ? getPlaylistIndex()[room.currentMediaId] : undefined;
             if (
-              currentIndex !== -1 &&
+              currentIndex !== undefined &&
               currentIndex < room.playlist.length - 1
             ) {
               const nextItem = room.playlist[currentIndex + 1];
@@ -292,6 +304,7 @@ export async function processQueueForRoom(roomId: string) {
             if (!canEditPlaylist) break;
             if (room.playlist.length > 0) {
               room.playlist = [];
+              playlistIndex = null; // Invalidate index on mutation
               room.currentMediaId = null;
               room.playback.status = "paused";
               room.playback.basePosition = 0;
@@ -310,9 +323,8 @@ export async function processQueueForRoom(roomId: string) {
             // Anyone can report video ended naturally, no control check needed
             if (payload.currentMediaId !== room.currentMediaId) break;
 
-            const activeItemEnded = room.playlist.find(
-              (i: any) => i.id === room.currentMediaId,
-            );
+            const activeIdxEnded = room.currentMediaId ? getPlaylistIndex()[room.currentMediaId] : undefined;
+            const activeItemEnded = activeIdxEnded !== undefined ? room.playlist[activeIdxEnded] : undefined;
             if (activeItemEnded) {
               const elapsed =
                 room.playback.status === "playing"
@@ -322,11 +334,9 @@ export async function processQueueForRoom(roomId: string) {
                 room.playback.basePosition + elapsed * room.playback.rate;
             }
 
-            const endedIndex = room.playlist.findIndex(
-              (i: any) => i.id === room.currentMediaId,
-            );
+            const endedIndex = room.currentMediaId ? getPlaylistIndex()[room.currentMediaId] : undefined;
 
-            if (endedIndex !== -1 && endedIndex < room.playlist.length - 1) {
+            if (endedIndex !== undefined && endedIndex < room.playlist.length - 1) {
               if (room.settings.autoplayNext) {
                 const endedNextItem = room.playlist[endedIndex + 1];
                 room.currentMediaId = endedNextItem.id;
