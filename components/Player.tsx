@@ -739,7 +739,6 @@ export default function Player() {
             canControl={canControl}
             currentMedia={currentMedia}
             playback={playback}
-            driftRef={driftRef}
             currentMediaId={currentMediaId ?? null}
             flashbacks={flashbacks}
             popFlashback={popFlashback}

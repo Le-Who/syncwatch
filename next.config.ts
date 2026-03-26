@@ -27,7 +27,9 @@ const nextConfig: NextConfig = {
     }
     return config;
   },
-  turbopack: {},
+  turbopack: {
+    root: __dirname,
+  },
 };
 
 export default nextConfig;
