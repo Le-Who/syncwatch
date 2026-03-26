@@ -20,17 +20,19 @@ The system is designed for low-latency synchronization with eventual durability.
 
 Playback mutations (`play`, `pause`, `seek`) are highly sensitive to latency. These commands bypass normal queues and hit Redis directly using a **Lua Script (`lib/redis-lua.ts`)**. This guarantees atomic Validate-and-Apply operations (OCC) that enforce version checks, ensuring that out-of-order client network packets cannot overwrite newer state.
 
-### Write-Behind Queue (The "Slow Path" & Auto-Switching)
+### Inline CAS Mutations (The "Slow Path" & Auto-Switching)
 
-Operations like `add_item`, `reorder_playlist`, and `video_ended` use a reliable background worker (`lib/redis-queue-worker.ts`).
+Operations like `add_item`, `reorder_playlist`, and `video_ended` are handled by pure mutation functions in `lib/room-logic.ts`, applied inline within a CAS (Compare-And-Swap) retry loop in `commands.ts`.
 
+- **Unified Concurrency Model**: All commands — both fast (Lua) and slow (CAS) — share the same OCC version check, eliminating the concurrency hole that existed when a separate async queue worker could race against the Lua fast path.
 - **Database Synchronization**: State changes are applied to Redis first, then queued in a write-behind buffer (`lib/db-sync.ts`) to be flushed to Supabase. This shields the database from real-time websocket spam.
-- **Auto-Switching**: When a provider (YouTube, Twitch, Vimeo) finishes playing the active media, `Player.tsx` immediately emits a `video_ended` command. The queue worker processes this intelligently: if the room has `autoplayNext` enabled, the worker automatically advances to the next track in the playlist. If not, it pauses on the final frame. Loop logic (`looping` setting) is equally handled server-side here.
+- **Auto-Switching**: When a provider (YouTube, Twitch, Vimeo) finishes playing the active media, `Player.tsx` immediately emits a `video_ended` command. The server processes this inline: if the room has `autoplayNext` enabled, it automatically advances to the next track in the playlist. If not, it pauses on the final frame. Loop logic (`looping` setting) is equally handled server-side.
 
 ### PlaybackIntentManager & Media Transitions
 
 Because Native HTML5, YouTube iframe, and Twitch embed players fire lifecycle events asynchronously, the `PlaybackIntentManager` masks spurious native events from reaching the server.
 
+- **Nonce-Based ACK Pipeline**: When the client emits a command (play/pause/seek), it records the command's nonce and blocks all native player events until the server echoes back a `room_state` containing the matching `lastActionNonce`. This deterministic approach replaces fragile wall-clock timers and works correctly at any network latency. A 3-second safety-net timeout covers lost packets.
 - **Media Transitions**: When `currentMediaId` changes during auto-advancement, native iframes often fire a `pause` event during load. The intent manager employs a state-based media transition guard with an active 8-second auto-expiry timeout, ensuring stale guards never permanently block events even if `onReady` fails to fire.
 - **User Scrubber Intent**: Dragging the seeker bar suppresses buffer/pause events protecting against "rubber-banding" server correction locks.
 - **Selective Event Passthrough**: The `ignoreEventsFor` method accepts a `passThroughUserActions` flag, allowing deliberate user play/pause clicks to bypass post-seek ignore windows while still filtering programmatic events.
@@ -108,7 +110,6 @@ pnpm start
 - Current integration tests require a live Redis instance. Consider adding an ephemeral in-memory redis-mock for CI pipelining robustness.
 - `usePlaybackSync` drift parameters (`±15%` max) are currently hardcoded. They could be exposed as room settings for users on high-jitter networks.
 - The `disconnect` handler in `connection.ts` uses a 15-second `setTimeout` before cleanup. During this window a stale participant remains visible.
-- The semantic difference between `version` (batch-based) and `sequence` (command-based) naming in the OCC layer remains confusing. Both are functionally correct but could be unified for clarity.
 
 ## Fixed Issues Log
 

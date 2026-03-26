@@ -10,8 +10,8 @@ import {
   pubClient,
 } from "../redis-actor";
 import { executeFastMutation } from "../redis-lua";
-import { pushSlowCommand } from "../redis-queue";
-import { persistRoomState, isSystemDegraded } from "../db-sync";
+import { applySlowCommand } from "../room-logic";
+import { persistRoomState, isSystemDegraded, markRoomForSync } from "../db-sync";
 import { sanitizeRoom } from "../room-handler";
 import { SocketContext } from "./context";
 
@@ -203,20 +203,49 @@ export function handleCommandEvents(
           }
         }
 
-        const pushed = await pushSlowCommand(
-          roomId,
-          sequence,
+        // Slow-path: apply mutation in-memory then save via CAS
+        const changed = applySlowCommand(
+          room,
           type,
           payload,
           context.currentParticipantId,
           participant.nickname,
         );
 
-        if (!pushed) {
-          socket.emit("error", { message: "Failed to queue command" });
+        if (!changed) {
+          break; // No-op command (e.g., permission denied or invalid payload)
         }
 
-        break;
+        room.version++;
+        room.lastActivity = Date.now();
+
+        const casSuccess = await setRedisRoomCAS(roomId, room, baseVersion);
+        if (casSuccess) {
+          // Persist to DB asynchronously
+          markRoomForSync(roomId);
+          persistRoomState(room, supabase);
+
+          // Broadcast updated state
+          const sanitizedRoom = sanitizeRoom(room);
+          const pClient = pubClient();
+          if (pClient) {
+            await publishRoomEvent(roomId, {
+              type: "state_update",
+              payload: sanitizedRoom,
+            });
+          } else {
+            io.to(roomId).emit("room_state", {
+              room: sanitizedRoom,
+              serverTime: Date.now(),
+            });
+          }
+          break;
+        }
+
+        // CAS conflict — retry the OCC loop
+        await new Promise((r) => setTimeout(r, 10 + Math.random() * 20));
+        occRetries--;
+        continue;
       }
 
       if (stateChanged && !finalRoomState) {

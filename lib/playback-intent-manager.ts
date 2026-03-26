@@ -1,3 +1,12 @@
+/**
+ * PlaybackIntentManager — Guards against spurious native player events.
+ *
+ * Core mechanism: When the client emits a command (play/pause/seek), we
+ * record the nonce. Native events are blocked until the server echoes back
+ * a room_state with a matching nonce (ACK-based), OR a safety-net timeout
+ * expires. This replaces fragile wall-clock heuristics with deterministic
+ * server acknowledgment.
+ */
 export class PlaybackIntentManager {
   private mediaTransitionTimeout: ReturnType<typeof setTimeout> | null = null;
   private lastCommandEmitTime: number = 0;
@@ -17,6 +26,15 @@ export class PlaybackIntentManager {
   private _mediaTransitionId: string | null = null;
   private _mediaTransitionTimestamp: number = 0;
 
+  // ── Nonce-based ACK Pipeline ──────────────────────────────────────
+  /** The nonce we are currently waiting to be acknowledged by the server. */
+  private _pendingNonce: string | null = null;
+  /** Timestamp when the pending nonce was set. Used for safety-net timeout. */
+  private _pendingNonceTimestamp: number = 0;
+  /** Safety-net timeout (ms): if no ACK arrives within this window, unblock.
+   *  This covers lost packets and socket reconnections. */
+  private static readonly NONCE_ACK_TIMEOUT_MS = 3000;
+
   public setUserDraggingScrubber(isDragging: boolean) {
     this._userIsDraggingScrubber = isDragging;
   }
@@ -27,6 +45,8 @@ export class PlaybackIntentManager {
 
   public markCommandEmitted(status: string, position: number, nonce: string) {
     this.lastCommandEmitTime = Date.now();
+    this._pendingNonce = nonce;
+    this._pendingNonceTimestamp = Date.now();
     this.lastStateEmitted = {
       status,
       position,
@@ -104,6 +124,39 @@ export class PlaybackIntentManager {
     return true;
   }
 
+  // ── Nonce ACK Methods ─────────────────────────────────────────────
+
+  /**
+   * Returns true if we are waiting for a server ACK for a recently emitted
+   * command. This is the primary guard that replaces `isRecentCommand(ms)`.
+   */
+  public isAwaitingServerAck(): boolean {
+    if (!this._pendingNonce) return false;
+    // Safety-net: expire after timeout so we never permanently block
+    if (
+      Date.now() - this._pendingNonceTimestamp >=
+      PlaybackIntentManager.NONCE_ACK_TIMEOUT_MS
+    ) {
+      this._pendingNonce = null;
+      return false;
+    }
+    return true;
+  }
+
+  /**
+   * Called when a room_state arrives from the server. If the server's
+   * lastActionNonce matches our pending nonce, the command is ACKed
+   * and we clear the block. We also set a brief ignore window to
+   * absorb any trailing native events from the seek/play.
+   */
+  public acknowledgeServerNonce(serverNonce?: string): void {
+    if (serverNonce && this._pendingNonce === serverNonce) {
+      this._pendingNonce = null;
+      // Brief post-ACK cooldown to absorb trailing native events
+      this.ignoreEventsFor(500);
+    }
+  }
+
   /**
    * @param isUserInitiated When true, the event came from a deliberate user action
    *   (e.g., clicking play/pause button). User-initiated events bypass the
@@ -120,10 +173,12 @@ export class PlaybackIntentManager {
       this.ignoreNativeEventsUntil = 0;
       return false;
     }
+
     return (
       this.isIgnoringNativeEvents() ||
       this._userIsDraggingScrubber ||
-      this.isInMediaTransition()
+      this.isInMediaTransition() ||
+      this.isAwaitingServerAck()
     );
   }
 
@@ -161,6 +216,10 @@ export class PlaybackIntentManager {
   public getExpectedStatus(
     fallbackStatus: string | undefined,
   ): string | undefined {
+    // Use nonce-based check first (deterministic), then fallback to time-based
+    if (this._pendingNonce && this.isAwaitingServerAck() && this.lastStateEmitted) {
+      return this.lastStateEmitted.status;
+    }
     if (this.isRecentCommand(2000) && this.lastStateEmitted !== null) {
       return this.lastStateEmitted.status;
     }
@@ -171,10 +230,11 @@ export class PlaybackIntentManager {
     return this.lastStateEmitted;
   }
 
+  /**
+   * @deprecated Use acknowledgeServerNonce() instead. Kept for backward
+   * compatibility during migration.
+   */
   public checkAndConsumeNonce(playbackNonce?: string) {
-    if (playbackNonce && this.lastStateEmitted?.nonce === playbackNonce) {
-      this.ignoreEventsFor(2000);
-      this.lastStateEmitted.nonce = undefined;
-    }
+    this.acknowledgeServerNonce(playbackNonce);
   }
 }

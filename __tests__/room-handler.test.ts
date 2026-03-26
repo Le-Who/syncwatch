@@ -20,10 +20,11 @@ vi.mock("../lib/db-sync", () => ({
   persistRoomState: vi.fn(),
   loadRoomFromDB: vi.fn(),
   isSystemDegraded: vi.fn().mockResolvedValue(false),
+  markRoomForSync: vi.fn(),
 }));
 
-vi.mock("../lib/redis-queue", () => ({
-  pushSlowCommand: vi.fn().mockResolvedValue(true),
+vi.mock("../lib/room-logic", () => ({
+  applySlowCommand: vi.fn().mockReturnValue(true),
 }));
 
 vi.mock("../lib/redis-lua", () => ({

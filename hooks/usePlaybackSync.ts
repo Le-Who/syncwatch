@@ -45,12 +45,12 @@ export function usePlaybackSync(props: {
         return;
       }
 
-      // Consume nonce as early as possible so we clear the "recent command" block
-      // when our own broadcast echo arrives.
-      p.intentManager.checkAndConsumeNonce(playback.lastActionNonce);
+      // ACK pipeline: acknowledge our pending nonce when the server echoes it back.
+      // This deterministically unblocks native events instead of relying on timers.
+      p.intentManager.acknowledgeServerNonce(playback.lastActionNonce);
 
-      if (p.intentManager.isRecentCommand(1500)) {
-        // Optimistic UI barrier — reschedule to retry shortly
+      if (p.intentManager.isAwaitingServerAck()) {
+        // Optimistic UI barrier — server hasn't confirmed our command yet
         syncTimerRef.current = setTimeout(syncPlayback, 200) as any;
         return;
       }

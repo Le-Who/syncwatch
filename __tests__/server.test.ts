@@ -25,8 +25,8 @@ vi.mock("../lib/redis-rate-limit", () => ({
 vi.mock("@supabase/supabase-js", () => ({
   createClient: vi.fn().mockReturnValue({}),
 }));
-vi.mock("../lib/redis-queue", () => ({
-  pushSlowCommand: vi.fn().mockResolvedValue(true),
+vi.mock("../lib/room-logic", () => ({
+  applySlowCommand: vi.fn().mockReturnValue(true),
 }));
 
 // We force Redis fallback to in-memory mode for these tests by mocking getRedisClient to null.

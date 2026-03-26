@@ -77,7 +77,12 @@ describe("PlaybackIntentManager", () => {
       manager.markCommandEmitted("playing", 10.5, "nonce123");
       expect(manager.getExpectedStatus("fallback")).toBe("playing");
 
+      // Nonce ACK timeout is 3000ms, so at 2000ms we're still within the window
       vi.advanceTimersByTime(2000);
+      expect(manager.getExpectedStatus("fallback")).toBe("playing");
+
+      // After 3000ms total the nonce ACK safety-net expires
+      vi.advanceTimersByTime(1000);
       expect(manager.getExpectedStatus("fallback")).toBe("fallback");
     });
   });
@@ -320,7 +325,8 @@ describe("PlaybackIntentManager", () => {
       manager.checkAndConsumeNonce("nonce123");
 
       expect(manager.isIgnoringNativeEvents()).toBe(true);
-      expect(manager.lastStateEmittedRef?.nonce).toBeUndefined();
+      // acknowledgeServerNonce clears the pending nonce but preserves lastStateEmitted
+      expect(manager.lastStateEmittedRef?.nonce).toBe("nonce123");
     });
 
     it("should not consume non-matching nonce", () => {

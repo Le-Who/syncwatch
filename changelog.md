@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Architecture
+
+- **Unified CAS Mutation Model**: Eliminated the async `redis-queue-worker.ts` and `redis-queue.ts`. All slow-path commands (`add_item`, `video_ended`, `next`, `reorder_playlist`, etc.) are now processed inline via pure functions in `lib/room-logic.ts` within a CAS (Compare-And-Swap) retry loop in `commands.ts`. This closes the critical concurrency hole where the Lua fast path and queue worker could race on the same room state.
+- **Nonce-Based ACK Pipeline**: Replaced wall-clock timer heuristics (hardcoded 1500ms/2000ms) in `PlaybackIntentManager` with deterministic server ACK blocking. Native player events are suppressed until the server echoes the command's nonce back in `room_state.playback.lastActionNonce`. A 3-second safety-net timeout covers lost packets. Works correctly at any network latency.
+- **Dead Code Removal**: Deleted `lib/redis-queue-worker.ts`, `lib/redis-queue.ts`, `__tests__/worker_resilience.test.ts`. Removed `queue_wakeup` PubSub subscription from `pubsub.ts`.
+- **Test Migration**: Migrated `video_ended.test.ts`, `occ_thrashing.test.ts`, and `redis.test.ts` to test new `room-logic.ts` pure functions directly. Updated mocks in `server.test.ts` and `room-handler.test.ts`.
+
 ### Added
 
 - **Player.tsx Decomposition**: Extracted 9 components/hooks from the 1360-line god component, reducing it to 757 lines (44% reduction):
