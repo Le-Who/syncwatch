@@ -58,10 +58,12 @@ export default function Participants() {
         {participants.map((p) => (
           <div
             key={p.id}
-            className={`rounded-theme participant-item relative flex items-center justify-between border-2 p-3.5 transition-all ${
+            className={`rounded-theme participant-item relative flex items-center justify-between border-2 p-3.5 transition-all ${p.disconnected ? 'opacity-50' : ''} ${
               p.id === participantId
                 ? "bg-theme-accent/20 border-theme-accent shadow-theme"
-                : "bg-theme-bg/40 border-theme-border/30 hover:bg-theme-bg/60 hover:border-theme-accent"
+                : p.disconnected
+                  ? "bg-theme-bg/20 border-red-500/30"
+                  : "bg-theme-bg/40 border-theme-border/30 hover:bg-theme-bg/60 hover:border-theme-accent"
             }`}
           >
             <div className="flex min-w-0 items-center space-x-4">
@@ -82,10 +84,16 @@ export default function Participants() {
                   <User className="h-5 w-5" />
                 )}
 
-                {/* Live Presence Dot - Ping */}
+                {/* Live Presence Dot */}
                 <span className="absolute -right-1 -bottom-1 flex h-3.5 w-3.5 items-center justify-center">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
-                  <span className="border-theme-bg relative inline-flex h-2.5 w-2.5 rounded-full border-2 bg-emerald-500"></span>
+                  {p.disconnected ? (
+                    <span className="border-theme-bg relative inline-flex h-2.5 w-2.5 rounded-full border-2 bg-red-500"></span>
+                  ) : (
+                    <>
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="border-theme-bg relative inline-flex h-2.5 w-2.5 rounded-full border-2 bg-emerald-500"></span>
+                    </>
+                  )}
                 </span>
               </div>
 
@@ -110,7 +118,11 @@ export default function Participants() {
                   )}
                 </div>
                 <p className="text-theme-muted mt-1 flex items-center gap-1 px-1 text-[11px] font-bold tracking-widest uppercase">
-                  {p.role}
+                  {p.disconnected ? (
+                    <span className="text-red-400">Reconnecting…</span>
+                  ) : (
+                    p.role
+                  )}
                 </p>
               </div>
             </div>

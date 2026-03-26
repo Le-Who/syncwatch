@@ -4,6 +4,15 @@ import { calculateDrift } from "@/lib/utils";
 import { calculatePlaybackRate } from "@/lib/drift-math";
 import { PlaybackIntentManager } from "@/lib/playback-intent-manager";
 import { PlayerMethods } from "@/lib/types";
+import {
+  CONTROLLED_OWNER_CORRECTION,
+  CONTROLLED_FOLLOWER_SEEK,
+  HARD_SEEK_HTML5,
+  HARD_SEEK_IFRAME,
+  HARD_SEEK_TWITCH,
+  PAUSED_HARD_SEEK,
+  JOIN_GRACE_PERIOD_MS,
+} from "@/lib/sync-config";
 
 export function usePlaybackSync(props: {
   realPlayerRef: React.RefObject<PlayerMethods | null>;
@@ -21,6 +30,7 @@ export function usePlaybackSync(props: {
   getCurrentMedia: () => any | undefined;
   getDuration: () => number;
   emitCommand: (type: string, payload: any) => void;
+  joinedAt: number;
 }) {
   const driftRef = useRef(0);
   const syncTimerRef = useRef<any>(null);
@@ -42,6 +52,15 @@ export function usePlaybackSync(props: {
 
       if (!playback || !p.getIsReady() || p.getSeeking()) {
         syncTimerRef.current = setTimeout(syncPlayback, 200) as any;
+        return;
+      }
+
+      // P1 Fix: Skip sync corrections during buffering — rate adjustments have
+      // no effect while the player is stalled. Reset hysteresis state so that
+      // buffer recovery starts with a clean correction decision.
+      if (p.getIsBuffering()) {
+        isAdjustingRateRef.current = false;
+        syncTimerRef.current = setTimeout(syncPlayback, 300) as any;
         return;
       }
 
@@ -75,7 +94,7 @@ export function usePlaybackSync(props: {
         }
 
         if (p.getControlMode() === "controlled") {
-          if (currentDrift > 0.6 && p.getMyRole() === "owner") {
+          if (currentDrift > CONTROLLED_OWNER_CORRECTION && p.getMyRole() === "owner") {
             // A4 Fix: tag sync_correction with nonce so the echo-back doesn't trigger OCC rollback flicker
             const nonce = crypto.randomUUID();
             p.intentManager.markCommandEmitted(
@@ -88,10 +107,15 @@ export function usePlaybackSync(props: {
               nonce,
             });
             return;
-          } else if (currentDrift > 2.0) {
+          } else if (currentDrift > CONTROLLED_FOLLOWER_SEEK) {
             // P3 Fix: Followers hard seek locally if drift exceeds 2.0s (lowered from 3.0s).
             // The purpose is keeping all viewers in sync — followers must actively correct drift.
-            p.performProgrammaticSeek(playback.basePosition);
+            p.performProgrammaticSeek(expectedPosition);
+            // P2 Fix: Must return here to prevent falling through to the
+            // iframe-aware hard-seek block below, which would fire a SECOND
+            // seek for the same drift cycle.
+            syncTimerRef.current = setTimeout(syncPlayback, 250) as any;
+            return;
           }
           // Note: followers fall through to rate adjustment for 0.6 - 2.0s drift
         }
@@ -120,10 +144,15 @@ export function usePlaybackSync(props: {
           }
         };
 
+        // P4 Fix: During the first 3 seconds after joining, skip hard seeks
+        // to let clock sync converge. Rate correction still applies.
+        const isInJoinGracePeriod = Date.now() - p.joinedAt < JOIN_GRACE_PERIOD_MS;
+
         if (
-          (currentDrift > 3.0 ||
-            (isIframeProvider && currentDrift > 2.0) ||
-            (isTwitch && currentDrift > 1.0)) &&
+          !isInJoinGracePeriod &&
+          (currentDrift > HARD_SEEK_HTML5 ||
+            (isIframeProvider && currentDrift > HARD_SEEK_IFRAME) ||
+            (isTwitch && currentDrift > HARD_SEEK_TWITCH)) &&
           !p.getIsBuffering()
         ) {
           let expectedClamped = expectedPosition;
@@ -174,7 +203,7 @@ export function usePlaybackSync(props: {
           p.setPlaying(false);
         }
 
-        if (currentDrift > 3.0 && !p.getIsBuffering()) {
+        if (currentDrift > PAUSED_HARD_SEEK && !p.getIsBuffering()) {
           p.intentManager.ignoreEventsFor(1500);
           p.performProgrammaticSeek(playback.basePosition);
         }

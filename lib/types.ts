@@ -27,6 +27,8 @@ export interface Participant {
   role: "owner" | "moderator" | "viewer";
   lastSeen: number;
   sessionToken?: string;
+  /** P7: Set to true when participant is disconnected but within reconnection window */
+  disconnected?: boolean;
 }
 
 export interface RoomSettings {

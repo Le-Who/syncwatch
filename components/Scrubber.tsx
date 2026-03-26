@@ -26,6 +26,8 @@ export function Scrubber({
 
   // Exclusively track UI scrubbing position locally to prevent jumping during drag
   const scrubPercentRef = useRef<number>(0);
+  // P5 Fix: Throttle formatTime — only re-format when the floored second changes
+  const lastFormattedSecondRef = useRef<number>(-1);
 
   useEffect(() => {
     let animationFrameId: number;
@@ -55,10 +57,11 @@ export function Scrubber({
           if (progressBarRef.current) {
             progressBarRef.current.style.width = `${percent}%`;
           }
-          if (timeDisplayRef.current) {
-            timeDisplayRef.current.innerText = formatTime(
-              Math.round(currentTime),
-            );
+          // P5 Fix: Only call formatTime when the floored second changes (~1/s vs 60/s)
+          const flooredSecond = Math.floor(currentTime);
+          if (timeDisplayRef.current && flooredSecond !== lastFormattedSecondRef.current) {
+            lastFormattedSecondRef.current = flooredSecond;
+            timeDisplayRef.current.innerText = formatTime(flooredSecond);
           }
         });
       }
@@ -107,6 +110,7 @@ export function Scrubber({
 
     requestAnimationFrame(() => {
       if (progressBarRef.current) {
+        progressBarRef.current.style.transition = "none";
         progressBarRef.current.style.width = `${percent * 100}%`;
       }
       if (timeDisplayRef.current) {
@@ -164,7 +168,7 @@ export function Scrubber({
           <div
             ref={progressBarRef}
             className="from-theme-accent/80 to-theme-accent absolute top-0 left-0 h-full rounded-r-full bg-linear-to-r shadow-[0_0_12px_var(--color-theme-accent)] transition-transform duration-75"
-            style={{ width: "0%" }}
+            style={{ width: "0%", transition: isScrubbing ? "none" : "width 100ms linear" }}
           />
         </div>
 

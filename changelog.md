@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Sync UX Refinement (2026-03-27)
+
+#### Bug Fixes
+- **Double-seek in controlled mode** — Missing `return` after follower hard-seek caused fall-through to iframe seek block in `usePlaybackSync.ts`.
+- **Sync starvation on buffer** — Sync loop applied rate corrections during buffering. Added early-exit guard and hysteresis reset.
+- **Cold-start ghost seek** — Single-sample clock offset caused hard-seeks on join. Added 3s grace period.
+- **Pause debounce** — YouTube iframe 60–100ms second-wave events missed by 50ms debounce. Increased to 150ms.
+- **Badge false flash** — Stale `driftRef` during pause→play caused false "Sync Lost". Added 2s grace period.
+
+#### UX Improvements
+- **Scrubber smoothing** — CSS `transition: width 100ms linear` + `formatTime` throttled to 1/s. Auto-disabled during scrubbing.
+- **Disconnected participant dimming** — Immediate `participant_disconnected` event. Avatar dims with red dot and "Reconnecting…" text.
+
+#### Architecture
+- **Centralized sync thresholds** — 17 constants in `lib/sync-config.ts`. All consumers import named constants.
+- **Table-driven rate adjustment** — `drift-math.ts` uses `RATE_ADJUSTMENT_TIERS` array.
+
+#### Testing
+- **Zero-dependency Redis mock** — `__tests__/helpers/redis-mock.ts` for CI without `REDIS_URL`.
+- **4 new fast-path tests** — Unauthorized, pause, sync_correction+nonce, NO_CHANGE dedup. (167 → 171 tests)
+
 ### Architecture
 
 - **Unified CAS Mutation Model**: Eliminated the async `redis-queue-worker.ts` and `redis-queue.ts`. All slow-path commands (`add_item`, `video_ended`, `next`, `reorder_playlist`, etc.) are now processed inline via pure functions in `lib/room-logic.ts` within a CAS (Compare-And-Swap) retry loop in `commands.ts`. This closes the critical concurrency hole where the Lua fast path and queue worker could race on the same room state.

@@ -6,6 +6,7 @@ import {
   setRedisRoom,
   getRedisRoom,
 } from "../lib/redis-actor";
+import { installRedisMock, uninstallRedisMock } from "./helpers/redis-mock";
 import { randomUUID } from "node:crypto";
 
 const TEST_RUN_ID = randomUUID().slice(0, 8);
@@ -13,10 +14,16 @@ const TEST_RUN_ID = randomUUID().slice(0, 8);
 describe("Fast-Path OCC Logic", () => {
   const roomId = `test-fast-path-${TEST_RUN_ID}`;
   let redis: ReturnType<typeof getRedisClient>;
+  let usingMock = false;
 
   beforeAll(async () => {
     redis = getRedisClient();
-    if (!redis) return;
+    if (!redis) {
+      // CI fallback: use in-process Redis mock
+      installRedisMock();
+      redis = getRedisClient();
+      usingMock = true;
+    }
 
     // Arrange: Setup initial fast-path room
     await setRedisRoom(roomId, {
@@ -56,7 +63,9 @@ describe("Fast-Path OCC Logic", () => {
   });
 
   afterAll(async () => {
-    if (redis) {
+    if (usingMock) {
+      uninstallRedisMock();
+    } else if (redis) {
       const keys = await redis.keys(`*${TEST_RUN_ID}*`);
       if (keys.length > 0) {
         await redis.del(...keys);
@@ -65,8 +74,6 @@ describe("Fast-Path OCC Logic", () => {
   });
 
   it("TC-Fast-1: Should correctly update state via Lua script on fast-path play mutation", async () => {
-    if (!redis) return; // Skip if no external redis bounds present
-
     // Act: Send 'play' mutation
     const result = await executeFastMutation(
       roomId,
@@ -84,5 +91,72 @@ describe("Fast-Path OCC Logic", () => {
     const latestState = await getRedisRoom(roomId);
     expect(latestState.playback.status).toBe("playing");
     expect(latestState.playback.basePosition).toBe(50);
+  });
+
+  it("TC-Fast-2: Should reject unauthorized participant", async () => {
+    const result = await executeFastMutation(
+      roomId,
+      -1,
+      "play",
+      { position: 100 },
+      "unknown_user",
+      "Hacker",
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("UNAUTHORIZED");
+  });
+
+  it("TC-Fast-3: Should handle pause mutation correctly", async () => {
+    const result = await executeFastMutation(
+      roomId,
+      -1,
+      "pause",
+      { position: 75 },
+      "u1",
+      "Owner",
+    );
+
+    expect(result.success).toBe(true);
+    const state = await getRedisRoom(roomId);
+    expect(state.playback.status).toBe("paused");
+    expect(state.playback.basePosition).toBe(75);
+  });
+
+  it("TC-Fast-4: Should handle sync_correction with nonce", async () => {
+    // First set to playing
+    await executeFastMutation(roomId, -1, "play", { position: 0 }, "u1", "Owner");
+
+    const nonce = "test-nonce-123";
+    const result = await executeFastMutation(
+      roomId,
+      -1,
+      "sync_correction",
+      { position: 42, nonce },
+      "u1",
+      "Owner",
+    );
+
+    expect(result.success).toBe(true);
+    const state = await getRedisRoom(roomId);
+    expect(state.playback.basePosition).toBe(42);
+    expect(state.playback.lastActionNonce).toBe(nonce);
+  });
+
+  it("TC-Fast-5: Should return NO_CHANGE when pausing an already-paused room", async () => {
+    // Ensure paused first
+    await executeFastMutation(roomId, -1, "pause", { position: 10 }, "u1", "Owner");
+
+    const result = await executeFastMutation(
+      roomId,
+      -1,
+      "pause",
+      { position: 20 },
+      "u1",
+      "Owner",
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("NO_CHANGE");
   });
 });

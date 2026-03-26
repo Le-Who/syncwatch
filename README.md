@@ -40,11 +40,13 @@ Because Native HTML5, YouTube iframe, and Twitch embed players fire lifecycle ev
 
 ### Drift Correction & Hysteresis
 
-The drift correction system (`lib/drift-math.ts`) uses hysteresis to prevent audible playback rate oscillation on YouTube. Rate correction only starts when drift exceeds 0.6s and only stops when drift drops below 0.3s, avoiding rapid on/off toggling at the boundary. YouTube corrections are capped at ±3% to remain imperceptible to users.
+The drift correction system (`lib/drift-math.ts`) uses hysteresis to prevent audible playback rate oscillation on YouTube. All thresholds are centralized in `lib/sync-config.ts` for single-location tuning. Rate correction starts at 0.6s and stops at 0.3s, avoiding rapid on/off toggling at the boundary. YouTube corrections are capped at ±3% to remain imperceptible to users.
 
 ### User Experience Enhancements
 
-- **SyncStatusBadge**: A 5-state floating indicator (synced/syncing/drift/lost/offline) with smooth color transitions and an auto-hiding "In Sync ✓" pulse.
+- **SyncStatusBadge**: A 5-state floating indicator (synced/syncing/drift/lost/offline) with smooth color transitions, a 2-second grace period after play transitions to eliminate false alarms, and an auto-hiding "In Sync ✓" pulse.
+- **Disconnected Participant Dimming**: When a participant's socket drops, their avatar dims to 50% opacity with a red presence dot and "Reconnecting…" label within milliseconds, well before the 15-second cleanup removes them.
+- **Scrubber Smoothing**: Progress bar uses CSS `transition: width 100ms linear` for compositor-level smoothing during rate correction, automatically disabled during active scrubbing for instant pointer tracking. `formatTime()` is throttled to ~1/s.
 - **ReconnectingOverlay**: Shown when WebSocket disconnects, featuring auto-retry countdown and manual retry.
 - **Toast Notifications**: Participant join/leave events shown via sonner toasts.
 - **Keyboard Shortcuts**: Space (play/pause), M (mute), Arrow Left/Right (seek ±5s/±10s with Shift), Arrow Up/Down (volume ±5%), F (fullscreen), T (theater mode).
@@ -107,9 +109,8 @@ pnpm start
 
 ## Technical Debt & Improvement Backlog
 
-- Current integration tests require a live Redis instance. Consider adding an ephemeral in-memory redis-mock for CI pipelining robustness.
-- `usePlaybackSync` drift parameters (`±15%` max) are currently hardcoded. They could be exposed as room settings for users on high-jitter networks.
-- The `disconnect` handler in `connection.ts` uses a 15-second `setTimeout` before cleanup. During this window a stale participant remains visible.
+- The `disconnect` handler cleanup delay (15s) is a UX trade-off: too short causes false removals on network blips, too long leaves stale entries. The 1s debounce on the dimming visual could be added if brief flickers prove noticeable.
+- The 3-second join grace period means a new joiner may be ~3s out of sync initially. Rate correction still applies during the window.
 
 ## Fixed Issues Log
 
@@ -127,3 +128,10 @@ pnpm start
 | BufferingOverlay getState  | `components/overlays/BufferingOverlay.tsx`                           | `BufferingOverlay` called `useStore.getState()` during render to read `updatedBy`, which is non-reactive. Fixed by using a Zustand selector hook.                                                                                                                                                                                      |
 | Clock sync cold-start      | `lib/store.ts`                                                       | First `room_state` payload computed clock offset as 0 (RTT samples not yet collected), causing spurious hard seeks on join. Fixed by adding a `clockSyncReady` flag.                                                                                                                                                                   |
 | Sequence capture race      | `lib/store.ts`                                                       | `sendCommand` read `sequence` before `set()` applied the increment, emitting stale values. Fixed by reading after state update.                                                                                                                                                                                                        |
+| Double-seek in controlled  | `hooks/usePlaybackSync.ts`                                           | Missing `return` after follower hard-seek caused code to fall through to the iframe-aware seek block, firing two seeks per sync cycle.                                                                                                                                                                                                 |
+| Sync starvation on buffer  | `hooks/usePlaybackSync.ts`                                           | Sync loop applied rate corrections to stalled player during buffering. Fixed with early-exit guard and hysteresis state reset.                                                                                                                                                                                                          |
+| Cold-start ghost seek      | `hooks/usePlaybackSync.ts`, `components/Player.tsx`                  | Single-sample clock offset caused hard-seek within 1–3s of joining. Fixed with 3-second join grace period.                                                                                                                                                                                                                             |
+| Pause debounce too short   | `components/Player.tsx`                                              | 50ms window missed YouTube's second-wave pause events at 60–100ms. Increased to 150ms.                                                                                                                                                                                                                                                |
+| Scrubber visual jitter     | `components/Scrubber.tsx`                                            | Raw 60fps progress bar updates caused wobble during rate correction. Fixed with CSS `transition: width 100ms linear` and `formatTime` throttled to 1/s.                                                                                                                                                                                |
+| Badge false flash          | `components/SyncStatusBadge.tsx`                                     | Stale driftRef during pause→play caused false "Sync Lost" flash. Fixed with 2-second grace period after status transitions.                                                                                                                                                                                                            |
+| Ghost participant window   | `lib/socket/connection.ts`, `lib/socket.ts`, `lib/store.ts`         | Disconnected participant remained fully visible for 15s cleanup window. Fixed with immediate `participant_disconnected` event + UI dimming.                                                                                                                                                                                             |

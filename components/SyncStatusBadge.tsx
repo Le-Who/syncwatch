@@ -2,6 +2,12 @@
 
 import { useEffect, useState, useRef } from "react";
 import { useStore } from "@/lib/store";
+import {
+  BADGE_SYNCED,
+  BADGE_SYNCING,
+  BADGE_DRIFT,
+  BADGE_GRACE_PERIOD_MS,
+} from "@/lib/sync-config";
 
 interface SyncStatusBadgeProps {
   driftRef: React.MutableRefObject<number>;
@@ -23,26 +29,44 @@ export function SyncStatusBadge({ driftRef }: SyncStatusBadgeProps) {
   const syncedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stableSyncCountRef = useRef(0);
   const prevStateRef = useRef<SyncState>("synced");
+  // P6 Fix: Track playback status transitions to suppress false badge flashes
+  const prevPlaybackStatusRef = useRef(playbackStatus);
+  const lastStatusChangeRef = useRef(0);
+
+  useEffect(() => {
+    // P6 Fix: Detect playback status edge transitions (paused → playing)
+    if (playbackStatus !== prevPlaybackStatusRef.current) {
+      prevPlaybackStatusRef.current = playbackStatus;
+      lastStatusChangeRef.current = Date.now();
+    }
+  }, [playbackStatus]);
 
   useEffect(() => {
     const interval = setInterval(() => {
       const absDrift = Math.abs(driftRef.current);
-      setDisplayDrift(absDrift);
 
       let newState: SyncState;
       if (!isConnected) {
         newState = "offline";
-      } else if (absDrift < 0.1) {
+      } else if (absDrift < BADGE_SYNCED) {
         newState = "synced";
-      } else if (absDrift < 0.3) {
-        newState = "synced"; // Small enough to be considered synced
-      } else if (absDrift < 1.0) {
+      } else if (absDrift < BADGE_SYNCING) {
         newState = "syncing";
-      } else if (absDrift < 3.0) {
+      } else if (absDrift < BADGE_DRIFT) {
         newState = "drift";
       } else {
         newState = "lost";
       }
+
+      // P6 Fix: During the first 2 seconds after a status transition (e.g.
+      // paused → playing), suppress non-synced states. The driftRef is stale
+      // during transitions and would cause a false "Sync Lost" badge flash.
+      const isInTransitionGrace = Date.now() - lastStatusChangeRef.current < BADGE_GRACE_PERIOD_MS;
+      if (isInTransitionGrace && newState !== "offline") {
+        newState = "synced";
+      }
+
+      setDisplayDrift(absDrift);
 
       // Track how long we've been in "synced" state for the pulse
       if (newState === "synced") {
