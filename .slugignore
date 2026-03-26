@@ -33,7 +33,9 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# Git and Docker (unnecessary in the built Heroku slug)
+# Git, Docker, and alternate lockfiles
+package-lock.json
+yarn.lock
 .git/
 .gitignore
 Dockerfile

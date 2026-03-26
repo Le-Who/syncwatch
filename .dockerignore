@@ -17,6 +17,8 @@ blob-report/
 .prettiercache
 Dockerfile
 .dockerignore
+package-lock.json
+yarn.lock
 e2e/
 __tests__/
 vitest.config.ts
