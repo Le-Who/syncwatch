@@ -87,6 +87,7 @@ export function AwaitingSignal({
               <input
                 name="urlInput"
                 type="url"
+                aria-label="Paste video stream URL"
                 placeholder="Paste video stream URL..."
                 className="text-theme-text placeholder-theme-muted font-theme flex-1 bg-transparent px-5 py-4 text-sm focus:outline-none"
                 required
