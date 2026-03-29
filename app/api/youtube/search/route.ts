@@ -3,6 +3,7 @@ import { z } from "zod";
 import { checkRedisRateLimit } from "@/lib/redis-rate-limit";
 import { Worker } from "worker_threads";
 import { LRUCache } from "@/lib/lru-cache";
+import path from "path";
 
 const ytSearchQuerySchema = z.string().min(1);
 
@@ -52,27 +53,17 @@ class CircuitBreaker {
 
 const ytSearchBreaker = new CircuitBreaker(5, 60000); // 1 minute lockout after 5 consecutive failures
 
-// Worker Thread isolation for yt-search to prevent unbounded lingering promises
-const workerCode = `
-  const { parentPort, workerData } = require('worker_threads');
-  const yts = require('yt-search');
-  
-  yts(workerData.query).then((res) => {
-    parentPort.postMessage({ success: true, data: res });
-  }).catch((err) => {
-    parentPort.postMessage({ success: false, error: err.message });
-  });
-`;
-
 function searchYoutubeWithWorker(
   query: string,
   timeoutMs: number,
 ): Promise<any> {
   return new Promise((resolve, reject) => {
-    // Generate a Data URI to avoid eval: true which is insecure and flagged by SAST tools
-    const workerScript = `data:text/javascript;base64,${Buffer.from(workerCode).toString("base64")}`;
+    const workerPath = path.join(
+      process.cwd(),
+      "app/api/youtube/search/search-worker.js",
+    );
 
-    const worker = new Worker(workerScript, {
+    const worker = new Worker(workerPath, {
       workerData: { query },
     });
 
