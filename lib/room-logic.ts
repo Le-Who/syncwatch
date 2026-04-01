@@ -43,14 +43,14 @@ function clampStart(item: { lastPosition?: number; startPosition?: number; durat
 }
 
 /** Snapshot the current playback position into the active playlist item. */
-function snapshotActiveItemPosition(room: RoomState): void {
-  const activeItem = room.playlist.find((i) => i.id === room.currentMediaId);
-  if (activeItem) {
+function snapshotActiveItemPosition(room: RoomState, activeItem?: any): void {
+  const item = activeItem || room.playlist.find((i) => i.id === room.currentMediaId);
+  if (item) {
     const elapsed =
       room.playback.status === "playing"
         ? (Date.now() - room.playback.baseTimestamp) / 1000
         : 0;
-    activeItem.lastPosition =
+    item.lastPosition =
       room.playback.basePosition + elapsed * room.playback.rate;
   }
 }
@@ -150,13 +150,14 @@ export function applyRemoveItem(
   const { canEditPlaylist } = getParticipantPermissions(room, participantId);
   if (!canEditPlaylist) return false;
 
+  const removeIndex = room.playlist.findIndex((item) => item.id === payload.itemId);
+  if (removeIndex === -1) return false;
+
   if (room.currentMediaId === payload.itemId) {
-    snapshotActiveItemPosition(room);
+    snapshotActiveItemPosition(room, room.playlist[removeIndex]);
   }
 
-  const initialLength = room.playlist.length;
-  room.playlist = room.playlist.filter((item) => item.id !== payload.itemId);
-  if (room.playlist.length >= initialLength) return false;
+  room.playlist.splice(removeIndex, 1);
 
   if (room.currentMediaId === payload.itemId) {
     room.currentMediaId =
@@ -230,11 +231,11 @@ export function applyNext(
   if (!canControlPlayback) return false;
   if (payload.currentMediaId !== room.currentMediaId) return false;
 
-  snapshotActiveItemPosition(room);
-
   const currentIndex = room.playlist.findIndex(
     (i) => i.id === room.currentMediaId,
   );
+  const activeItem = currentIndex !== -1 ? room.playlist[currentIndex] : undefined;
+  snapshotActiveItemPosition(room, activeItem);
 
   if (currentIndex !== -1 && currentIndex < room.playlist.length - 1) {
     const nextItem = room.playlist[currentIndex + 1];
@@ -290,11 +291,11 @@ export function applyVideoEnded(
 ): boolean {
   if (payload.currentMediaId !== room.currentMediaId) return false;
 
-  snapshotActiveItemPosition(room);
-  const activeItem = room.playlist.find((i) => i.id === room.currentMediaId);
   const endedIndex = room.playlist.findIndex(
     (i) => i.id === room.currentMediaId,
   );
+  const activeItem = endedIndex !== -1 ? room.playlist[endedIndex] : undefined;
+  snapshotActiveItemPosition(room, activeItem);
 
   if (endedIndex !== -1 && endedIndex < room.playlist.length - 1) {
     if (room.settings.autoplayNext) {
