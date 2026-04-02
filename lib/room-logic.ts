@@ -43,8 +43,8 @@ function clampStart(item: { lastPosition?: number; startPosition?: number; durat
 }
 
 /** Snapshot the current playback position into the active playlist item. */
-function snapshotActiveItemPosition(room: RoomState): void {
-  const activeItem = room.playlist.find((i) => i.id === room.currentMediaId);
+function snapshotActiveItemPosition(room: RoomState, knownActiveItem?: any): void {
+  const activeItem = knownActiveItem || room.playlist.find((i) => i.id === room.currentMediaId);
   if (activeItem) {
     const elapsed =
       room.playback.status === "playing"
@@ -150,22 +150,23 @@ export function applyRemoveItem(
   const { canEditPlaylist } = getParticipantPermissions(room, participantId);
   if (!canEditPlaylist) return false;
 
+  const targetIndex = room.playlist.findIndex((item) => item.id === payload.itemId);
+  if (targetIndex === -1) return false;
+
+  const targetItem = room.playlist[targetIndex];
+
   if (room.currentMediaId === payload.itemId) {
-    snapshotActiveItemPosition(room);
+    snapshotActiveItemPosition(room, targetItem);
   }
 
-  const initialLength = room.playlist.length;
-  room.playlist = room.playlist.filter((item) => item.id !== payload.itemId);
-  if (room.playlist.length >= initialLength) return false;
+  room.playlist.splice(targetIndex, 1);
 
   if (room.currentMediaId === payload.itemId) {
     room.currentMediaId =
       room.playlist.length > 0 ? room.playlist[0].id : null;
     room.playback.status =
       room.playback.status === "playing" ? "playing" : "paused";
-    const newHead = room.currentMediaId
-      ? room.playlist.find((i) => i.id === room.currentMediaId)
-      : null;
+    const newHead = room.currentMediaId ? room.playlist[0] : null;
     room.playback.basePosition = newHead ? clampStart(newHead) : 0;
     room.playback.baseTimestamp = Date.now();
   }
@@ -208,6 +209,9 @@ export function applySetMedia(
   const { canControlPlayback, canEditPlaylist } = getParticipantPermissions(room, participantId);
   if (!canControlPlayback && !canEditPlaylist) return false;
 
+  // We can't easily avoid the snapshot scan if we don't know the index, but we can avoid scanning
+  // for the snapshot if we pre-calculate a map, but for simplicity, we just leave the snapshot
+  // without changes since we are focusing on avoiding multiple scans in the same logic block.
   snapshotActiveItemPosition(room);
 
   room.currentMediaId = payload.itemId;
@@ -230,11 +234,15 @@ export function applyNext(
   if (!canControlPlayback) return false;
   if (payload.currentMediaId !== room.currentMediaId) return false;
 
-  snapshotActiveItemPosition(room);
-
   const currentIndex = room.playlist.findIndex(
     (i) => i.id === room.currentMediaId,
   );
+
+  if (currentIndex !== -1) {
+    snapshotActiveItemPosition(room, room.playlist[currentIndex]);
+  } else {
+    snapshotActiveItemPosition(room);
+  }
 
   if (currentIndex !== -1 && currentIndex < room.playlist.length - 1) {
     const nextItem = room.playlist[currentIndex + 1];
@@ -290,11 +298,12 @@ export function applyVideoEnded(
 ): boolean {
   if (payload.currentMediaId !== room.currentMediaId) return false;
 
-  snapshotActiveItemPosition(room);
-  const activeItem = room.playlist.find((i) => i.id === room.currentMediaId);
   const endedIndex = room.playlist.findIndex(
     (i) => i.id === room.currentMediaId,
   );
+
+  const activeItem = endedIndex !== -1 ? room.playlist[endedIndex] : undefined;
+  snapshotActiveItemPosition(room, activeItem);
 
   if (endedIndex !== -1 && endedIndex < room.playlist.length - 1) {
     if (room.settings.autoplayNext) {
