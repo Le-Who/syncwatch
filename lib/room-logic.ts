@@ -43,14 +43,14 @@ function clampStart(item: { lastPosition?: number; startPosition?: number; durat
 }
 
 /** Snapshot the current playback position into the active playlist item. */
-function snapshotActiveItemPosition(room: RoomState): void {
-  const activeItem = room.playlist.find((i) => i.id === room.currentMediaId);
-  if (activeItem) {
+function snapshotActiveItemPosition(room: RoomState, activeItem?: { id: string, lastPosition?: number, startPosition?: number }): void {
+  const item = activeItem || room.playlist.find((i) => i.id === room.currentMediaId);
+  if (item) {
     const elapsed =
       room.playback.status === "playing"
         ? (Date.now() - room.playback.baseTimestamp) / 1000
         : 0;
-    activeItem.lastPosition =
+    item.lastPosition =
       room.playback.basePosition + elapsed * room.playback.rate;
   }
 }
@@ -230,11 +230,15 @@ export function applyNext(
   if (!canControlPlayback) return false;
   if (payload.currentMediaId !== room.currentMediaId) return false;
 
-  snapshotActiveItemPosition(room);
-
   const currentIndex = room.playlist.findIndex(
     (i) => i.id === room.currentMediaId,
   );
+
+  if (currentIndex !== -1) {
+    snapshotActiveItemPosition(room, room.playlist[currentIndex]);
+  } else {
+    snapshotActiveItemPosition(room);
+  }
 
   if (currentIndex !== -1 && currentIndex < room.playlist.length - 1) {
     const nextItem = room.playlist[currentIndex + 1];
@@ -290,11 +294,17 @@ export function applyVideoEnded(
 ): boolean {
   if (payload.currentMediaId !== room.currentMediaId) return false;
 
-  snapshotActiveItemPosition(room);
-  const activeItem = room.playlist.find((i) => i.id === room.currentMediaId);
   const endedIndex = room.playlist.findIndex(
     (i) => i.id === room.currentMediaId,
   );
+
+  const activeItem = endedIndex !== -1 ? room.playlist[endedIndex] : undefined;
+
+  if (activeItem) {
+    snapshotActiveItemPosition(room, activeItem);
+  } else {
+    snapshotActiveItemPosition(room);
+  }
 
   if (endedIndex !== -1 && endedIndex < room.playlist.length - 1) {
     if (room.settings.autoplayNext) {
