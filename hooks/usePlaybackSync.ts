@@ -94,7 +94,10 @@ export function usePlaybackSync(props: {
         }
 
         if (p.getControlMode() === "controlled") {
-          if (currentDrift > CONTROLLED_OWNER_CORRECTION && p.getMyRole() === "owner") {
+          if (
+            currentDrift > CONTROLLED_OWNER_CORRECTION &&
+            p.getMyRole() === "owner"
+          ) {
             // A4 Fix: tag sync_correction with nonce so the echo-back doesn't trigger OCC rollback flicker
             const nonce = crypto.randomUUID();
             p.intentManager.markCommandEmitted(
@@ -146,7 +149,8 @@ export function usePlaybackSync(props: {
 
         // P4 Fix: During the first 3 seconds after joining, skip hard seeks
         // to let clock sync converge. Rate correction still applies.
-        const isInJoinGracePeriod = Date.now() - p.joinedAt < JOIN_GRACE_PERIOD_MS;
+        const isInJoinGracePeriod =
+          Date.now() - p.joinedAt < JOIN_GRACE_PERIOD_MS;
 
         if (
           !isInJoinGracePeriod &&
