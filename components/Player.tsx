@@ -267,36 +267,39 @@ export default function Player() {
   // Removed ResizeObserver effect
 
   // In strict server state, we don't emit commands from native events
-  const emitCommand = useCallback((type: string, payload: any) => {
-    // BACKGROUND TAB FIX: Block false-positive pause/seek events from throttled tabs
-    if (
-      !isDocumentVisibleRef.current &&
-      payload?.fromNative &&
-      ["play", "pause", "seek", "buffering"].includes(type)
-    ) {
-      return;
-    }
-    // Respect existing nonce if provided (e.g. from usePlaybackSync sync_correction),
-    // otherwise generate a fresh one for UI-driven actions.
-    const nonce = payload?.nonce || crypto.randomUUID();
+  const emitCommand = useCallback(
+    (type: string, payload: any) => {
+      // BACKGROUND TAB FIX: Block false-positive pause/seek events from throttled tabs
+      if (
+        !isDocumentVisibleRef.current &&
+        payload?.fromNative &&
+        ["play", "pause", "seek", "buffering"].includes(type)
+      ) {
+        return;
+      }
+      // Respect existing nonce if provided (e.g. from usePlaybackSync sync_correction),
+      // otherwise generate a fresh one for UI-driven actions.
+      const nonce = payload?.nonce || crypto.randomUUID();
 
-    // Normalize command types to playback statuses for getExpectedStatus comparisons
-    // ("play" → "playing", "pause" → "paused") so guards like
-    // `expectedStatus !== "playing"` work correctly.
-    const statusMap: Record<string, string> = {
-      play: "playing",
-      pause: "paused",
-      seek: "playing",
-      buffering: "buffering",
-      sync_correction: "playing",
-    };
-    intentManager.markCommandEmitted(
-      statusMap[type] || type,
-      payload?.position,
-      nonce,
-    );
-    sendCommand(type, { ...payload, nonce });
-  }, [intentManager, sendCommand]);
+      // Normalize command types to playback statuses for getExpectedStatus comparisons
+      // ("play" → "playing", "pause" → "paused") so guards like
+      // `expectedStatus !== "playing"` work correctly.
+      const statusMap: Record<string, string> = {
+        play: "playing",
+        pause: "paused",
+        seek: "playing",
+        buffering: "buffering",
+        sync_correction: "playing",
+      };
+      intentManager.markCommandEmitted(
+        statusMap[type] || type,
+        payload?.position,
+        nonce,
+      );
+      sendCommand(type, { ...payload, nonce });
+    },
+    [intentManager, sendCommand],
+  );
 
   // P4 Fix: Capture join time for clock sync grace period
   const [joinedAt] = useState(() => Date.now());
@@ -537,14 +540,16 @@ export default function Player() {
 
   // formatTime is now imported from @/lib/utils
 
-  const nextItem = useStore(useShallow((s) => {
-    if (!s.room || !currentMediaId) return null;
-    const idx = s.room.playlist.findIndex((i) => i.id === currentMediaId);
-    if (idx === -1) return null;
-    let n = s.room.playlist[idx + 1];
-    if (!n && s.room.settings.looping) n = s.room.playlist[0];
-    return n;
-  }));
+  const nextItem = useStore(
+    useShallow((s) => {
+      if (!s.room || !currentMediaId) return null;
+      const idx = s.room.playlist.findIndex((i) => i.id === currentMediaId);
+      if (idx === -1) return null;
+      let n = s.room.playlist[idx + 1];
+      if (!n && s.room.settings.looping) n = s.room.playlist[0];
+      return n;
+    }),
+  );
 
   const [upNextState, setUpNextState] = useState({ show: false, remaining: 0 });
 
@@ -620,9 +625,13 @@ export default function Player() {
                     volume={volume}
                     muted={userJoined ? muted : true}
                     controls={true}
-                    onReady={(rPlayer: PlayerMethods) => playerEvents.handleReady(rPlayer, true)}
+                    onReady={(rPlayer: PlayerMethods) =>
+                      playerEvents.handleReady(rPlayer, true)
+                    }
                     onError={playerEvents.handleError}
-                    onSeek={(seconds: number) => playerEvents.handleSeek(seconds, true)}
+                    onSeek={(seconds: number) =>
+                      playerEvents.handleSeek(seconds, true)
+                    }
                     onDurationChange={playerEvents.handleDurationChange}
                     onEnded={playerEvents.handleEnded}
                     onWaiting={playerEvents.handleWaiting}
@@ -642,9 +651,13 @@ export default function Player() {
                     playing={userJoined ? playing : false}
                     volume={volume}
                     muted={userJoined ? muted : true}
-                    onReady={(rPlayer: PlayerMethods) => playerEvents.handleReady(rPlayer, false)}
+                    onReady={(rPlayer: PlayerMethods) =>
+                      playerEvents.handleReady(rPlayer, false)
+                    }
                     onError={playerEvents.handleError}
-                    onSeek={(seconds: number) => playerEvents.handleSeek(seconds, false)}
+                    onSeek={(seconds: number) =>
+                      playerEvents.handleSeek(seconds, false)
+                    }
                     onSeeked={playerEvents.handleSeeked}
                     onDurationChange={playerEvents.handleDurationChange}
                     onEnded={playerEvents.handleEnded}
@@ -716,7 +729,10 @@ export default function Player() {
         {(isBuffering || playback?.status === "buffering") &&
           playing &&
           !error && (
-            <BufferingOverlay playback={playback} isLocalBuffering={isBuffering} />
+            <BufferingOverlay
+              playback={playback}
+              isLocalBuffering={isBuffering}
+            />
           )}
 
         {/* PAUSED Overlay */}
@@ -757,4 +773,3 @@ export default function Player() {
     </div>
   );
 }
-
