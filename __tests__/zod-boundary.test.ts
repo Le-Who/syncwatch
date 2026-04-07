@@ -86,20 +86,32 @@ describe("Websocket Zod Security Boundary", () => {
     // update_duration requires mediaId (uuid) and duration (number >= 0)
     const updateDuration = {
       type: "update_duration",
-      payload: { mediaId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890", duration: 15.0 },
+      payload: {
+        mediaId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        duration: 15.0,
+      },
     };
     expect(commandSchema.safeParse(updateDuration).success).toBe(true);
 
     // Should reject update_duration without mediaId
-    const badDuration = { type: "update_duration", payload: { duration: 15.0 } };
+    const badDuration = {
+      type: "update_duration",
+      payload: { duration: 15.0 },
+    };
     expect(commandSchema.safeParse(badDuration).success).toBe(false);
 
     // update_room_name requires name string (1-100 chars)
-    const updateName = { type: "update_room_name", payload: { name: "New Room" } };
+    const updateName = {
+      type: "update_room_name",
+      payload: { name: "New Room" },
+    };
     expect(commandSchema.safeParse(updateName).success).toBe(true);
 
     // update_nickname requires nickname string (1-50 chars)
-    const updateNick = { type: "update_nickname", payload: { nickname: "NewNick" } };
+    const updateNick = {
+      type: "update_nickname",
+      payload: { nickname: "NewNick" },
+    };
     expect(commandSchema.safeParse(updateNick).success).toBe(true);
 
     // update_role requires targetParticipantId and role enum

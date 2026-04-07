@@ -18,22 +18,33 @@ import { RoomState } from "./types";
 function getParticipantPermissions(
   room: RoomState,
   participantId: string,
-): { canEditPlaylist: boolean; canControlPlayback: boolean; isOwnerOrMod: boolean } {
+): {
+  canEditPlaylist: boolean;
+  canControlPlayback: boolean;
+  isOwnerOrMod: boolean;
+} {
   const participant = room.participants[participantId];
   if (!participant) {
-    return { canEditPlaylist: false, canControlPlayback: false, isOwnerOrMod: false };
+    return {
+      canEditPlaylist: false,
+      canControlPlayback: false,
+      isOwnerOrMod: false,
+    };
   }
   const isOwnerOrMod =
     participant.role === "owner" || participant.role === "moderator";
-  const canEditPlaylist =
-    room.settings.controlMode === "open" || isOwnerOrMod;
+  const canEditPlaylist = room.settings.controlMode === "open" || isOwnerOrMod;
   const canControlPlayback =
     room.settings.controlMode === "open" || isOwnerOrMod;
   return { canEditPlaylist, canControlPlayback, isOwnerOrMod };
 }
 
 /** Clamp start position: if within 5s of end, reset to 0. */
-function clampStart(item: { lastPosition?: number; startPosition?: number; duration: number }): number {
+function clampStart(item: {
+  lastPosition?: number;
+  startPosition?: number;
+  duration: number;
+}): number {
   let start = item.lastPosition || item.startPosition || 0;
   if (item.duration > 0 && start >= item.duration - 5) {
     start = 0;
@@ -159,8 +170,7 @@ export function applyRemoveItem(
   if (room.playlist.length >= initialLength) return false;
 
   if (room.currentMediaId === payload.itemId) {
-    room.currentMediaId =
-      room.playlist.length > 0 ? room.playlist[0].id : null;
+    room.currentMediaId = room.playlist.length > 0 ? room.playlist[0].id : null;
     room.playback.status =
       room.playback.status === "playing" ? "playing" : "paused";
     const newHead = room.currentMediaId
@@ -205,7 +215,10 @@ export function applySetMedia(
   participantId: string,
   participantNickname: string,
 ): boolean {
-  const { canControlPlayback, canEditPlaylist } = getParticipantPermissions(room, participantId);
+  const { canControlPlayback, canEditPlaylist } = getParticipantPermissions(
+    room,
+    participantId,
+  );
   if (!canControlPlayback && !canEditPlaylist) return false;
 
   snapshotActiveItemPosition(room);
@@ -329,10 +342,7 @@ export function applyVideoEnded(
   }
 }
 
-export function applyUpdateDuration(
-  room: RoomState,
-  payload: any,
-): boolean {
+export function applyUpdateDuration(room: RoomState, payload: any): boolean {
   const { mediaId, duration: newDuration } = payload;
   const mediaItem = room.playlist.find((i) => i.id === mediaId);
   if (mediaItem && typeof newDuration === "number" && newDuration > 0) {

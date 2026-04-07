@@ -264,7 +264,9 @@ describe("PlaybackIntentManager", () => {
       // @ts-ignore
       manager._mediaTransitionId = "media2";
 
-      const consoleWarnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const consoleWarnSpy = vi
+        .spyOn(console, "warn")
+        .mockImplementation(() => {});
 
       // Advance to trigger the 8s timeout created for "media1"
       vi.advanceTimersByTime(8000);
