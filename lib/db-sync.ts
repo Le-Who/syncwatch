@@ -260,15 +260,32 @@ export async function flushDbSyncQueue(supabase: SupabaseClient | null) {
     queue = Array.from(writeBehindQueue);
   }
 
-  for (const roomId of queue) {
-    let room;
-    const roomStr = await getRedisRoom(roomId);
-    if (roomStr) room = roomStr;
+  const BATCH_SIZE = 10;
+  for (let i = 0; i < queue.length; i += BATCH_SIZE) {
+    const batch = queue.slice(i, i + BATCH_SIZE);
 
-    if (room) {
-      await forcePersistRoom(room, supabase).catch(() => {});
-      if (redisClient)
-        await redisClient.zrem("pending_db_syncs", roomId).catch(() => {});
-    }
+    // Fetch rooms concurrently
+    const roomResults = await Promise.allSettled(
+      batch.map((roomId) => getRedisRoom(roomId))
+    );
+
+    const promises = batch.map(async (roomId, index) => {
+      const result = roomResults[index];
+
+      if (result.status === "rejected") {
+        console.error(`Failed to fetch room ${roomId} during flush:`, result.reason);
+      }
+
+      const room = result.status === "fulfilled" ? result.value : null;
+
+      if (room) {
+        await forcePersistRoom(room, supabase).catch(() => {});
+        if (redisClient) {
+          await redisClient.zrem("pending_db_syncs", roomId).catch(() => {});
+        }
+      }
+    });
+
+    await Promise.allSettled(promises);
   }
 }
