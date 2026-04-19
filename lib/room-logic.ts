@@ -163,9 +163,9 @@ export function applyRemoveItem(
       room.playlist.length > 0 ? room.playlist[0].id : null;
     room.playback.status =
       room.playback.status === "playing" ? "playing" : "paused";
-    const newHead = room.currentMediaId
-      ? room.playlist.find((i) => i.id === room.currentMediaId)
-      : null;
+    // ⚡ Bolt: Optimize redundant lookup by using direct O(1) index access
+    // since we already know the currentMediaId corresponds to the 0th element.
+    const newHead = room.playlist.length > 0 ? room.playlist[0] : null;
     room.playback.basePosition = newHead ? clampStart(newHead) : 0;
     room.playback.baseTimestamp = Date.now();
   }
@@ -291,10 +291,12 @@ export function applyVideoEnded(
   if (payload.currentMediaId !== room.currentMediaId) return false;
 
   snapshotActiveItemPosition(room);
-  const activeItem = room.playlist.find((i) => i.id === room.currentMediaId);
   const endedIndex = room.playlist.findIndex(
     (i) => i.id === room.currentMediaId,
   );
+  // ⚡ Bolt: Eliminate redundant O(n) Array.find() call by reusing the
+  // index result for a direct O(1) lookup.
+  const activeItem = endedIndex !== -1 ? room.playlist[endedIndex] : null;
 
   if (endedIndex !== -1 && endedIndex < room.playlist.length - 1) {
     if (room.settings.autoplayNext) {
