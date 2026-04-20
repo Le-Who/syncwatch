@@ -12,7 +12,7 @@ export function ThemeToggle() {
       onClick={toggleTheme}
       whileHover={{ scale: 1.1 }}
       whileTap={{ scale: 0.9 }}
-      className="theme-panel group fixed right-6 bottom-6 z-50 flex cursor-pointer items-center justify-center overflow-hidden rounded-full p-3"
+      className="theme-panel group fixed right-6 bottom-6 z-50 flex cursor-pointer items-center justify-center overflow-hidden rounded-full p-3 focus-visible:ring-2 ring-theme-accent focus:outline-none"
       aria-label="Toggle Theme"
     >
       <div className="relative flex h-6 w-6 items-center justify-center">

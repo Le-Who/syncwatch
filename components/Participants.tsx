@@ -103,8 +103,9 @@ export default function Participants() {
                     <input
                       value={p.nickname}
                       onChange={(e) => setNickname(e.target.value)}
-                      className="text-theme-text border-theme-accent/50 focus:border-theme-accent w-full max-w-[140px] truncate border-b-2 bg-transparent px-1 py-0.5 text-[15px] font-bold tracking-wide uppercase transition-all focus:outline-none"
+                      className="text-theme-text border-theme-accent/50 focus:border-theme-accent w-full max-w-[140px] truncate border-b-2 bg-transparent px-1 py-0.5 text-[15px] font-bold tracking-wide uppercase transition-all focus:outline-none focus-visible:ring-2 ring-theme-accent"
                       title="Edit your nickname"
+                      aria-label="Edit your nickname"
                     />
                   ) : (
                     <p className="text-theme-text truncate px-1 text-[15px] font-bold tracking-wide uppercase">
@@ -138,8 +139,10 @@ export default function Participants() {
                     e.stopPropagation();
                     setOpenMenuId(openMenuId === p.id ? null : p.id);
                   }}
-                  className="text-theme-muted hover:text-theme-accent bg-theme-bg/30 border-theme-border/50 hover:border-theme-accent rounded-full border p-1.5 transition-all"
+                  className="text-theme-muted hover:text-theme-accent bg-theme-bg/30 border-theme-border/50 hover:border-theme-accent rounded-full border p-1.5 transition-all focus-visible:ring-2 ring-theme-accent focus:outline-none"
                   aria-label="Manage user"
+                  aria-expanded={openMenuId === p.id}
+                  aria-haspopup="menu"
                 >
                   <MoreVertical className="h-4 w-4" />
                 </button>
@@ -154,24 +157,27 @@ export default function Participants() {
                       className="bg-theme-bg/90 border-theme-border/50 shadow-theme-hover absolute top-full right-0 z-50 mt-2 w-48 overflow-hidden rounded-xl border backdrop-blur-xl"
                       onClick={(e) => e.stopPropagation()}
                     >
-                      <div className="flex flex-col p-1">
+                      <div className="flex flex-col p-1" role="menu">
                         {p.role !== "moderator" && (
                           <button
+                            role="menuitem"
                             onClick={() => handleRoleChange(p.id, "moderator")}
-                            className="hover:bg-theme-accent/20 hover:text-theme-accent text-theme-text flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold tracking-wide transition-colors"
+                            className="hover:bg-theme-accent/20 hover:text-theme-accent text-theme-text flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold tracking-wide transition-colors focus-visible:ring-2 ring-theme-accent focus:outline-none"
                           >
                             <ShieldPlus className="h-4 w-4" /> Make Moderator
                           </button>
                         )}
                         {p.role === "moderator" && (
                           <button
+                            role="menuitem"
                             onClick={() => handleRoleChange(p.id, "viewer")}
-                            className="text-theme-text flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold tracking-wide transition-colors hover:bg-orange-500/20 hover:text-orange-500"
+                            className="text-theme-text flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold tracking-wide transition-colors hover:bg-orange-500/20 hover:text-orange-500 focus-visible:ring-2 ring-theme-accent focus:outline-none"
                           >
                             <ShieldMinus className="h-4 w-4" /> Remove Mod
                           </button>
                         )}
                         <button
+                          role="menuitem"
                           onClick={() => {
                             if (
                               confirm(
@@ -181,7 +187,7 @@ export default function Participants() {
                               handleRoleChange(p.id, "owner");
                             }
                           }}
-                          className="text-theme-text flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold tracking-wide transition-colors hover:bg-amber-500/20 hover:text-amber-500"
+                          className="text-theme-text flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold tracking-wide transition-colors hover:bg-amber-500/20 hover:text-amber-500 focus-visible:ring-2 ring-theme-accent focus:outline-none"
                         >
                           <Crown className="h-4 w-4" /> Transfer Owner
                         </button>
