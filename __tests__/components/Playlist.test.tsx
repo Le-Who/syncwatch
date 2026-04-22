@@ -5,9 +5,16 @@ import { useStore } from "../../lib/store";
 import ReactPlayer from "react-player";
 
 // 1. Mock Zustand Store
-vi.mock("../../lib/store", () => ({
-  useStore: vi.fn(),
-}));
+vi.mock("../../lib/store", () => {
+  const storeImplementation = vi.fn();
+  return {
+    useStore: Object.assign(storeImplementation, {
+      getState: () => ({}),
+      setState: () => ({}),
+      subscribe: () => ({}),
+    }),
+  };
+});
 
 // 2. Mock ReactPlayer's canPlay static method
 vi.mock("react-player", () => ({
@@ -50,7 +57,7 @@ describe("Playlist Component (Unit Tests)", () => {
     vi.clearAllMocks();
 
     // Default store state: User is owner, room has 1 video
-    (useStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+    const mockState = {
       room: {
         settings: { controlMode: "controlled" },
         currentMediaId: "vid-1",
@@ -76,6 +83,11 @@ describe("Playlist Component (Unit Tests)", () => {
       },
       participantId: "user-1",
       sendCommand: mockSendCommand,
+    };
+
+    (useStore as unknown as ReturnType<typeof vi.fn>).mockImplementation((selector) => {
+      if (selector) return selector(mockState);
+      return mockState;
     });
   });
 
@@ -97,7 +109,7 @@ describe("Playlist Component (Unit Tests)", () => {
 
   it("TC-UI-02: Disables 'Remove' and 'Input' for Guests when not in Open mode", () => {
     // Override store for Guest
-    (useStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+    const guestState = {
       room: {
         settings: { controlMode: "controlled" }, // Not open
         currentMediaId: "vid-1",
@@ -120,6 +132,11 @@ describe("Playlist Component (Unit Tests)", () => {
       },
       participantId: "user-viewer",
       sendCommand: mockSendCommand,
+    };
+
+    (useStore as unknown as ReturnType<typeof vi.fn>).mockImplementation((selector) => {
+      if (selector) return selector(guestState);
+      return guestState;
     });
 
     render(<Playlist />);
