@@ -3,6 +3,7 @@
 
 import { useState, useEffect } from "react";
 import { useStore } from "@/lib/store";
+import { useShallow } from "zustand/react/shallow";
 import { formatTime } from "@/lib/utils";
 import { LivePosition } from "./LivePosition";
 import {
@@ -18,7 +19,9 @@ import { motion, Reorder } from "motion/react";
 import ReactPlayer from "react-player";
 
 export default function Playlist() {
-  const { room, participantId, sendCommand } = useStore();
+  const room = useStore(useShallow((s) => s.room));
+  const participantId = useStore((s) => s.participantId);
+  const sendCommand = useStore((s) => s.sendCommand);
   const [url, setUrl] = useState("");
   const [isAdding, setIsAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
