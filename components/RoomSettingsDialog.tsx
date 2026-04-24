@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useStore } from "@/lib/store";
+import { useShallow } from "zustand/react/shallow";
 import { X, Save } from "lucide-react";
 import { motion } from "motion/react";
 
@@ -10,7 +11,9 @@ export default function RoomSettingsDialog({
 }: {
   onClose: () => void;
 }) {
-  const { room, participantId, sendCommand } = useStore();
+  const room = useStore(useShallow((s) => s.room));
+  const participantId = useStore((s) => s.participantId);
+  const sendCommand = useStore((s) => s.sendCommand);
   const [settings, setSettings] = useState(
     room?.settings || {
       controlMode: "open",
