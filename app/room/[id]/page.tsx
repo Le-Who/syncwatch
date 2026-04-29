@@ -231,6 +231,7 @@ export default function RoomPage() {
               onClick={() => setIsSettingsOpen(true)}
               className="border-theme-border/50 hover:border-theme-accent text-theme-muted hover:text-theme-accent bg-theme-bg/50 rounded-theme ring-theme-text flex h-10 w-10 items-center justify-center border-2 shadow-sm backdrop-blur-md transition-all outline-none focus-visible:ring-2"
               title="SYSTEM_CONFIG"
+              aria-label="Open settings"
             >
               <Settings className="h-5 w-5" />
             </button>
