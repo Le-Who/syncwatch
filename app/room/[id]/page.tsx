@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useStore } from "@/lib/store";
 import { motion } from "motion/react";
 import { Users, Settings, Copy, Check, Zap, ListVideo } from "lucide-react";
+import { useShallow } from "zustand/react/shallow";
 import Player from "@/components/Player";
 import Playlist from "@/components/Playlist";
 import Participants from "@/components/Participants";
@@ -27,7 +28,17 @@ export default function RoomPage() {
     init,
     sendCommand,
     participantId,
-  } = useStore();
+  } = useStore(useShallow((state) => ({
+    room: state.room,
+    isConnected: state.isConnected,
+    nickname: state.nickname,
+    setNickname: state.setNickname,
+    connect: state.connect,
+    disconnect: state.disconnect,
+    init: state.init,
+    sendCommand: state.sendCommand,
+    participantId: state.participantId,
+  })));
 
   const [isJoining, setIsJoining] = useState(true);
   const [tempName, setTempName] = useState("");
