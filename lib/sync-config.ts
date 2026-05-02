@@ -20,7 +20,7 @@ export const RATE_CORRECTION_SKIP = 3.0;
 /** Rate adjustment tiers: [driftThreshold, adjustmentPercent] ordered high→low */
 export const RATE_ADJUSTMENT_TIERS: ReadonlyArray<[number, number]> = [
   [2.0, 0.15], // >2s drift → 15% speed adjustment
-  [1.0, 0.10], // >1s drift → 10%
+  [1.0, 0.1], // >1s drift → 10%
   [0.0, 0.05], // default   →  5%
 ];
 

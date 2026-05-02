@@ -58,7 +58,7 @@ export default function Participants() {
         {participants.map((p) => (
           <div
             key={p.id}
-            className={`rounded-theme participant-item relative flex items-center justify-between border-2 p-3.5 transition-all ${p.disconnected ? 'opacity-50' : ''} ${
+            className={`rounded-theme participant-item relative flex items-center justify-between border-2 p-3.5 transition-all ${p.disconnected ? "opacity-50" : ""} ${
               p.id === participantId
                 ? "bg-theme-accent/20 border-theme-accent shadow-theme"
                 : p.disconnected
