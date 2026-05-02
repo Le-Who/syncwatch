@@ -1,4 +1,3 @@
-## 2024-03-05 - Optimize Array Finding in Redis Worker
-
-**Learning:** O(N^2) `.find()` operations within loops mapping over array IDs can severely bottleneck performance as array sizes increase (e.g., maximum 500 playlist limit).
-**Action:** Replace nested `.find()` searches with a pre-computed O(N) `Map` linking array identifiers to their respective items, drastically improving lookup speed to O(1).
+## 2024-05-02 - [Concurrent batching for graceful shutdown queue]
+**Learning:** The `flushDbSyncQueue` function was processing rooms sequentially during graceful server shutdown, which could lead to extreme shutdown latency and potential OOM issues when the pending sync queue is large.
+**Action:** Apply a concurrent batching pattern (`BATCH_SIZE=10` with `Promise.allSettled`) to pre-fetch room data and persist them to the database concurrently, matching the pattern used in the periodic worker loop `startDbSyncWorker`. This maximizes throughput.
