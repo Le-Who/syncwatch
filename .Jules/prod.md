@@ -243,6 +243,14 @@ APP_ADMIN_EMAIL_VALUE="you@example.com"
 ALLOWED_IP_RANGES_VALUE="YOUR_PUBLIC_IP/32"
 ```
 
+Verify that no required shell variable is empty before writing the file:
+
+```bash
+for name in APP_ADMIN_EMAIL_VALUE APP_ADMIN_PASSWORD_VALUE SESSION_SECRET_VALUE POSTGRES_PASSWORD_VALUE ALLOWED_IP_RANGES_VALUE; do
+  test -n "${!name}" || { echo "Missing $name"; exit 1; }
+done
+```
+
 Create `/opt/friendly-goggles/.env.production` from those shell variables:
 
 ```bash
@@ -297,6 +305,33 @@ docker compose --env-file .env.production ps
 curl -fsS http://127.0.0.1:3000/healthz
 ```
 
+If `app` fails to start, inspect logs first:
+
+```bash
+cd /opt/friendly-goggles
+docker compose --env-file .env.production logs --tail=200 app
+```
+
+Also check that required env values are not empty. This command prints lengths, not secret values:
+
+```bash
+awk -F= '
+/^(APP_ADMIN_EMAIL|APP_ADMIN_PASSWORD|SESSION_SECRET|POSTGRES_PASSWORD|DATABASE_URL|APP_DOMAIN|ALLOWED_IP_RANGES)=/ {
+  printf "%s length=%d\n", $1, length($2)
+}
+' .env.production
+```
+
+If `APP_ADMIN_PASSWORD`, `SESSION_SECRET`, or `POSTGRES_PASSWORD` has length `0`, regenerate the values and recreate `.env.production` before running Compose again.
+
+If you already ran Compose once with empty env values during a first-time setup, reset the fresh project volumes before retrying:
+
+```bash
+docker compose --env-file .env.production down -v
+```
+
+This removes the newly created Postgres, Caddy, and worker artifact volumes for this Compose project. Do not use it after you have real production data.
+
 Then open:
 
 ```text
@@ -349,6 +384,11 @@ Run this on your local machine. It creates the key GitHub Actions will use to SS
 ssh-keygen -t ed25519 -C "friendly-goggles-actions-to-vps" -f ./friendly-goggles_actions_to_vps
 ```
 
+This command creates two files on your local machine:
+
+- `friendly-goggles_actions_to_vps.pub` is the public key. Put this on the VPS in `/home/deploy/.ssh/authorized_keys`.
+- `friendly-goggles_actions_to_vps` is the private key. Put the full contents of this file into the GitHub Actions secret named `VPS_SSH_KEY`.
+
 Copy the public key to the VPS `deploy` user:
 
 ```bash
@@ -400,6 +440,8 @@ VPS_SSH_KEY=<private key content from friendly-goggles_actions_to_vps>
 VPS_SSH_HOST_KEY=<full ssh-keyscan -H tri.baby output>
 VPS_PATH=/opt/friendly-goggles
 ```
+
+Do not use `/home/deploy/.ssh/friendly_goggles_github` as `VPS_SSH_KEY`. That key is for VPS-to-GitHub pulls. `VPS_SSH_KEY` is the separate local private key for GitHub-Actions-to-VPS SSH.
 
 Recommended environment protection:
 
