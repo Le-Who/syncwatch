@@ -45,6 +45,9 @@ export default function RoomSettingsDialog({
       />
 
       <motion.div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="settings-dialog-title"
         initial={{ opacity: 0, scale: 0.95, y: 10 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 10 }}
@@ -52,12 +55,13 @@ export default function RoomSettingsDialog({
         className="bg-theme-bg/95 border-theme-border rounded-theme font-theme relative z-10 w-full max-w-md overflow-hidden border-2 tracking-wide uppercase shadow-[0_10px_40px_var(--color-theme-shadow)] backdrop-blur-3xl"
       >
         <div className="border-theme-border/30 bg-theme-bg/50 flex items-center justify-between border-b-2 p-5">
-          <h2 className="text-theme-text text-lg font-bold tracking-wide drop-shadow-sm">
+          <h2 id="settings-dialog-title" className="text-theme-text text-lg font-bold tracking-wide drop-shadow-sm">
             Terminal Settings
           </h2>
           <button
             onClick={onClose}
-            className="text-theme-muted hover:text-theme-accent hover:bg-theme-accent/10 rounded-theme p-2 transition-all"
+            aria-label="Close settings"
+            className="text-theme-muted hover:text-theme-accent hover:bg-theme-accent/10 ring-theme-accent rounded-theme p-2 transition-all outline-none focus-visible:ring-2"
           >
             <X className="h-5 w-5" />
           </button>
@@ -207,7 +211,7 @@ export default function RoomSettingsDialog({
                     sendCommand("claim_host", {});
                     onClose();
                   }}
-                  className="bg-theme-accent text-theme-bg rounded-theme px-4 py-2 text-xs font-bold tracking-widest shadow-[var(--theme-shadow)] transition-all hover:shadow-[var(--theme-shadow-hover)] active:translate-y-0.5 active:shadow-none"
+                  className="bg-theme-accent text-theme-bg ring-theme-accent rounded-theme px-4 py-2 text-xs font-bold tracking-widest shadow-[var(--theme-shadow)] transition-all outline-none hover:shadow-[var(--theme-shadow-hover)] focus-visible:ring-2 active:translate-y-0.5 active:shadow-none"
                 >
                   CLAIM HOST
                 </button>
@@ -219,14 +223,14 @@ export default function RoomSettingsDialog({
         <div className="border-theme-border/30 bg-theme-bg/50 flex justify-end space-x-3 border-t-2 p-5">
           <button
             onClick={onClose}
-            className="text-theme-muted hover:text-theme-text hover:bg-theme-bg/50 rounded-theme hover:border-theme-border border-2 border-transparent px-5 py-2.5 text-xs font-bold tracking-widest transition-all"
+            className="text-theme-muted hover:text-theme-text hover:bg-theme-bg/50 ring-theme-accent rounded-theme hover:border-theme-border border-2 border-transparent px-5 py-2.5 text-xs font-bold tracking-widest transition-all outline-none focus-visible:ring-2"
           >
             CANCEL
           </button>
           {isOwnerOrMod && (
             <button
               onClick={handleSave}
-              className="bg-theme-accent text-theme-bg rounded-theme flex items-center space-x-2 px-5 py-2.5 text-xs font-bold tracking-widest shadow-[var(--theme-shadow)] transition-all hover:shadow-[var(--theme-shadow-hover)] active:translate-y-0.5 active:shadow-none"
+              className="bg-theme-accent text-theme-bg ring-theme-accent rounded-theme flex items-center space-x-2 px-5 py-2.5 text-xs font-bold tracking-widest shadow-[var(--theme-shadow)] transition-all outline-none hover:shadow-[var(--theme-shadow-hover)] focus-visible:ring-2 active:translate-y-0.5 active:shadow-none"
             >
               <Save className="h-4 w-4" />
               <span>SAVE</span>
