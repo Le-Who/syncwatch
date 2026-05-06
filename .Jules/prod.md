@@ -203,6 +203,28 @@ Move into the production checkout:
 
 ```bash
 cd /opt/friendly-goggles
+id -un
+ls -ld .
+ls -l .env.production 2>/dev/null || true
+test -w .
+```
+
+The `id -un` command must print `deploy`, and `ls -ld .` must show `deploy deploy` as owner/group. If `.env.production` already exists, it must also be owned by `deploy`.
+
+If the directory or `.env.production` is owned by `root`, fix ownership from a separate root SSH session:
+
+```bash
+ssh root@tri.baby
+chown -R deploy:deploy /opt/friendly-goggles
+exit
+```
+
+Then return to the `deploy` session and rerun:
+
+```bash
+cd /opt/friendly-goggles
+ls -ld .
+ls -l .env.production 2>/dev/null || true
 ```
 
 Generate strong secrets:
