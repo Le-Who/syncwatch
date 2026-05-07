@@ -11,7 +11,7 @@
  */
 
 import { randomUUID } from "crypto";
-import { RoomState } from "./types";
+import { RoomState, PlaylistItem } from "./types";
 
 // ─── Helpers ───────────────────────────────────────────────────────────
 
@@ -43,8 +43,13 @@ function clampStart(item: { lastPosition?: number; startPosition?: number; durat
 }
 
 /** Snapshot the current playback position into the active playlist item. */
-function snapshotActiveItemPosition(room: RoomState): void {
-  const activeItem = room.playlist.find((i) => i.id === room.currentMediaId);
+function snapshotActiveItemPosition(room: RoomState, preFoundItem?: PlaylistItem | null): void {
+  // If preFoundItem is explicitly passed as null, it means we know the item doesn't exist,
+  // so we can skip the find lookup. If it's undefined, we do the fallback lookup.
+  const activeItem = preFoundItem !== undefined
+    ? preFoundItem
+    : room.playlist.find((i) => i.id === room.currentMediaId);
+
   if (activeItem) {
     const elapsed =
       room.playback.status === "playing"
@@ -230,11 +235,12 @@ export function applyNext(
   if (!canControlPlayback) return false;
   if (payload.currentMediaId !== room.currentMediaId) return false;
 
-  snapshotActiveItemPosition(room);
-
   const currentIndex = room.playlist.findIndex(
     (i) => i.id === room.currentMediaId,
   );
+
+  const activeItem = currentIndex !== -1 ? room.playlist[currentIndex] : null;
+  snapshotActiveItemPosition(room, activeItem);
 
   if (currentIndex !== -1 && currentIndex < room.playlist.length - 1) {
     const nextItem = room.playlist[currentIndex + 1];
@@ -290,11 +296,12 @@ export function applyVideoEnded(
 ): boolean {
   if (payload.currentMediaId !== room.currentMediaId) return false;
 
-  snapshotActiveItemPosition(room);
-  const activeItem = room.playlist.find((i) => i.id === room.currentMediaId);
   const endedIndex = room.playlist.findIndex(
     (i) => i.id === room.currentMediaId,
   );
+  const activeItem = endedIndex !== -1 ? room.playlist[endedIndex] : null;
+
+  snapshotActiveItemPosition(room, activeItem);
 
   if (endedIndex !== -1 && endedIndex < room.playlist.length - 1) {
     if (room.settings.autoplayNext) {
