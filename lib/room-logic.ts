@@ -163,9 +163,8 @@ export function applyRemoveItem(
       room.playlist.length > 0 ? room.playlist[0].id : null;
     room.playback.status =
       room.playback.status === "playing" ? "playing" : "paused";
-    const newHead = room.currentMediaId
-      ? room.playlist.find((i) => i.id === room.currentMediaId)
-      : null;
+    // ⚡ Bolt: Use direct O(1) index access instead of O(N) Array.find() since we know it's the first element
+    const newHead = room.playlist.length > 0 ? room.playlist[0] : null;
     room.playback.basePosition = newHead ? clampStart(newHead) : 0;
     room.playback.baseTimestamp = Date.now();
   }
@@ -291,10 +290,11 @@ export function applyVideoEnded(
   if (payload.currentMediaId !== room.currentMediaId) return false;
 
   snapshotActiveItemPosition(room);
-  const activeItem = room.playlist.find((i) => i.id === room.currentMediaId);
   const endedIndex = room.playlist.findIndex(
     (i) => i.id === room.currentMediaId,
   );
+  // ⚡ Bolt: Reuse the index from findIndex to get the active item in O(1) instead of an extra O(N) Array.find()
+  const activeItem = endedIndex !== -1 ? room.playlist[endedIndex] : undefined;
 
   if (endedIndex !== -1 && endedIndex < room.playlist.length - 1) {
     if (room.settings.autoplayNext) {
