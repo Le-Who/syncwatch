@@ -27,7 +27,8 @@ describe("Participants Component (Unit Tests)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
-    (useStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+    (useStore as unknown as ReturnType<typeof vi.fn>).mockImplementation((selector) => {
+      const state = {
       room: {
         participants: {
           "user-owner": { id: "user-owner", role: "owner", nickname: "Alice" },
@@ -42,6 +43,8 @@ describe("Participants Component (Unit Tests)", () => {
       participantId: "user-owner",
       sendCommand: mockSendCommand,
       setNickname: mockSetNickname,
+    };
+      return selector ? selector(state) : state;
     });
   });
 
@@ -84,7 +87,8 @@ describe("Participants Component (Unit Tests)", () => {
 
   it("TC-UI-12: Prevents Guests from seeing the manage menu", () => {
     // Change current user to viewer
-    (useStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+    (useStore as unknown as ReturnType<typeof vi.fn>).mockImplementation((selector) => {
+      const state = {
       room: {
         participants: {
           "user-owner": { id: "user-owner", role: "owner", nickname: "Alice" },
@@ -98,6 +102,8 @@ describe("Participants Component (Unit Tests)", () => {
       participantId: "user-viewer",
       sendCommand: mockSendCommand,
       setNickname: mockSetNickname,
+    };
+      return selector ? selector(state) : state;
     });
 
     render(<Participants />);

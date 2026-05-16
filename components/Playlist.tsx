@@ -18,7 +18,10 @@ import { motion, Reorder } from "motion/react";
 import ReactPlayer from "react-player";
 
 export default function Playlist() {
-  const { room, participantId, sendCommand } = useStore();
+  // ⚡ Bolt: Extract specific properties to prevent unnecessary re-renders
+  const room = useStore((s) => s.room);
+  const participantId = useStore((s) => s.participantId);
+  const sendCommand = useStore((s) => s.sendCommand);
   const [url, setUrl] = useState("");
   const [isAdding, setIsAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);

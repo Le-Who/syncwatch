@@ -13,7 +13,11 @@ import {
 import { motion, AnimatePresence } from "motion/react";
 
 export default function Participants() {
-  const { room, participantId, setNickname, sendCommand } = useStore();
+  // ⚡ Bolt: Extract specific properties to prevent unnecessary re-renders
+  const room = useStore((s) => s.room);
+  const participantId = useStore((s) => s.participantId);
+  const setNickname = useStore((s) => s.setNickname);
+  const sendCommand = useStore((s) => s.sendCommand);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
