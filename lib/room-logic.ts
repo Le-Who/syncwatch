@@ -11,7 +11,7 @@
  */
 
 import { randomUUID } from "crypto";
-import { RoomState } from "./types";
+import { RoomState, PlaylistItem } from "./types";
 
 // ─── Helpers ───────────────────────────────────────────────────────────
 
@@ -43,14 +43,14 @@ function clampStart(item: { lastPosition?: number; startPosition?: number; durat
 }
 
 /** Snapshot the current playback position into the active playlist item. */
-function snapshotActiveItemPosition(room: RoomState): void {
-  const activeItem = room.playlist.find((i) => i.id === room.currentMediaId);
-  if (activeItem) {
+function snapshotActiveItemPosition(room: RoomState, activeItem?: PlaylistItem): void {
+  const targetItem = activeItem || room.playlist.find((i) => i.id === room.currentMediaId);
+  if (targetItem) {
     const elapsed =
       room.playback.status === "playing"
         ? (Date.now() - room.playback.baseTimestamp) / 1000
         : 0;
-    activeItem.lastPosition =
+    targetItem.lastPosition =
       room.playback.basePosition + elapsed * room.playback.rate;
   }
 }
@@ -159,13 +159,10 @@ export function applyRemoveItem(
   if (room.playlist.length >= initialLength) return false;
 
   if (room.currentMediaId === payload.itemId) {
-    room.currentMediaId =
-      room.playlist.length > 0 ? room.playlist[0].id : null;
+    const newHead = room.playlist.length > 0 ? room.playlist[0] : null;
+    room.currentMediaId = newHead ? newHead.id : null;
     room.playback.status =
       room.playback.status === "playing" ? "playing" : "paused";
-    const newHead = room.currentMediaId
-      ? room.playlist.find((i) => i.id === room.currentMediaId)
-      : null;
     room.playback.basePosition = newHead ? clampStart(newHead) : 0;
     room.playback.baseTimestamp = Date.now();
   }
@@ -230,11 +227,12 @@ export function applyNext(
   if (!canControlPlayback) return false;
   if (payload.currentMediaId !== room.currentMediaId) return false;
 
-  snapshotActiveItemPosition(room);
-
   const currentIndex = room.playlist.findIndex(
     (i) => i.id === room.currentMediaId,
   );
+
+  const activeItem = currentIndex !== -1 ? room.playlist[currentIndex] : undefined;
+  snapshotActiveItemPosition(room, activeItem);
 
   if (currentIndex !== -1 && currentIndex < room.playlist.length - 1) {
     const nextItem = room.playlist[currentIndex + 1];
@@ -290,11 +288,12 @@ export function applyVideoEnded(
 ): boolean {
   if (payload.currentMediaId !== room.currentMediaId) return false;
 
-  snapshotActiveItemPosition(room);
-  const activeItem = room.playlist.find((i) => i.id === room.currentMediaId);
   const endedIndex = room.playlist.findIndex(
     (i) => i.id === room.currentMediaId,
   );
+  const activeItem = endedIndex !== -1 ? room.playlist[endedIndex] : undefined;
+
+  snapshotActiveItemPosition(room, activeItem);
 
   if (endedIndex !== -1 && endedIndex < room.playlist.length - 1) {
     if (room.settings.autoplayNext) {
