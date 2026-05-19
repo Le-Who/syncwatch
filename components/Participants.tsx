@@ -13,7 +13,10 @@ import {
 import { motion, AnimatePresence } from "motion/react";
 
 export default function Participants() {
-  const { room, participantId, setNickname, sendCommand } = useStore();
+  const room = useStore((s) => s.room);
+  const participantId = useStore((s) => s.participantId);
+  const setNickname = useStore((s) => s.setNickname);
+  const sendCommand = useStore((s) => s.sendCommand);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -58,7 +61,7 @@ export default function Participants() {
         {participants.map((p) => (
           <div
             key={p.id}
-            className={`rounded-theme participant-item relative flex items-center justify-between border-2 p-3.5 transition-all ${p.disconnected ? 'opacity-50' : ''} ${
+            className={`rounded-theme participant-item relative flex items-center justify-between border-2 p-3.5 transition-all ${p.disconnected ? "opacity-50" : ""} ${
               p.id === participantId
                 ? "bg-theme-accent/20 border-theme-accent shadow-theme"
                 : p.disconnected
