@@ -43,14 +43,14 @@ function clampStart(item: { lastPosition?: number; startPosition?: number; durat
 }
 
 /** Snapshot the current playback position into the active playlist item. */
-function snapshotActiveItemPosition(room: RoomState): void {
-  const activeItem = room.playlist.find((i) => i.id === room.currentMediaId);
-  if (activeItem) {
+function snapshotActiveItemPosition(room: RoomState, activeItem?: { id: string; lastPosition?: number; duration: number; startPosition?: number }): void {
+  const itemToUpdate = activeItem || room.playlist.find((i) => i.id === room.currentMediaId);
+  if (itemToUpdate) {
     const elapsed =
       room.playback.status === "playing"
         ? (Date.now() - room.playback.baseTimestamp) / 1000
         : 0;
-    activeItem.lastPosition =
+    itemToUpdate.lastPosition =
       room.playback.basePosition + elapsed * room.playback.rate;
   }
 }
@@ -150,11 +150,13 @@ export function applyRemoveItem(
   const { canEditPlaylist } = getParticipantPermissions(room, participantId);
   if (!canEditPlaylist) return false;
 
+  const initialLength = room.playlist.length;
+
   if (room.currentMediaId === payload.itemId) {
-    snapshotActiveItemPosition(room);
+    const activeItem = room.playlist.find((i) => i.id === room.currentMediaId);
+    snapshotActiveItemPosition(room, activeItem);
   }
 
-  const initialLength = room.playlist.length;
   room.playlist = room.playlist.filter((item) => item.id !== payload.itemId);
   if (room.playlist.length >= initialLength) return false;
 
@@ -230,10 +232,13 @@ export function applyNext(
   if (!canControlPlayback) return false;
   if (payload.currentMediaId !== room.currentMediaId) return false;
 
-  snapshotActiveItemPosition(room);
-
   const currentIndex = room.playlist.findIndex(
     (i) => i.id === room.currentMediaId,
+  );
+
+  snapshotActiveItemPosition(
+    room,
+    currentIndex !== -1 ? room.playlist[currentIndex] : undefined
   );
 
   if (currentIndex !== -1 && currentIndex < room.playlist.length - 1) {
@@ -290,11 +295,12 @@ export function applyVideoEnded(
 ): boolean {
   if (payload.currentMediaId !== room.currentMediaId) return false;
 
-  snapshotActiveItemPosition(room);
-  const activeItem = room.playlist.find((i) => i.id === room.currentMediaId);
   const endedIndex = room.playlist.findIndex(
     (i) => i.id === room.currentMediaId,
   );
+
+  const activeItem = endedIndex !== -1 ? room.playlist[endedIndex] : undefined;
+  snapshotActiveItemPosition(room, activeItem);
 
   if (endedIndex !== -1 && endedIndex < room.playlist.length - 1) {
     if (room.settings.autoplayNext) {
