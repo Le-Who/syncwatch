@@ -49,15 +49,19 @@ export default function RoomSettingsDialog({
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 10 }}
         transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="dialog-title"
         className="bg-theme-bg/95 border-theme-border rounded-theme font-theme relative z-10 w-full max-w-md overflow-hidden border-2 tracking-wide uppercase shadow-[0_10px_40px_var(--color-theme-shadow)] backdrop-blur-3xl"
       >
         <div className="border-theme-border/30 bg-theme-bg/50 flex items-center justify-between border-b-2 p-5">
-          <h2 className="text-theme-text text-lg font-bold tracking-wide drop-shadow-sm">
+          <h2 id="dialog-title" className="text-theme-text text-lg font-bold tracking-wide drop-shadow-sm">
             Terminal Settings
           </h2>
           <button
             onClick={onClose}
-            className="text-theme-muted hover:text-theme-accent hover:bg-theme-accent/10 rounded-theme p-2 transition-all"
+            aria-label="Close settings"
+            className="text-theme-muted hover:text-theme-accent hover:bg-theme-accent/10 focus-visible:ring-2 ring-theme-accent outline-none rounded-theme p-2 transition-all"
           >
             <X className="h-5 w-5" />
           </button>
