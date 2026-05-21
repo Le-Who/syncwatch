@@ -16,9 +16,16 @@ import {
 } from "lucide-react";
 import { motion, Reorder } from "motion/react";
 import ReactPlayer from "react-player";
+import { useShallow } from "zustand/react/shallow";
 
 export default function Playlist() {
-  const { room, participantId, sendCommand } = useStore();
+  const { room, participantId, sendCommand } = useStore(
+    useShallow((s) => ({
+      room: s.room,
+      participantId: s.participantId,
+      sendCommand: s.sendCommand,
+    })),
+  );
   const [url, setUrl] = useState("");
   const [isAdding, setIsAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
