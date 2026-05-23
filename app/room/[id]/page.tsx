@@ -13,6 +13,7 @@ import RoomSettingsDialog from "@/components/RoomSettingsDialog";
 import Reactions from "@/components/Reactions";
 import { ReconnectingOverlay } from "@/components/ReconnectingOverlay";
 import { useSettingsStore } from "@/lib/store";
+import { useShallow } from "zustand/react/shallow";
 
 export default function RoomPage() {
   const params = useParams();
@@ -27,7 +28,19 @@ export default function RoomPage() {
     init,
     sendCommand,
     participantId,
-  } = useStore();
+  } = useStore(
+    useShallow((s) => ({
+      room: s.room,
+      isConnected: s.isConnected,
+      nickname: s.nickname,
+      setNickname: s.setNickname,
+      connect: s.connect,
+      disconnect: s.disconnect,
+      init: s.init,
+      sendCommand: s.sendCommand,
+      participantId: s.participantId,
+    })),
+  );
 
   const [isJoining, setIsJoining] = useState(true);
   const [tempName, setTempName] = useState("");
