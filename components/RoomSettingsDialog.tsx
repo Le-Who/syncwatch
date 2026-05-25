@@ -10,7 +10,9 @@ export default function RoomSettingsDialog({
 }: {
   onClose: () => void;
 }) {
-  const { room, participantId, sendCommand } = useStore();
+  const room = useStore((s) => s.room);
+  const participantId = useStore((s) => s.participantId);
+  const sendCommand = useStore((s) => s.sendCommand);
   const [settings, setSettings] = useState(
     room?.settings || {
       controlMode: "open",
