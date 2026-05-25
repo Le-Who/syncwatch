@@ -17,17 +17,15 @@ import { useSettingsStore } from "@/lib/store";
 export default function RoomPage() {
   const params = useParams();
   const roomId = params.id as string;
-  const {
-    room,
-    isConnected,
-    nickname,
-    setNickname,
-    connect,
-    disconnect,
-    init,
-    sendCommand,
-    participantId,
-  } = useStore();
+  const room = useStore((s) => s.room);
+  const isConnected = useStore((s) => s.isConnected);
+  const nickname = useStore((s) => s.nickname);
+  const setNickname = useStore((s) => s.setNickname);
+  const connect = useStore((s) => s.connect);
+  const disconnect = useStore((s) => s.disconnect);
+  const init = useStore((s) => s.init);
+  const sendCommand = useStore((s) => s.sendCommand);
+  const participantId = useStore((s) => s.participantId);
 
   const [isJoining, setIsJoining] = useState(true);
   const [tempName, setTempName] = useState("");
