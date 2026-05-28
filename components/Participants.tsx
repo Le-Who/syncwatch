@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useStore } from "@/lib/store";
+import { useShallow } from "zustand/react/shallow";
 import {
   User,
   Crown,
@@ -13,7 +14,15 @@ import {
 import { motion, AnimatePresence } from "motion/react";
 
 export default function Participants() {
-  const { room, participantId, setNickname, sendCommand } = useStore();
+  // Bolt Performance: Use useShallow to prevent unnecessary re-renders on unrelated state changes (like serverClockOffset)
+  const { room, participantId, setNickname, sendCommand } = useStore(
+    useShallow((s) => ({
+      room: s.room,
+      participantId: s.participantId,
+      setNickname: s.setNickname,
+      sendCommand: s.sendCommand,
+    }))
+  );
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
