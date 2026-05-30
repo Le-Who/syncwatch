@@ -45,6 +45,9 @@ export default function RoomSettingsDialog({
       />
 
       <motion.div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="room-settings-title"
         initial={{ opacity: 0, scale: 0.95, y: 10 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 10 }}
@@ -52,7 +55,7 @@ export default function RoomSettingsDialog({
         className="bg-theme-bg/95 border-theme-border rounded-theme font-theme relative z-10 w-full max-w-md overflow-hidden border-2 tracking-wide uppercase shadow-[0_10px_40px_var(--color-theme-shadow)] backdrop-blur-3xl"
       >
         <div className="border-theme-border/30 bg-theme-bg/50 flex items-center justify-between border-b-2 p-5">
-          <h2 className="text-theme-text text-lg font-bold tracking-wide drop-shadow-sm">
+          <h2 id="room-settings-title" className="text-theme-text text-lg font-bold tracking-wide drop-shadow-sm">
             Terminal Settings
           </h2>
           <button
