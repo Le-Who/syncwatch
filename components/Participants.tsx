@@ -11,9 +11,15 @@ import {
   ShieldMinus,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
+import { useShallow } from "zustand/react/shallow";
 
 export default function Participants() {
-  const { room, participantId, setNickname, sendCommand } = useStore();
+  const { room, participantId, setNickname, sendCommand } = useStore(useShallow((state) => ({
+    room: state.room,
+    participantId: state.participantId,
+    setNickname: state.setNickname,
+    sendCommand: state.sendCommand,
+  })));
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
