@@ -26,7 +26,7 @@ interface UsePlayerEventsOptions {
 
 /**
  * Extracts shared player event handlers used by both TwitchPlayer and ReactPlayer.
- * 
+ *
  * This hook eliminates the duplicated onReady/onError/onEnded/onWaiting/onPlaying/onDurationChange
  * logic that was previously inlined separately for each player type.
  */
@@ -66,7 +66,15 @@ export function usePlayerEvents({
         setPlaying(true);
       }
     },
-    [currentMediaId, intentManager, playerRef, realPlayerRef, setIsReady, setError, setPlaying],
+    [
+      currentMediaId,
+      intentManager,
+      playerRef,
+      realPlayerRef,
+      setIsReady,
+      setError,
+      setPlaying,
+    ],
   );
 
   /** Shared onError logic */
