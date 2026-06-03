@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useStore } from "@/lib/store";
+import { useShallow } from "zustand/react/shallow";
 import {
   User,
   Crown,
@@ -13,7 +14,14 @@ import {
 import { motion, AnimatePresence } from "motion/react";
 
 export default function Participants() {
-  const { room, participantId, setNickname, sendCommand } = useStore();
+  const { room, participantId, setNickname, sendCommand } = useStore(
+    useShallow((s) => ({
+      room: s.room,
+      participantId: s.participantId,
+      setNickname: s.setNickname,
+      sendCommand: s.sendCommand,
+    })),
+  );
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -58,7 +66,7 @@ export default function Participants() {
         {participants.map((p) => (
           <div
             key={p.id}
-            className={`rounded-theme participant-item relative flex items-center justify-between border-2 p-3.5 transition-all ${p.disconnected ? 'opacity-50' : ''} ${
+            className={`rounded-theme participant-item relative flex items-center justify-between border-2 p-3.5 transition-all ${p.disconnected ? "opacity-50" : ""} ${
               p.id === participantId
                 ? "bg-theme-accent/20 border-theme-accent shadow-theme"
                 : p.disconnected
