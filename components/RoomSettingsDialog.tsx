@@ -57,6 +57,7 @@ export default function RoomSettingsDialog({
           </h2>
           <button
             onClick={onClose}
+            aria-label="Close settings"
             className="text-theme-muted hover:text-theme-accent hover:bg-theme-accent/10 rounded-theme p-2 transition-all"
           >
             <X className="h-5 w-5" />
