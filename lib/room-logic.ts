@@ -291,10 +291,11 @@ export function applyVideoEnded(
   if (payload.currentMediaId !== room.currentMediaId) return false;
 
   snapshotActiveItemPosition(room);
-  const activeItem = room.playlist.find((i) => i.id === room.currentMediaId);
   const endedIndex = room.playlist.findIndex(
     (i) => i.id === room.currentMediaId,
   );
+  // Optimization: use findIndex result to get item, avoiding O(2N) array traversal
+  const activeItem = endedIndex !== -1 ? room.playlist[endedIndex] : undefined;
 
   if (endedIndex !== -1 && endedIndex < room.playlist.length - 1) {
     if (room.settings.autoplayNext) {
