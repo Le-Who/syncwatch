@@ -11,7 +11,11 @@ import {
 } from "../redis-actor";
 import { executeFastMutation } from "../redis-lua";
 import { applySlowCommand } from "../room-logic";
-import { persistRoomState, isSystemDegraded, markRoomForSync } from "../db-sync";
+import {
+  persistRoomState,
+  isSystemDegraded,
+  markRoomForSync,
+} from "../db-sync";
 import { sanitizeRoom } from "../room-handler";
 import { SocketContext } from "./context";
 

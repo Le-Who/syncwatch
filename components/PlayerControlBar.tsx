@@ -219,8 +219,6 @@ export function PlayerControlBar({
               playback={playback}
             />
 
-
-
             {playback?.updatedBy && (
               <span className="text-theme-muted border-theme-border/30 hidden border-l pl-4 text-[10px] tracking-wider uppercase xl:inline-block">
                 CMD: {playback.status === "playing" ? "PLAY" : "PAUSE"}
