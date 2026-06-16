@@ -4,9 +4,16 @@ import Participants from "../../components/Participants";
 import { useStore } from "../../lib/store";
 
 // Mock Zustand Store
-vi.mock("../../lib/store", () => ({
-  useStore: vi.fn(),
-}));
+vi.mock("../../lib/store", () => {
+  const storeImplementation = vi.fn();
+  return {
+    useStore: Object.assign(storeImplementation, {
+      getState: () => ({}),
+      setState: () => ({}),
+      subscribe: () => ({}),
+    }),
+  };
+});
 
 // Mock Framer Motion
 vi.mock("motion/react", () => ({
@@ -27,7 +34,7 @@ describe("Participants Component (Unit Tests)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
-    (useStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+    const mockState = {
       room: {
         participants: {
           "user-owner": { id: "user-owner", role: "owner", nickname: "Alice" },
@@ -42,6 +49,12 @@ describe("Participants Component (Unit Tests)", () => {
       participantId: "user-owner",
       sendCommand: mockSendCommand,
       setNickname: mockSetNickname,
+    };
+
+    // Update mock to handle selector functions
+    (useStore as unknown as ReturnType<typeof vi.fn>).mockImplementation((selector) => {
+      if (selector) return selector(mockState);
+      return mockState;
     });
   });
 
@@ -84,7 +97,7 @@ describe("Participants Component (Unit Tests)", () => {
 
   it("TC-UI-12: Prevents Guests from seeing the manage menu", () => {
     // Change current user to viewer
-    (useStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+    const guestState = {
       room: {
         participants: {
           "user-owner": { id: "user-owner", role: "owner", nickname: "Alice" },
@@ -98,6 +111,11 @@ describe("Participants Component (Unit Tests)", () => {
       participantId: "user-viewer",
       sendCommand: mockSendCommand,
       setNickname: mockSetNickname,
+    };
+
+    (useStore as unknown as ReturnType<typeof vi.fn>).mockImplementation((selector) => {
+      if (selector) return selector(guestState);
+      return guestState;
     });
 
     render(<Participants />);
