@@ -1,1 +1,3 @@
-# Palette's Journal
+## 2024-06-25 - Custom Dialog Accessibility
+**Learning:** Framer-motion `<motion.div>` dialogs in this app frequently lack native semantic attributes, making them invisible or confusing to screen readers.
+**Action:** Always explicitly add `role="dialog"`, `aria-modal="true"`, and an `aria-labelledby` attribute linked to the title for all custom modals, and `aria-hidden="true"` to background overlays.
