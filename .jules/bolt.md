@@ -1,4 +1,3 @@
-## 2024-03-05 - Optimize Array Finding in Redis Worker
-
-**Learning:** O(N^2) `.find()` operations within loops mapping over array IDs can severely bottleneck performance as array sizes increase (e.g., maximum 500 playlist limit).
-**Action:** Replace nested `.find()` searches with a pre-computed O(N) `Map` linking array identifiers to their respective items, drastically improving lookup speed to O(1).
+## 2025-02-23 - Avoid full state subscription in Zustand stores
+**Learning:** Components subscribing to the entire Zustand store via destructuring (e.g., `const { room } = useStore()`) will unnecessarily re-render on *every* state change, even unrelated ones (like `serverClockOffset`). This causes significant performance degradation in React when complex components like Player or RoomPage are re-rendered constantly on timer ticks.
+**Action:** Always use granular selectors or `useShallow` from `zustand/react/shallow` when extracting multiple properties from a Zustand store to prevent unnecessary renders and maintain optimal React performance.
