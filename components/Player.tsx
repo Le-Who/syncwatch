@@ -31,8 +31,10 @@ import { usePlaybackSync } from "@/hooks/usePlaybackSync";
 import { usePlayerEvents } from "@/hooks/usePlayerEvents";
 import {
   getPlayerCurrentTime,
+  applyTwitchEventProxy,
   seekPlayerTo,
 } from "@/lib/player-adapters";
+import { getParticipantPermissions } from "@/lib/permissions";
 import { PAUSE_DEBOUNCE_MS } from "@/lib/sync-config";
 import { AwaitingSignal } from "./AwaitingSignal";
 import { UpNextOverlay } from "./UpNextOverlay";
@@ -54,14 +56,11 @@ const ReactPlayer = dynamic(() => import("react-player"), {
 export default function Player() {
   const participantId = useStore((s) => s.participantId);
   const sendCommand = useStore((s) => s.sendCommand);
+  const room = useStore((s) => s.room);
   const serverClockOffset = useStore((s) => s.serverClockOffset);
   const currentMediaId = useStore((s) => s.room?.currentMediaId);
   const occRollbackTick = useStore((s) => s.occRollbackTick);
   const autoplayNext = useStore((s) => s.room?.settings.autoplayNext);
-
-  const myRole = useStore(
-    (s) => s.participantId && s.room?.participants[s.participantId]?.role,
-  );
 
   const currentMedia = useStore(
     useShallow((s) =>
@@ -75,9 +74,12 @@ export default function Player() {
     s.room ? Object.keys(s.room.participants).length : 0,
   );
 
-  const canControl = myRole === "owner" || myRole === "moderator";
-  const canEditPlaylist = canControl;
-  const canAddPlaylist = Boolean(myRole);
+  const permissions =
+    room && participantId
+      ? getParticipantPermissions(room, participantId)
+      : null;
+  const canControl = permissions?.canControlPlayback ?? false;
+  const canAddPlaylist = permissions?.canAddPlaylist ?? false;
 
   const { volume, muted, theaterMode, setVolume, setMuted, toggleTheaterMode } =
     useSettingsStore();
@@ -175,6 +177,37 @@ export default function Player() {
     if (realTime > 0) return realTime;
     return getPlayerCurrentTime(playerRef.current, provider);
   }, [currentMedia?.provider]);
+
+  const providerName = currentMedia?.provider?.toLowerCase() || "";
+  const usesNativeProviderControls = ["youtube", "twitch"].includes(providerName);
+
+  const handleNativeVolumeChange = useEventCallback((event: any) => {
+    const target = event?.currentTarget || event?.target || realPlayerRef.current;
+    if (!target) return;
+
+    if (typeof target.volume === "number" && Number.isFinite(target.volume)) {
+      setVolume(target.volume);
+    }
+    if (typeof target.muted === "boolean") {
+      setMuted(target.muted);
+    } else if (typeof target.volume === "number" && target.volume === 0) {
+      setMuted(true);
+    }
+  });
+
+  const playTwitchDuringUserGesture = useCallback(() => {
+    if (providerName !== "twitch") return;
+    const players = [realPlayerRef.current, playerRef.current];
+    for (const player of players) {
+      if (typeof player?.play === "function") {
+        try {
+          player.play();
+        } catch {
+          // Twitch may still reject if the embed is not visible yet; sync loop retries.
+        }
+      }
+    }
+  }, [providerName]);
 
   const performProgrammaticSeek = (position: number) => {
     // Soft Mode Guarantee: If we are in "echo protection" (last action was ours),
@@ -310,13 +343,7 @@ export default function Player() {
     }
 
     // Bypass iframe autoplay restrictions for Twitch by calling play synchronously during the click event
-    if (
-      currentMedia?.provider?.toLowerCase() === "twitch" &&
-      realPlayerRef.current &&
-      typeof realPlayerRef.current.play === "function"
-    ) {
-      realPlayerRef.current.play();
-    }
+    playTwitchDuringUserGesture();
 
     emitCommand("play", { position: pos });
   };
@@ -332,8 +359,17 @@ export default function Player() {
     setIsBuffering(false);
     setPlaying(true);
 
-    // **INTENT MASK**: Drop events caused by programmatic seek buffer locks or scrubber dragging
-    if (intentManager.shouldBlockNativeEvent()) {
+    if (
+      intentManager.isInMediaTransition() ||
+      intentManager.isUserDraggingScrubber() ||
+      intentManager.isRecentProgrammaticSeek(1500)
+    ) {
+      return;
+    }
+
+    // YouTube native controls should not lose deliberate play clicks during the
+    // short post-command ACK window.
+    if (providerName !== "youtube" && intentManager.shouldBlockNativeEvent()) {
       return;
     }
 
@@ -350,11 +386,18 @@ export default function Player() {
     setIsBuffering(false);
     intentManager.clearPauseDebounce();
 
-    // **INTENT MASK**: Drop events caused by programmatic seek buffer locks,
-    // scrubber dragging, or media transitions (currentMediaId change).
-    // Must guard BEFORE setPlaying(false) to prevent local state corruption
-    // that causes the player to stay paused after queue advancement.
-    if (intentManager.shouldBlockNativeEvent()) {
+    // Hard guards still block known synthetic pauses. YouTube native controls
+    // bypass the short ACK/ignore window below so a deliberate pause click is
+    // not eaten after a recent play/seek command.
+    if (
+      intentManager.isInMediaTransition() ||
+      intentManager.isUserDraggingScrubber() ||
+      intentManager.isRecentProgrammaticSeek(1500)
+    ) {
+      return;
+    }
+
+    if (providerName !== "youtube" && intentManager.shouldBlockNativeEvent()) {
       return;
     }
 
@@ -362,7 +405,7 @@ export default function Player() {
     // can delay the event beyond the standard shouldBlockNativeEvent window.
     // Use a wider 2500ms seek-detection window specifically for Twitch.
     if (
-      currentMedia?.provider?.toLowerCase() === "twitch" &&
+      providerName === "twitch" &&
       (intentManager.isRecentProgrammaticSeek(2500) ||
         intentManager.isRecentCommand(2500))
     ) {
@@ -404,6 +447,18 @@ export default function Player() {
     handleNativePause,
   });
 
+  useEffect(() => {
+    if (!isReady || providerName !== "twitch") return;
+    applyTwitchEventProxy(playerRef, realPlayerRef, handleNativePlay, handleNativePause);
+  }, [
+    isReady,
+    providerName,
+    playerRef,
+    realPlayerRef,
+    handleNativePlay,
+    handleNativePause,
+  ]);
+
   // C1: Keyboard seek handler
   const handleKeyboardSeek = useCallback(
     (delta: number) => {
@@ -411,7 +466,7 @@ export default function Player() {
       const newPos = Math.max(0, Math.min(duration, currentPos + delta));
       // P6: Allow user play/pause clicks during seek ignore window
       intentManager.ignoreEventsFor(2000, true);
-      const provider = currentMedia?.provider?.toLowerCase();
+      const provider = providerName;
       if (!seekPlayerTo(realPlayerRef.current, newPos, provider)) {
         seekPlayerTo(playerRef.current, newPos, provider);
       }
@@ -430,7 +485,7 @@ export default function Player() {
       canControl,
       playing,
       emitCommand,
-      currentMedia?.provider,
+      providerName,
     ],
   );
 
@@ -476,7 +531,7 @@ export default function Player() {
     // P6: Allow user play/pause clicks during this window
     intentManager.ignoreEventsFor(2000, true);
 
-    const provider = currentMedia?.provider?.toLowerCase();
+    const provider = providerName;
     const didSeekRealPlayer = seekPlayerTo(
       realPlayerRef.current,
       newPosition,
@@ -593,21 +648,17 @@ export default function Player() {
               src={currentMedia.url}
               width="100%"
               height="100%"
-              controls={
-                canControl &&
-                ["youtube", "twitch"].includes(
-                  currentMedia.provider?.toLowerCase() || "",
-                )
-              }
+              controls={usesNativeProviderControls}
               playing={userJoined ? playing : false}
               volume={volume}
               muted={userJoined ? muted : true}
+              onVolumeChange={handleNativeVolumeChange}
               onLoadedMetadata={() =>
-                playerEvents.handleReady(playerRef.current, false)
+                playerEvents.handleReady(playerRef.current, providerName === "twitch")
               }
               onError={playerEvents.handleError}
               onSeeked={() => {
-                playerEvents.handleSeek(getAccurateTime(), false);
+                playerEvents.handleSeek(getAccurateTime(), providerName === "twitch");
                 playerEvents.handleSeeked();
               }}
               onDurationChange={playerEvents.handleDurationChange}
@@ -616,11 +667,17 @@ export default function Player() {
               onPlaying={playerEvents.handlePlaying}
               onPlay={playerEvents.handleNativePlay}
               onPause={playerEvents.handleNativePause}
-              style={{ position: "absolute", top: 0, left: 0 }}
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                visibility: "visible",
+                opacity: 1,
+              }}
               config={{
                 youtube: {
-                  controls: canControl ? 1 : 0,
-                  disablekb: canControl ? 0 : 1,
+                  controls: 1,
+                  disablekb: 0,
                   modestbranding: 1,
                   rel: 1,
                   showinfo: 0,
@@ -687,7 +744,15 @@ export default function Player() {
 
         {/* User Gesture Guard Overlay */}
         {!userJoined && (
-          <UserGestureGuard onActivate={() => setUserJoined(true)} />
+          <UserGestureGuard
+            onActivate={() => {
+              setUserJoined(true);
+              if (playback?.status === "playing") {
+                setPlaying(true);
+                playTwitchDuringUserGesture();
+              }
+            }}
+          />
         )}
 
         {/* Smart Sleep Mode Overlay */}

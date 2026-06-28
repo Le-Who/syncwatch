@@ -1,7 +1,7 @@
 /**
  * room-logic.ts — Pure, synchronous room state mutation functions.
  *
- * These functions encapsulate ALL business logic for "slow path" commands
+ * These functions encapsulate business logic for room commands
  * (playlist edits, video_ended, settings, etc.) that were previously
  * handled by the async redis-queue-worker.
  *
@@ -13,6 +13,22 @@
 import { randomUUID } from "crypto";
 import { PlaylistItem, RoomState } from "./types";
 import { getParticipantPermissions } from "./permissions";
+
+export const FAST_COMMAND_TYPES = [
+  "play",
+  "pause",
+  "seek",
+  "update_rate",
+  "buffering",
+  "sync_correction",
+] as const;
+
+export type FastCommandType = (typeof FAST_COMMAND_TYPES)[number];
+export type FastCommandResult = "changed" | "unchanged" | "unauthorized" | "invalid";
+
+export function isFastCommand(type: string): type is FastCommandType {
+  return (FAST_COMMAND_TYPES as readonly string[]).includes(type);
+}
 
 // ─── Helpers ───────────────────────────────────────────────────────────
 
@@ -45,6 +61,88 @@ function currentPlaybackPosition(room: RoomState): number {
       ? (Date.now() - room.playback.baseTimestamp) / 1000
       : 0;
   return room.playback.basePosition + elapsed * room.playback.rate;
+}
+
+export function applyFastCommand(
+  room: RoomState,
+  type: string,
+  payload: any,
+  participantId: string,
+  participantNickname: string,
+  now = Date.now(),
+): FastCommandResult {
+  if (!isFastCommand(type)) return "invalid";
+
+  const participant = room.participants[participantId];
+  if (!participant) return "unauthorized";
+
+  const { canControlPlayback } = getParticipantPermissions(room, participantId);
+  if (!canControlPlayback) return "unauthorized";
+
+  if (type === "play" || type === "seek" || type === "buffering") {
+    if (typeof payload?.position !== "number" || payload.position < 0) {
+      return "invalid";
+    }
+
+    if (type === "play" && room.playback.status === "playing" && !payload.forceSeek) {
+      return "unchanged";
+    }
+
+    if (type === "play") {
+      room.playback.status = "playing";
+    } else if (type === "buffering") {
+      room.playback.status = "buffering";
+    }
+    room.playback.basePosition = payload.position;
+    room.playback.baseTimestamp = now;
+    room.playback.updatedBy = participantNickname;
+    if (payload.nonce) room.playback.lastActionNonce = payload.nonce;
+    return "changed";
+  }
+
+  if (type === "pause") {
+    if (typeof payload?.position !== "number" || payload.position < 0) {
+      return "invalid";
+    }
+    if (room.playback.status === "paused") return "unchanged";
+
+    room.playback.status = "paused";
+    room.playback.basePosition = payload.position;
+    room.playback.baseTimestamp = now;
+    room.playback.updatedBy = participantNickname;
+    if (payload.nonce) room.playback.lastActionNonce = payload.nonce;
+    return "changed";
+  }
+
+  if (type === "update_rate") {
+    const newRate = payload?.rate;
+    if (typeof newRate !== "number" || newRate < 0.25 || newRate > 4.0) {
+      return "invalid";
+    }
+
+    if (room.playback.status === "playing") {
+      const elapsedSeconds = (now - room.playback.baseTimestamp) / 1000;
+      room.playback.basePosition += elapsedSeconds * room.playback.rate;
+      room.playback.baseTimestamp = now;
+    }
+    room.playback.rate = newRate;
+    room.playback.updatedBy = participantNickname;
+    if (payload.nonce) room.playback.lastActionNonce = payload.nonce;
+    return "changed";
+  }
+
+  if (type === "sync_correction") {
+    if (typeof payload?.position !== "number" || payload.position < 0) {
+      return "invalid";
+    }
+
+    room.playback.basePosition = payload.position;
+    room.playback.baseTimestamp = now;
+    if (payload.nonce) room.playback.lastActionNonce = payload.nonce;
+    return "changed";
+  }
+
+  return "invalid";
 }
 
 function saveFlashback(room: RoomState): void {
@@ -476,6 +574,7 @@ export function applyRequestLeader(
   if (!participant) return false;
 
   if (room.leaderId === participantId) return false;
+  if (room.leaderId && room.participants[room.leaderId]) return false;
 
   room.leaderId = participantId;
   return true;
@@ -675,6 +774,9 @@ export function applyKickParticipant(
   const kickTarget = room.participants[kickTargetId];
   if (kickTarget && kickTargetId !== participantId) {
     delete room.participants[kickTargetId];
+    if (room.leaderId === kickTargetId) {
+      room.leaderId = null;
+    }
     return true;
   }
   return false;

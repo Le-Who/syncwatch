@@ -1,6 +1,6 @@
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, act } from "@testing-library/react";
 import Player from "../Player";
-import { vi, describe, beforeEach, it, expect } from "vitest";
+import { vi, describe, beforeEach, afterEach, it, expect } from "vitest";
 
 // Mock Zustand store hooks
 vi.mock("@/lib/store", () => {
@@ -15,7 +15,14 @@ vi.mock("next/dynamic", () => ({
   default: () => {
     return function MockPlayer(props: any) {
       return (
-        <div data-testid="mock-react-player">
+        <div
+          data-testid="mock-react-player"
+          data-controls={String(Boolean(props.controls))}
+          data-muted={String(Boolean(props.muted))}
+          data-volume={String(props.volume)}
+          data-youtube-controls={String(props.config?.youtube?.controls)}
+          data-youtube-disablekb={String(props.config?.youtube?.disablekb)}
+        >
           {/* Mock events needed by tests */}
           <button
             data-testid="loadedmetadata-event"
@@ -60,6 +67,7 @@ describe("Player Component", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.useRealTimers();
 
     // Default mock implementation
     (useSettingsStore as any).mockReturnValue({
@@ -77,6 +85,10 @@ describe("Player Component", () => {
         sendCommand: mockSendCommand,
         serverClockOffset: 0,
     });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("should render Awaiting Signal when no media is present", () => {
@@ -108,6 +120,93 @@ describe("Player Component", () => {
 
     render(<Player />);
     expect(screen.getByTestId("mock-react-player")).toBeInTheDocument();
+  });
+
+  it("should show native YouTube controls to viewers for volume, quality, and captions", () => {
+    mockStoreState({
+        room: {
+          currentMediaId: "1",
+          leaderId: null,
+          playlist: [
+            {
+              id: "1",
+              url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+              provider: "youtube",
+              title: "Test Video",
+            },
+          ],
+          settings: { autoplayNext: true, looping: false },
+          playback: {
+            status: "paused",
+            basePosition: 0,
+            baseTimestamp: 0,
+            rate: 1,
+          },
+          participants: {
+            user1: { id: "user1", role: "viewer" },
+          },
+        },
+        participantId: "user1",
+        sendCommand: mockSendCommand,
+        serverClockOffset: 0,
+        occRollbackTick: 0,
+    });
+
+    render(<Player />);
+
+    const player = screen.getByTestId("mock-react-player");
+    expect(player).toHaveAttribute("data-controls", "true");
+    expect(player).toHaveAttribute("data-youtube-controls", "1");
+    expect(player).toHaveAttribute("data-youtube-disablekb", "0");
+  });
+
+  it("should turn a native YouTube pause from a viewer into a room pause when no leader is active", () => {
+    vi.useFakeTimers();
+    mockStoreState({
+        room: {
+          currentMediaId: "00000000-0000-4000-8000-000000000001",
+          leaderId: null,
+          playlist: [
+            {
+              id: "00000000-0000-4000-8000-000000000001",
+              url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+              provider: "youtube",
+              title: "Test Video",
+            },
+          ],
+          settings: { autoplayNext: true, looping: false },
+          playback: {
+            status: "playing",
+            basePosition: 0,
+            baseTimestamp: Date.now(),
+            rate: 1,
+          },
+          participants: {
+            user1: { id: "user1", role: "viewer" },
+          },
+        },
+        participantId: "user1",
+        sendCommand: mockSendCommand,
+        serverClockOffset: 0,
+        occRollbackTick: 0,
+    });
+
+    render(<Player />);
+    fireEvent.click(screen.getByText(/Initialize Stream Sync/i));
+    fireEvent.click(screen.getByTestId("loadedmetadata-event"));
+
+    act(() => {
+      vi.advanceTimersByTime(1600);
+    });
+    fireEvent.click(screen.getByTestId("pause-event"));
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+
+    expect(mockSendCommand).toHaveBeenCalledWith(
+      "pause",
+      expect.objectContaining({ position: 0, fromNative: true }),
+    );
   });
 
   it("should allow play/pause interactions if user has control", () => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createEmptyRoom } from "../lib/room-handler";
-import { applySlowCommand } from "../lib/room-logic";
+import { applyFastCommand, applySlowCommand } from "../lib/room-logic";
 import { PlaylistItem, RoomState } from "../lib/types";
 
 const ids = {
@@ -27,6 +27,7 @@ function roomFixture(): RoomState {
     owner: { id: "owner", nickname: "Owner", role: "owner", lastSeen: 1 },
     mod: { id: "mod", nickname: "Mod", role: "moderator", lastSeen: 1 },
     viewer: { id: "viewer", nickname: "Viewer", role: "viewer", lastSeen: 1 },
+    other: { id: "other", nickname: "Other", role: "viewer", lastSeen: 1 },
   };
   room.playlist = [item(ids.one, "One"), item(ids.two, "Two"), item(ids.three, "Three")];
   room.currentMediaId = ids.one;
@@ -154,6 +155,110 @@ describe("SyncTube parity room mutations", () => {
     expect(room.leaderId).toBeNull();
   });
 
+  it("does not let a second participant overwrite an active leader", () => {
+    const room = roomFixture();
+
+    expect(
+      applySlowCommand(room, "request_leader", {}, "viewer", "Viewer"),
+    ).toBe(true);
+    expect(room.leaderId).toBe("viewer");
+
+    expect(
+      applySlowCommand(room, "request_leader", {}, "other", "Other"),
+    ).toBe(false);
+    expect(room.leaderId).toBe("viewer");
+  });
+
+  it("lets everyone control playback when no leader is active", () => {
+    const room = roomFixture();
+    room.playback.status = "paused";
+    room.playback.basePosition = 90;
+
+    expect(
+      applySlowCommand(
+        room,
+        "rewind",
+        { seconds: -30 },
+        "viewer",
+        "Viewer",
+      ),
+    ).toBe(true);
+    expect(room.playback.basePosition).toBe(60);
+    expect(room.playback.updatedBy).toBe("Viewer");
+  });
+
+  it("applies fast playback commands only for allowed controllers", () => {
+    const room = roomFixture();
+    room.playback.status = "paused";
+    room.playback.basePosition = 90;
+
+    expect(
+      applyFastCommand(room, "play", { position: 12 }, "viewer", "Viewer"),
+    ).toBe("changed");
+    expect(room.playback.status).toBe("playing");
+    expect(room.playback.basePosition).toBe(12);
+    expect(room.playback.updatedBy).toBe("Viewer");
+
+    room.leaderId = "viewer";
+    expect(
+      applyFastCommand(room, "play", { position: 44, forceSeek: true }, "other", "Other"),
+    ).toBe("unauthorized");
+    expect(room.playback.basePosition).toBe(12);
+
+    expect(
+      applyFastCommand(room, "pause", { position: 20 }, "viewer", "Viewer"),
+    ).toBe("changed");
+    expect(room.playback.status).toBe("paused");
+    expect(room.playback.basePosition).toBe(20);
+
+    expect(
+      applyFastCommand(room, "seek", { position: 33 }, "mod", "Mod"),
+    ).toBe("changed");
+    expect(room.playback.status).toBe("paused");
+    expect(room.playback.basePosition).toBe(33);
+    expect(room.playback.updatedBy).toBe("Mod");
+  });
+
+  it("limits playback control to the active leader and admins while a leader is set", () => {
+    const room = roomFixture();
+    room.leaderId = "viewer";
+    room.playback.status = "paused";
+    room.playback.basePosition = 90;
+
+    expect(
+      applySlowCommand(
+        room,
+        "rewind",
+        { seconds: -30 },
+        "other",
+        "Other",
+      ),
+    ).toBe(false);
+    expect(room.playback.basePosition).toBe(90);
+
+    expect(
+      applySlowCommand(
+        room,
+        "rewind",
+        { seconds: -30 },
+        "viewer",
+        "Viewer",
+      ),
+    ).toBe(true);
+    expect(room.playback.basePosition).toBe(60);
+
+    expect(
+      applySlowCommand(
+        room,
+        "rewind",
+        { seconds: 10 },
+        "mod",
+        "Mod",
+      ),
+    ).toBe(true);
+    expect(room.playback.basePosition).toBe(70);
+  });
+
   it("transfers ownership and demotes the previous owner to moderator", () => {
     const room = roomFixture();
 
@@ -224,7 +329,10 @@ describe("SyncTube parity room mutations", () => {
         "viewer",
         "Viewer",
       ),
-    ).toBe(false);
+    ).toBe(true);
+    expect(room.playback.basePosition).toBe(60);
+
+    room.playback.basePosition = 90;
 
     expect(
       applySlowCommand(
@@ -239,15 +347,16 @@ describe("SyncTube parity room mutations", () => {
 
     expect(
       applySlowCommand(room, "flashback", {}, "viewer", "Viewer"),
-    ).toBe(false);
+    ).toBe(true);
+    expect(room.playback.basePosition).toBe(90);
 
     expect(
       applySlowCommand(room, "flashback", {}, "mod", "Mod"),
     ).toBe(true);
-    expect(room.playback.basePosition).toBe(90);
+    expect(room.playback.basePosition).toBe(60);
   });
 
-  it("denies viewer playback selection while allowing moderator playback selection", () => {
+  it("allows viewer playback selection when no leader is active", () => {
     const room = roomFixture();
 
     expect(
@@ -258,18 +367,18 @@ describe("SyncTube parity room mutations", () => {
         "viewer",
         "Viewer",
       ),
-    ).toBe(false);
-    expect(room.currentMediaId).toBe(ids.one);
+    ).toBe(true);
+    expect(room.currentMediaId).toBe(ids.two);
 
     expect(
       applySlowCommand(
         room,
         "set_media",
-        { itemId: ids.two },
+        { itemId: ids.three },
         "mod",
         "Mod",
       ),
     ).toBe(true);
-    expect(room.currentMediaId).toBe(ids.two);
+    expect(room.currentMediaId).toBe(ids.three);
   });
 });

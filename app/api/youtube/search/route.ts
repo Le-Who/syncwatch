@@ -130,7 +130,7 @@ async function searchWithGoogleApi(query: string, apiKey: string) {
 
 export async function GET(request: Request) {
   const ip = request.headers.get("x-forwarded-for") || "unknown";
-  const allowed = await checkRedisRateLimit(ip, 20, 60);
+  const allowed = await checkRedisRateLimit(ip, 20, 60000);
   if (!allowed) {
     return NextResponse.json({ error: "Too many requests" }, { status: 429 });
   }

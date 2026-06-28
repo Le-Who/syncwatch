@@ -23,10 +23,11 @@ interface LocalSettingsState {
 export const useSettingsStore = create<LocalSettingsState>()(
   persist(
     (set) => ({
-      volume: 0.8,
-      muted: false,
+      volume: 0.5,
+      muted: true,
       theaterMode: false,
-      setVolume: (volume) => set({ volume }),
+      setVolume: (volume) =>
+        set({ volume: Math.min(1, Math.max(0, Number(volume) || 0)) }),
       setMuted: (muted) => set({ muted }),
       toggleTheaterMode: () =>
         set((state) => ({ theaterMode: !state.theaterMode })),

@@ -24,7 +24,9 @@ const LUA_FAST_MUTATION = `
   local participant = room.participants[participant_id]
   if not participant then return "UNAUTHORIZED" end
 
-  local can_control = participant.role == "owner" or participant.role == "moderator"
+  local leader_id = room.leaderId
+  local has_active_leader = type(leader_id) == "string" and room.participants[leader_id] ~= nil
+  local can_control = participant.role == "owner" or participant.role == "moderator" or not has_active_leader or leader_id == participant_id
 
   if not can_control then return "UNAUTHORIZED" end
 

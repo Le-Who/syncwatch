@@ -2,7 +2,6 @@ import { Server, Socket } from "socket.io";
 import { SupabaseClient } from "@supabase/supabase-js";
 import { jwtVerify } from "jose";
 import { commandSchema } from "../zod-schemas";
-import { checkRedisRateLimit } from "../redis-rate-limit";
 import {
   getRedisRoom,
   setRedisRoomCAS,
@@ -10,7 +9,7 @@ import {
   pubClient,
 } from "../redis-actor";
 import { executeFastMutation } from "../redis-lua";
-import { applySlowCommand } from "../room-logic";
+import { applyFastCommand, applySlowCommand, isFastCommand } from "../room-logic";
 import { persistRoomState, isSystemDegraded, markRoomForSync } from "../db-sync";
 import { sanitizeRoom } from "../room-handler";
 import { SocketContext } from "./context";
@@ -115,15 +114,6 @@ export function handleCommandEvents(
 
     if (!rawCommand || typeof rawCommand !== "object") return;
 
-    const ip =
-      socket.handshake.headers["x-forwarded-for"] ||
-      socket.handshake.address ||
-      "unknown";
-    if (!(await checkRedisRateLimit(`ws:command:${ip}`, 60, 10000))) {
-      socket.emit("error", { message: "Rate limit exceeded" });
-      return;
-    }
-
     const payloadString = JSON.stringify(rawCommand);
     if (payloadString.length > 50000) {
       socket.emit("error", {
@@ -138,7 +128,7 @@ export function handleCommandEvents(
     const parsedCommand = commandSchema.safeParse({ type, payload });
     if (!parsedCommand.success) {
       console.error(
-        `[Zod] Dropped malformed command '${type}' from ${ip}:`,
+        `[Zod] Dropped malformed command '${type}' from ${socket.handshake.address || "unknown"}:`,
         JSON.stringify(parsedCommand.error.issues),
         "Payload was:",
         JSON.stringify(payload),
@@ -176,14 +166,7 @@ export function handleCommandEvents(
 
         room.sequence++;
 
-        const isFastPath = [
-          "play",
-          "pause",
-          "seek",
-          "update_rate",
-          "buffering",
-          "sync_correction",
-        ].includes(type);
+        const isFastPath = isFastCommand(type);
 
         if (isFastPath) {
           const result = await executeFastMutation(
@@ -224,7 +207,53 @@ export function handleCommandEvents(
           } else if (result.error === "NO_CHANGE") {
             break;
           } else {
-            // Fallback to OCC
+            const fastResult = applyFastCommand(
+              room,
+              type,
+              payload,
+              context.currentParticipantId,
+              participant.nickname,
+            );
+
+            if (fastResult === "unauthorized") {
+              socket.emit("error", { message: "Unauthorized operation." });
+              break;
+            }
+            if (fastResult === "unchanged") {
+              break;
+            }
+            if (fastResult === "invalid") {
+              socket.emit("error", { message: "Invalid command payload format." });
+              break;
+            }
+
+            room.version++;
+            room.lastActivity = Date.now();
+
+            const casSuccess = await setRedisRoomCAS(roomId, room, baseVersion);
+            if (casSuccess) {
+              markRoomForSync(roomId);
+              persistRoomState(room, supabase);
+
+              const sanitizedRoom = sanitizeRoom(room);
+              const pClient = pubClient();
+              if (pClient) {
+                await publishRoomEvent(roomId, {
+                  type: "state_update",
+                  payload: sanitizedRoom,
+                });
+              } else {
+                io.to(roomId).emit("room_state", {
+                  room: sanitizedRoom,
+                  serverTime: Date.now(),
+                });
+              }
+              break;
+            }
+
+            await new Promise((r) => setTimeout(r, 10 + Math.random() * 20));
+            occRetries--;
+            continue;
           }
         }
 

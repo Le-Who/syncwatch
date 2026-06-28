@@ -33,8 +33,17 @@ export default function Participants() {
   const currentUserRole =
     room.participants[participantId || ""]?.role || "viewer";
   const isOwner = currentUserRole === "owner";
+  const isOwnerOrMod = currentUserRole === "owner" || currentUserRole === "moderator";
   const isLeader = room.leaderId === participantId;
   const leader = room.leaderId ? room.participants[room.leaderId] : null;
+  const canReleaseActiveLeader = Boolean(leader && (isLeader || isOwnerOrMod));
+  const canRequestLeader = !leader;
+  const leaderButtonDisabled = !canReleaseActiveLeader && !canRequestLeader;
+  const leaderButtonLabel = canReleaseActiveLeader
+    ? "Release"
+    : canRequestLeader
+      ? "Lead"
+      : "Taken";
 
   const participants = Object.values(room.participants).sort((a, b) => {
     const roles = { owner: 3, moderator: 2, viewer: 1 };
@@ -75,17 +84,30 @@ export default function Participants() {
           type="button"
           onClick={(e) => {
             e.stopPropagation();
-            sendCommand(isLeader ? "release_leader" : "request_leader", {});
+            if (canReleaseActiveLeader) {
+              sendCommand("release_leader", {});
+            } else if (canRequestLeader) {
+              sendCommand("request_leader", {});
+            }
           }}
-          aria-label={isLeader ? "Release leader" : "Request leader"}
+          disabled={leaderButtonDisabled}
+          aria-label={
+            canReleaseActiveLeader
+              ? "Release leader"
+              : canRequestLeader
+                ? "Request leader"
+                : "Leader already active"
+          }
           className={`rounded-theme ring-theme-accent flex h-10 items-center gap-2 border-2 px-3 text-xs font-bold tracking-widest uppercase outline-none focus-visible:ring-2 ${
-            isLeader
+            canReleaseActiveLeader
               ? "border-theme-danger text-theme-danger hover:bg-theme-danger/10"
+              : leaderButtonDisabled
+                ? "border-theme-border text-theme-muted cursor-not-allowed opacity-60"
               : "border-theme-accent text-theme-accent hover:bg-theme-accent/10"
           }`}
         >
           <RadioTower className="h-4 w-4" />
-          <span>{isLeader ? "Release" : "Lead"}</span>
+          <span>{leaderButtonLabel}</span>
         </button>
       </div>
 

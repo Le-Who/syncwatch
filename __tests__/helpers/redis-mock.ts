@@ -175,7 +175,14 @@ const mockRedis = {
       const participant = room.participants?.[participantId];
       if (!participant) return "UNAUTHORIZED";
 
-      const canControl = participant.role === "owner" || participant.role === "moderator";
+      const hasActiveLeader = Boolean(
+        room.leaderId && room.participants?.[room.leaderId],
+      );
+      const canControl =
+        participant.role === "owner" ||
+        participant.role === "moderator" ||
+        !hasActiveLeader ||
+        room.leaderId === participantId;
       if (!canControl) return "UNAUTHORIZED";
 
       let changed = false;

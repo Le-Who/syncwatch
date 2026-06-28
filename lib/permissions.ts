@@ -7,6 +7,8 @@ export interface ParticipantPermissions {
   canManageRoom: boolean;
   isOwner: boolean;
   isOwnerOrMod: boolean;
+  isLeader: boolean;
+  hasActiveLeader: boolean;
 }
 
 export function getParticipantPermissions(
@@ -17,13 +19,22 @@ export function getParticipantPermissions(
   const isOwner = participant?.role === "owner";
   const isOwnerOrMod =
     participant?.role === "owner" || participant?.role === "moderator";
+  const hasActiveLeader = Boolean(
+    room.leaderId && room.participants[room.leaderId],
+  );
+  const isLeader = hasActiveLeader && room.leaderId === participantId;
+  const canControlPlayback = Boolean(
+    participant && (!hasActiveLeader || isLeader || isOwnerOrMod),
+  );
 
   return {
     canAddPlaylist: Boolean(participant),
     canEditPlaylist: isOwnerOrMod,
-    canControlPlayback: isOwnerOrMod,
+    canControlPlayback,
     canManageRoom: isOwnerOrMod,
     isOwner,
     isOwnerOrMod,
+    isLeader,
+    hasActiveLeader,
   };
 }
