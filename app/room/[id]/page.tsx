@@ -5,7 +5,15 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { useStore } from "@/lib/store";
 import { motion } from "motion/react";
-import { Users, Settings, Copy, Check, Zap, ListVideo } from "lucide-react";
+import {
+  Users,
+  Settings,
+  Copy,
+  Check,
+  Zap,
+  ListVideo,
+  MessageSquare,
+} from "lucide-react";
 import Player from "@/components/Player";
 import Playlist from "@/components/Playlist";
 import Participants from "@/components/Participants";
@@ -13,6 +21,8 @@ import RoomSettingsDialog from "@/components/RoomSettingsDialog";
 import Reactions from "@/components/Reactions";
 import { ReconnectingOverlay } from "@/components/ReconnectingOverlay";
 import { useSettingsStore } from "@/lib/store";
+import { MediaComposer } from "@/components/MediaComposer";
+import ChatPanel from "@/components/ChatPanel";
 
 export default function RoomPage() {
   const params = useParams();
@@ -32,9 +42,9 @@ export default function RoomPage() {
   const [isJoining, setIsJoining] = useState(true);
   const [tempName, setTempName] = useState("");
   const [copied, setCopied] = useState(false);
-  const [activeTab, setActiveTab] = useState<"playlist" | "participants">(
-    "playlist",
-  );
+  const [activeTab, setActiveTab] = useState<
+    "playlist" | "chat" | "participants"
+  >("playlist");
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isEditingRoomName, setIsEditingRoomName] = useState(false);
   const [editRoomName, setEditRoomName] = useState("");
@@ -76,6 +86,8 @@ export default function RoomPage() {
   const participant = room?.participants[participantId!];
   const canEditRoom =
     participant?.role === "owner" || participant?.role === "moderator";
+  const canAddPlaylist = Boolean(room && participant);
+  const canManagePlaylist = Boolean(room && canEditRoom);
 
   const handleRoomNameSubmit = () => {
     if (editRoomName.trim() && editRoomName !== room?.name && canEditRoom) {
@@ -164,8 +176,8 @@ export default function RoomPage() {
       <ReconnectingOverlay />
       <div className="text-theme-text font-theme selection:bg-theme-accent selection:text-theme-bg flex h-dvh flex-col overflow-hidden bg-transparent">
         {/* Header */}
-        <header className="border-theme-border bg-theme-card relative z-20 flex h-[72px] shrink-0 items-center justify-between border-b-4 px-4 shadow-[0_4px_32px_var(--color-theme-shadow)] backdrop-blur-xl lg:px-6">
-          <div className="relative z-10 flex items-center space-x-6">
+        <header className="border-theme-border bg-theme-card relative z-30 flex h-[72px] shrink-0 items-center gap-4 border-b-4 px-4 shadow-[0_4px_32px_var(--color-theme-shadow)] backdrop-blur-xl lg:px-6">
+          <div className="relative z-10 flex shrink-0 items-center space-x-6">
             <Link
               href="/"
               className="text-theme-text group ring-theme-accent flex items-center space-x-3 outline-none focus-visible:ring-2"
@@ -210,6 +222,15 @@ export default function RoomPage() {
                 </h2>
               )}
             </div>
+          </div>
+
+          <div className="relative z-20 hidden min-w-[260px] max-w-3xl flex-1 md:block">
+            <MediaComposer
+              sendCommand={sendCommand}
+              canSubmit={canAddPlaylist}
+              allowAddNext={canManagePlaylist}
+              compact
+            />
           </div>
 
           <div className="relative z-10 flex items-center space-x-4">
@@ -282,6 +303,18 @@ export default function RoomPage() {
                 </button>
                 <div className="bg-theme-border w-0.5" />
                 <button
+                  onClick={() => setActiveTab("chat")}
+                  className={`flex flex-1 items-center justify-center space-x-2 px-4 py-4 text-xs font-bold tracking-[0.15em] uppercase transition-all outline-none ${
+                    activeTab === "chat"
+                      ? "bg-theme-accent text-theme-bg shadow-inner"
+                      : "text-theme-muted hover:text-theme-accent hover:bg-theme-border/10"
+                  }`}
+                >
+                  <MessageSquare className="h-4 w-4" />
+                  <span>Chat</span>
+                </button>
+                <div className="bg-theme-border w-0.5" />
+                <button
                   onClick={() => setActiveTab("participants")}
                   className={`flex flex-1 items-center justify-center space-x-2 px-4 py-4 text-xs font-bold tracking-[0.15em] uppercase transition-all outline-none ${
                     activeTab === "participants"
@@ -291,14 +324,20 @@ export default function RoomPage() {
                 >
                   <Users className="h-4 w-4" />
                   <span>
-                    Entities ({Object.keys(room.participants).length})
+                    People ({Object.keys(room.participants).length})
                   </span>
                 </button>
               </div>
 
               {/* Tab Content Area */}
               <div className="relative flex-1 overflow-y-auto bg-transparent p-2">
-                {activeTab === "playlist" ? <Playlist /> : <Participants />}
+                {activeTab === "playlist" ? (
+                  <Playlist />
+                ) : activeTab === "chat" ? (
+                  <ChatPanel />
+                ) : (
+                  <Participants />
+                )}
               </div>
 
               {/* Decorative Footer */}

@@ -1,6 +1,12 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
 import React from "react";
-import { applyTwitchEventProxy } from "../player-adapters";
+import {
+  applyTwitchEventProxy,
+  getPlayerCurrentTime,
+  getPlayerDuration,
+  seekPlayerTo,
+  setPlayerPlaybackRate,
+} from "../player-adapters";
 import { PlayerMethods } from "../types";
 
 describe("applyTwitchEventProxy", () => {
@@ -147,5 +153,45 @@ describe("applyTwitchEventProxy", () => {
       "Failed to proxy twitch events",
       error,
     );
+  });
+});
+
+describe("ReactPlayer v3 adapter helpers", () => {
+  it("reads time and duration from custom media element refs", () => {
+    const player = {
+      currentTime: 42.25,
+      duration: 360,
+    } as PlayerMethods;
+
+    expect(getPlayerCurrentTime(player)).toBe(42.25);
+    expect(getPlayerDuration(player)).toBe(360);
+  });
+
+  it("prefers legacy ReactPlayer methods when they are available", () => {
+    const player = {
+      currentTime: 12,
+      duration: 99,
+      getCurrentTime: vi.fn(() => 55),
+      getDuration: vi.fn(() => 120),
+    } as PlayerMethods;
+
+    expect(getPlayerCurrentTime(player)).toBe(55);
+    expect(getPlayerDuration(player)).toBe(120);
+  });
+
+  it("seeks through currentTime when seekTo is not available", () => {
+    const player = { currentTime: 0 } as PlayerMethods;
+
+    seekPlayerTo(player, 91);
+
+    expect(player.currentTime).toBe(91);
+  });
+
+  it("sets playback rate on custom media element refs", () => {
+    const player = { playbackRate: 1 } as PlayerMethods;
+
+    setPlayerPlaybackRate(player, 1.08);
+
+    expect(player.playbackRate).toBe(1.08);
   });
 });

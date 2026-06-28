@@ -24,17 +24,7 @@ const LUA_FAST_MUTATION = `
   local participant = room.participants[participant_id]
   if not participant then return "UNAUTHORIZED" end
 
-  local is_owner_or_mod = participant.role == "owner" or participant.role == "moderator"
-  local can_control = room.settings.controlMode == "open" or is_owner_or_mod
-
-  if room.settings.controlMode == "hybrid" and (mutation_type == "play" or mutation_type == "pause" or mutation_type == "seek" or mutation_type == "buffering" or mutation_type == "next" or mutation_type == "previous") then
-     can_control = true
-  end
-
-  if room.settings.controlMode == "controlled" and mutation_type == "sync_correction" then
-     if participant.role ~= "owner" then return "UNAUTHORIZED" end
-     can_control = true
-  end
+  local can_control = participant.role == "owner" or participant.role == "moderator"
 
   if not can_control then return "UNAUTHORIZED" end
 

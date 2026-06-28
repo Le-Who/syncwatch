@@ -38,6 +38,18 @@ describe("Fast-Path OCC Logic", () => {
           nickname: "Owner",
           lastSeen: Date.now(),
         },
+        u2: {
+          id: "u2",
+          role: "viewer",
+          nickname: "Viewer",
+          lastSeen: Date.now(),
+        },
+        u3: {
+          id: "u3",
+          role: "moderator",
+          nickname: "Mod",
+          lastSeen: Date.now(),
+        },
       },
       settings: { controlMode: "open", autoplayNext: true, looping: false },
       playlist: [
@@ -105,6 +117,34 @@ describe("Fast-Path OCC Logic", () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toBe("UNAUTHORIZED");
+  });
+
+  it("TC-Fast-2b: Should reject viewer playback control but allow moderator control", async () => {
+    const viewerResult = await executeFastMutation(
+      roomId,
+      -1,
+      "play",
+      { position: 12 },
+      "u2",
+      "Viewer",
+    );
+
+    expect(viewerResult.success).toBe(false);
+    expect(viewerResult.error).toBe("UNAUTHORIZED");
+
+    const moderatorResult = await executeFastMutation(
+      roomId,
+      -1,
+      "play",
+      { position: 13, forceSeek: true },
+      "u3",
+      "Mod",
+    );
+
+    expect(moderatorResult.success).toBe(true);
+    const state = await getRedisRoom(roomId);
+    expect(state.playback.basePosition).toBe(13);
+    expect(state.playback.updatedBy).toBe("Mod");
   });
 
   it("TC-Fast-3: Should handle pause mutation correctly", async () => {

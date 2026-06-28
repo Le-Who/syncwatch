@@ -16,9 +16,14 @@ export interface PlaylistItem {
   title: string;
   duration: number;
   addedBy: string;
+  requesterId?: string;
+  author?: string;
   startPosition?: number;
   lastPosition?: number;
   thumbnail?: string;
+  aspectRatio?: number;
+  isTemporary?: boolean;
+  readyParticipants?: Record<string, boolean>;
 }
 
 export interface Participant {
@@ -27,14 +32,28 @@ export interface Participant {
   role: "owner" | "moderator" | "viewer";
   lastSeen: number;
   sessionToken?: string;
+  ready?: boolean;
   /** P7: Set to true when participant is disconnected but within reconnection window */
   disconnected?: boolean;
 }
 
+export interface ChatMessage {
+  id: string;
+  participantId: string;
+  nickname: string;
+  message: string;
+  sentAt: number;
+}
+
 export interface RoomSettings {
-  controlMode: "open" | "controlled" | "hybrid";
   autoplayNext: boolean;
   looping: boolean;
+  shuffle?: boolean;
+  playlistMode?: "editable" | "append_only";
+  requestLeaderOnPause?: boolean;
+  unpauseWithoutLeader?: boolean;
+  /** Legacy persisted rooms may still contain this value; runtime permissions ignore it. */
+  controlMode?: "open" | "controlled" | "hybrid";
 }
 
 export interface RoomState {
@@ -43,8 +62,11 @@ export interface RoomState {
   settings: RoomSettings;
   participants: Record<string, Participant>;
   playlist: PlaylistItem[];
+  chat: ChatMessage[];
   currentMediaId: string | null;
+  leaderId: string | null;
   playback: PlaybackState;
+  flashbacks: Record<string, { position: number; savedAt: number }>;
   version: number;
   sequence: number;
   lastActivity: number;
@@ -58,6 +80,7 @@ export interface PlayerMethods {
   pause?: () => void;
   getInternalPlayer?: (provider?: string) => any;
   currentTime?: number;
+  duration?: number;
   playbackRate?: number;
   levels?: any[];
   currentLevel?: number;

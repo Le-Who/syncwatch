@@ -13,7 +13,6 @@ describe("room-logic: video_ended command", () => {
       version: 1,
       sequence: 1,
       settings: {
-        controlMode: "open",
         looping: false,
         autoplayNext: true,
       },
@@ -75,8 +74,8 @@ describe("room-logic: video_ended command", () => {
     const changed = applyVideoEnded(
       room,
       { currentMediaId: "item-1" },
-      "viewer-1",
-      "Viewer",
+      "user-1",
+      "Owner",
     );
 
     expect(changed).toBe(true);
@@ -93,8 +92,8 @@ describe("room-logic: video_ended command", () => {
     const changed = applyVideoEnded(
       room,
       { currentMediaId: "item-1" },
-      "viewer-1",
-      "Viewer",
+      "user-1",
+      "Owner",
     );
 
     expect(changed).toBe(true);
@@ -146,5 +145,17 @@ describe("room-logic: video_ended command", () => {
 
     expect(changed).toBe(false);
     expect(room.currentMediaId).toBe("item-2"); // Unchanged
+  });
+
+  it("rejects viewer video_ended because it advances playback", () => {
+    const changed = applyVideoEnded(
+      room,
+      { currentMediaId: "item-1" },
+      "viewer-1",
+      "Viewer",
+    );
+
+    expect(changed).toBe(false);
+    expect(room.currentMediaId).toBe("item-1");
   });
 });

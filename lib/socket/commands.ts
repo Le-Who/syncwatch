@@ -14,10 +14,92 @@ import { applySlowCommand } from "../room-logic";
 import { persistRoomState, isSystemDegraded, markRoomForSync } from "../db-sync";
 import { sanitizeRoom } from "../room-handler";
 import { SocketContext } from "./context";
+import { RoomState } from "../types";
+import { getParticipantPermissions } from "../permissions";
 
 import { getJwtSecret } from "../jwt-config";
 
 const JWT_SECRET = getJwtSecret();
+
+export function getSlowCommandRejectionMessage(
+  room: RoomState,
+  type: string,
+  payload: any,
+  participantId: string,
+): string | null {
+  const participant = room.participants[participantId];
+  if (!participant) return "Unauthorized command. Invalid session.";
+
+  const {
+    canAddPlaylist,
+    canEditPlaylist: canManagePlaylist,
+    canControlPlayback,
+  } = getParticipantPermissions(room, participantId);
+
+  if (type === "add_item") {
+    if (!canAddPlaylist) return "You do not have permission to add media.";
+    if (room.playlist.length >= 500) return "Playlist is full.";
+    if (room.playlist.some((item) => item.url === payload?.url)) {
+      return "This media is already in the queue.";
+    }
+    return "Could not add media to the queue.";
+  }
+
+  if (type === "add_items") {
+    if (!canAddPlaylist) return "You do not have permission to add media.";
+    if (room.playlist.length >= 500) return "Playlist is full.";
+    const submittedItems = Array.isArray(payload?.items) ? payload.items : [];
+    if (submittedItems.length === 0) return "No playable media items were submitted.";
+    const existingUrls = new Set(room.playlist.map((item) => item.url));
+    if (
+      submittedItems.every(
+        (item: any) => typeof item?.url === "string" && existingUrls.has(item.url),
+      )
+    ) {
+      return "All submitted media is already in the queue.";
+    }
+    return "Could not add media to the queue.";
+  }
+
+  if (
+    [
+      "remove_item",
+      "reorder_playlist",
+      "set_next_item",
+      "toggle_item_temporary",
+      "shuffle_playlist",
+      "clear_playlist",
+    ].includes(type)
+  ) {
+    return canManagePlaylist
+      ? "Queue action could not be applied."
+      : "You do not have permission to manage the queue.";
+  }
+
+  if (["set_media", "next", "rewind", "flashback"].includes(type)) {
+    return canControlPlayback
+      ? "Playback action could not be applied."
+      : "You do not have permission to control playback.";
+  }
+
+  if (type === "request_leader") {
+    return "Leader request was denied.";
+  }
+
+  if (type === "release_leader") {
+    return "Leader release was denied.";
+  }
+
+  if (type === "transfer_owner" || type === "update_role" || type === "kick_participant") {
+    return "Only the room owner can change participant roles.";
+  }
+
+  if (type === "send_chat") {
+    return "Chat message is empty.";
+  }
+
+  return null;
+}
 
 export function handleCommandEvents(
   io: Server,
@@ -213,6 +295,15 @@ export function handleCommandEvents(
         );
 
         if (!changed) {
+          const message = getSlowCommandRejectionMessage(
+            room,
+            type,
+            payload,
+            context.currentParticipantId,
+          );
+          if (message) {
+            socket.emit("error", { message });
+          }
           break; // No-op command (e.g., permission denied or invalid payload)
         }
 

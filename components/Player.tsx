@@ -24,19 +24,15 @@ function useEventCallback<Args extends unknown[], Return>(
 }
 import fscreen from "fscreen";
 import { calculateDrift } from "@/lib/utils";
-import { MediaApiService } from "@/lib/MediaApiService";
-import {
-  RoomState,
-  PlaybackState,
-  PlaybackStatus,
-  PlayerMethods,
-} from "@/lib/types";
-import { TwitchPlayer } from "./TwitchPlayer";
+import { PlayerMethods } from "@/lib/types";
 import { usePlayerShortcuts } from "@/hooks/usePlayerShortcuts";
 import { useFlashback } from "@/hooks/useFlashback";
 import { usePlaybackSync } from "@/hooks/usePlaybackSync";
 import { usePlayerEvents } from "@/hooks/usePlayerEvents";
-import { applyTwitchEventProxy } from "@/lib/player-adapters";
+import {
+  getPlayerCurrentTime,
+  seekPlayerTo,
+} from "@/lib/player-adapters";
 import { PAUSE_DEBOUNCE_MS } from "@/lib/sync-config";
 import { AwaitingSignal } from "./AwaitingSignal";
 import { UpNextOverlay } from "./UpNextOverlay";
@@ -61,9 +57,7 @@ export default function Player() {
   const serverClockOffset = useStore((s) => s.serverClockOffset);
   const currentMediaId = useStore((s) => s.room?.currentMediaId);
   const occRollbackTick = useStore((s) => s.occRollbackTick);
-  const isLooping = useStore((s) => s.room?.settings.looping);
   const autoplayNext = useStore((s) => s.room?.settings.autoplayNext);
-  const controlMode = useStore((s) => s.room?.settings.controlMode);
 
   const myRole = useStore(
     (s) => s.participantId && s.room?.participants[s.participantId]?.role,
@@ -81,14 +75,9 @@ export default function Player() {
     s.room ? Object.keys(s.room.participants).length : 0,
   );
 
-  const canControl =
-    controlMode === "open" ||
-    controlMode === "hybrid" ||
-    myRole === "owner" ||
-    myRole === "moderator";
-
-  const canEditPlaylist =
-    controlMode === "open" || myRole === "owner" || myRole === "moderator";
+  const canControl = myRole === "owner" || myRole === "moderator";
+  const canEditPlaylist = canControl;
+  const canAddPlaylist = Boolean(myRole);
 
   const { volume, muted, theaterMode, setVolume, setMuted, toggleTheaterMode } =
     useSettingsStore();
@@ -104,7 +93,6 @@ export default function Player() {
   const [hostName, setHostName] = useState<string>("localhost");
   const [mounted, setMounted] = useState(false);
   const [userJoined, setUserJoined] = useState(false);
-  const [useNativeTwitch, setUseNativeTwitch] = useState(false);
   const { flashbacks, registerPossibleFlashback, popFlashback } =
     useFlashback();
 
@@ -182,11 +170,11 @@ export default function Player() {
   }, [seeking, intentManager]);
 
   const getAccurateTime = useCallback(() => {
-    if (realPlayerRef.current?.getCurrentTime) {
-      return realPlayerRef.current.getCurrentTime();
-    }
-    return playerRef.current?.currentTime || 0;
-  }, []);
+    const provider = currentMedia?.provider?.toLowerCase();
+    const realTime = getPlayerCurrentTime(realPlayerRef.current, provider);
+    if (realTime > 0) return realTime;
+    return getPlayerCurrentTime(playerRef.current, provider);
+  }, [currentMedia?.provider]);
 
   const performProgrammaticSeek = (position: number) => {
     // Soft Mode Guarantee: If we are in "echo protection" (last action was ours),
@@ -194,14 +182,9 @@ export default function Player() {
     if (intentManager.isIgnoringNativeEvents()) return;
 
     intentManager.markProgrammaticSeek();
-    if (
-      realPlayerRef.current &&
-      typeof realPlayerRef.current.seekTo === "function"
-    ) {
-      realPlayerRef.current.seekTo(position, "seconds");
-    } else if (playerRef.current) {
-      playerRef.current.currentTime = position; // Fallback
-    }
+    const provider = currentMedia?.provider?.toLowerCase();
+    if (seekPlayerTo(realPlayerRef.current, position, provider)) return;
+    seekPlayerTo(playerRef.current, position, provider);
   };
 
   // Track upNext dismissal per media item
@@ -220,10 +203,11 @@ export default function Player() {
     // YouTube iframe fires a pause during load — this guard catches it precisely.
     if (currentMediaId) {
       intentManager.setMediaTransition(currentMediaId);
+      sendCommand("media_ready", { mediaId: currentMediaId, ready: false });
     }
     // Safety net: 1.5s ignoreEventsFor as fallback in case onReady never fires
     intentManager.ignoreEventsFor(1500);
-  }, [currentMediaId, intentManager]);
+  }, [currentMediaId, intentManager, sendCommand]);
 
   // Handle Server-Side OCC Rejections (Race Condition Flashback)
   useEffect(() => {
@@ -312,11 +296,8 @@ export default function Player() {
     getIsBuffering: () => isBuffering,
     intentManager,
     performProgrammaticSeek,
-    getControlMode: () => controlMode,
-    getMyRole: () => myRole,
     getCurrentMedia: () => currentMedia,
     getDuration: () => duration,
-    emitCommand,
     joinedAt,
   });
 
@@ -430,13 +411,9 @@ export default function Player() {
       const newPos = Math.max(0, Math.min(duration, currentPos + delta));
       // P6: Allow user play/pause clicks during seek ignore window
       intentManager.ignoreEventsFor(2000, true);
-      if (
-        realPlayerRef.current &&
-        typeof realPlayerRef.current.seekTo === "function"
-      ) {
-        realPlayerRef.current.seekTo(newPos, "seconds");
-      } else if (playerRef.current) {
-        playerRef.current.currentTime = newPos;
+      const provider = currentMedia?.provider?.toLowerCase();
+      if (!seekPlayerTo(realPlayerRef.current, newPos, provider)) {
+        seekPlayerTo(playerRef.current, newPos, provider);
       }
       if (canControl) {
         if (playing) {
@@ -453,6 +430,7 @@ export default function Player() {
       canControl,
       playing,
       emitCommand,
+      currentMedia?.provider,
     ],
   );
 
@@ -498,27 +476,30 @@ export default function Player() {
     // P6: Allow user play/pause clicks during this window
     intentManager.ignoreEventsFor(2000, true);
 
-    if (
-      realPlayerRef.current &&
-      typeof realPlayerRef.current.seekTo === "function"
-    ) {
-      realPlayerRef.current.seekTo(newPosition, "seconds");
+    const provider = currentMedia?.provider?.toLowerCase();
+    const didSeekRealPlayer = seekPlayerTo(
+      realPlayerRef.current,
+      newPosition,
+      provider,
+    );
+    if (didSeekRealPlayer) {
       // Explicitly call .play() since Twitch pauses on seek
+      const realPlayer = realPlayerRef.current;
       if (
         playing &&
-        currentMedia?.provider?.toLowerCase() === "twitch" &&
-        realPlayerRef.current.play
+        provider === "twitch" &&
+        typeof realPlayer?.play === "function"
       ) {
-        realPlayerRef.current.play();
+        realPlayer.play();
       }
-    } else if (playerRef.current) {
-      playerRef.current.currentTime = newPosition;
+    } else if (seekPlayerTo(playerRef.current, newPosition, provider)) {
+      const player = playerRef.current;
       if (
         playing &&
-        currentMedia?.provider?.toLowerCase() === "twitch" &&
-        typeof playerRef.current.play === "function"
+        provider === "twitch" &&
+        typeof player?.play === "function"
       ) {
-        playerRef.current.play();
+        player.play();
       }
     }
 
@@ -572,7 +553,7 @@ export default function Player() {
   if (!currentMedia) {
     return (
       <AwaitingSignal
-        canEditPlaylist={canEditPlaylist}
+        canAddPlaylist={canAddPlaylist}
         participantCount={participantCount}
         sendCommand={sendCommand}
       />
@@ -606,74 +587,54 @@ export default function Player() {
           className="absolute top-0 left-0 h-full w-full origin-top-left transition-transform duration-700"
           style={{ pointerEvents: "auto" }}
         >
-          {mounted &&
-            (currentMedia.provider?.toLowerCase() !== "twitch" ||
-              userJoined) && (
-              <>
-                {currentMedia.provider?.toLowerCase() === "twitch" ? (
-                  <TwitchPlayer
-                    ref={playerRef}
-                    url={currentMedia.url}
-                    width="100%"
-                    height="100%"
-                    playing={userJoined ? playing : false}
-                    volume={volume}
-                    muted={userJoined ? muted : true}
-                    controls={true}
-                    onReady={(rPlayer: PlayerMethods) => playerEvents.handleReady(rPlayer, true)}
-                    onError={playerEvents.handleError}
-                    onSeek={(seconds: number) => playerEvents.handleSeek(seconds, true)}
-                    onDurationChange={playerEvents.handleDurationChange}
-                    onEnded={playerEvents.handleEnded}
-                    onWaiting={playerEvents.handleWaiting}
-                    onPlaying={playerEvents.handlePlaying}
-                    onPlay={playerEvents.handleNativePlay}
-                    onPause={playerEvents.handleNativePause}
-                  />
-                ) : (
-                  <ReactPlayer
-                    ref={playerRef}
-                    src={currentMedia.url}
-                    width="100%"
-                    height="100%"
-                    controls={
-                      currentMedia.provider?.toLowerCase() === "youtube"
-                    }
-                    playing={userJoined ? playing : false}
-                    volume={volume}
-                    muted={userJoined ? muted : true}
-                    onReady={(rPlayer: PlayerMethods) => playerEvents.handleReady(rPlayer, false)}
-                    onError={playerEvents.handleError}
-                    onSeek={(seconds: number) => playerEvents.handleSeek(seconds, false)}
-                    onSeeked={playerEvents.handleSeeked}
-                    onDurationChange={playerEvents.handleDurationChange}
-                    onEnded={playerEvents.handleEnded}
-                    onWaiting={playerEvents.handleWaiting}
-                    onPlaying={playerEvents.handlePlaying}
-                    onPlay={playerEvents.handleNativePlay}
-                    onPause={playerEvents.handleNativePause}
-                    style={{ position: "absolute", top: 0, left: 0 }}
-                    config={{
-                      youtube: {
-                        playerVars: {
-                          controls: 1,
-                          disablekb: 0,
-                          modestbranding: 1,
-                          rel: 1,
-                          showinfo: 0,
-                          origin:
-                            typeof window !== "undefined"
-                              ? window.location.origin
-                              : process.env.NEXT_PUBLIC_APP_URL,
-                          enablejsapi: 1,
-                        },
-                      },
-                      vimeo: { playerOptions: { controls: false } },
-                    }}
-                  />
-                )}
-              </>
-            )}
+          {mounted && (
+            <ReactPlayer
+              ref={playerRef}
+              src={currentMedia.url}
+              width="100%"
+              height="100%"
+              controls={
+                canControl &&
+                ["youtube", "twitch"].includes(
+                  currentMedia.provider?.toLowerCase() || "",
+                )
+              }
+              playing={userJoined ? playing : false}
+              volume={volume}
+              muted={userJoined ? muted : true}
+              onLoadedMetadata={() =>
+                playerEvents.handleReady(playerRef.current, false)
+              }
+              onError={playerEvents.handleError}
+              onSeeked={() => {
+                playerEvents.handleSeek(getAccurateTime(), false);
+                playerEvents.handleSeeked();
+              }}
+              onDurationChange={playerEvents.handleDurationChange}
+              onEnded={playerEvents.handleEnded}
+              onWaiting={playerEvents.handleWaiting}
+              onPlaying={playerEvents.handlePlaying}
+              onPlay={playerEvents.handleNativePlay}
+              onPause={playerEvents.handleNativePause}
+              style={{ position: "absolute", top: 0, left: 0 }}
+              config={{
+                youtube: {
+                  controls: canControl ? 1 : 0,
+                  disablekb: canControl ? 0 : 1,
+                  modestbranding: 1,
+                  rel: 1,
+                  showinfo: 0,
+                  origin:
+                    typeof window !== "undefined"
+                      ? window.location.origin
+                      : process.env.NEXT_PUBLIC_APP_URL,
+                  enablejsapi: 1,
+                },
+                twitch: { parent: hostName },
+                vimeo: { playerOptions: { controls: canControl } },
+              }}
+            />
+          )}
         </div>
 
         {/* Up Next Overlay Layer */}

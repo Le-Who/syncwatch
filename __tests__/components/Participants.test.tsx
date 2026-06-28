@@ -119,7 +119,7 @@ describe("Participants Component (Unit Tests)", () => {
     fireEvent.click(promoteBtn);
 
     expect(mockSendCommand).toHaveBeenCalledWith("update_role", {
-      participantId: "user-viewer",
+      targetParticipantId: "user-viewer",
       role: "moderator",
     });
   });
@@ -134,8 +134,26 @@ describe("Participants Component (Unit Tests)", () => {
     fireEvent.click(demoteBtn);
 
     expect(mockSendCommand).toHaveBeenCalledWith("update_role", {
-      participantId: "user-mod",
+      targetParticipantId: "user-mod",
       role: "viewer",
     });
+  });
+
+  it("TC-UI-15: Owner can transfer ownership through a dedicated command", () => {
+    vi.stubGlobal("confirm", vi.fn(() => true));
+
+    render(<Participants />);
+
+    const manageBtns = screen.getAllByRole("button", { name: "Manage user" });
+    fireEvent.click(manageBtns[1]);
+
+    const transferBtn = screen.getByText(/Transfer Owner/i);
+    fireEvent.click(transferBtn);
+
+    expect(mockSendCommand).toHaveBeenCalledWith("transfer_owner", {
+      targetParticipantId: "user-viewer",
+    });
+
+    vi.unstubAllGlobals();
   });
 });

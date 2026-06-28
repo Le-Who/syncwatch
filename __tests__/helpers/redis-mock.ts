@@ -175,17 +175,7 @@ const mockRedis = {
       const participant = room.participants?.[participantId];
       if (!participant) return "UNAUTHORIZED";
 
-      const isOwnerOrMod = participant.role === "owner" || participant.role === "moderator";
-      let canControl = room.settings.controlMode === "open" || isOwnerOrMod;
-
-      if (room.settings.controlMode === "hybrid" &&
-        ["play", "pause", "seek", "buffering", "next", "previous"].includes(mutationType)) {
-        canControl = true;
-      }
-      if (room.settings.controlMode === "controlled" && mutationType === "sync_correction") {
-        if (participant.role !== "owner") return "UNAUTHORIZED";
-        canControl = true;
-      }
+      const canControl = participant.role === "owner" || participant.role === "moderator";
       if (!canControl) return "UNAUTHORIZED";
 
       let changed = false;

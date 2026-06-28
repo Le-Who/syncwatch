@@ -52,7 +52,7 @@ describe("Playlist Component (Unit Tests)", () => {
     // Default store state: User is owner, room has 1 video
     (useStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
       room: {
-        settings: { controlMode: "controlled" },
+        settings: { autoplayNext: true, looping: false },
         currentMediaId: "vid-1",
         participants: {
           "user-1": { role: "owner" },
@@ -95,11 +95,11 @@ describe("Playlist Component (Unit Tests)", () => {
     expect(removeBtn).toBeInTheDocument();
   });
 
-  it("TC-UI-02: Disables 'Remove' and 'Input' for Guests when not in Open mode", () => {
+  it("TC-UI-02: Allows viewers to add media but hides queue management controls", () => {
     // Override store for Guest
     (useStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
       room: {
-        settings: { controlMode: "controlled" }, // Not open
+        settings: { autoplayNext: true, looping: false },
         currentMediaId: "vid-1",
         participants: {
           "user-viewer": { role: "viewer" }, // Viewer role
@@ -124,12 +124,13 @@ describe("Playlist Component (Unit Tests)", () => {
 
     render(<Playlist />);
 
-    // Guest should NOT see the Add input
+    // Viewer can add media.
     expect(
-      screen.queryByPlaceholderText(/Search YouTube or paste any media URL/i),
-    ).not.toBeInTheDocument();
+      screen.getByPlaceholderText(/Search YouTube or paste any media URL/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /add next/i })).not.toBeInTheDocument();
 
-    // Guest should NOT see the remove button
+    // Viewer cannot manage queue items.
     expect(screen.queryByTitle("Remove")).not.toBeInTheDocument();
 
     // But Guest CAN see the video title
@@ -180,11 +181,101 @@ describe("Playlist Component (Unit Tests)", () => {
         "add_item",
         expect.objectContaining({
           url: "https://example.com/video.mp4",
-          provider: "Direct Video",
+          provider: "direct",
           title: "Mocked Metadata Title",
+          insertMode: "end",
         }),
       );
     });
+  });
+
+  it("TC-UI-06: Adds media directly after current item when Add next is selected", async () => {
+    (global.fetch as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      {
+        ok: true,
+        json: async () => ({
+          title: "Next Metadata Title",
+        }),
+      },
+    );
+
+    render(<Playlist />);
+
+    fireEvent.click(screen.getByRole("button", { name: /add next/i }));
+    const input = screen.getByPlaceholderText(
+      /Search YouTube or paste any media URL/i,
+    );
+    fireEvent.change(input, {
+      target: { value: "https://example.com/next.mp4" },
+    });
+    fireEvent.submit(input.closest("form")!);
+
+    await waitFor(() => {
+      expect(mockSendCommand).toHaveBeenCalledWith(
+        "add_item",
+        expect.objectContaining({
+          url: "https://example.com/next.mp4",
+          insertMode: "next",
+        }),
+      );
+    });
+  });
+
+  it("TC-UI-07: Sends queue management commands from playlist controls", () => {
+    (useStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+      room: {
+        settings: { autoplayNext: true, looping: false },
+        currentMediaId: "vid-1",
+        participants: {
+          "user-1": { role: "owner" },
+        },
+        playlist: [
+          {
+            id: "vid-1",
+            title: "Test Video 1",
+            provider: "youtube",
+            url: "https://youtube.com/watch?v=123",
+            duration: 100,
+            addedBy: "OwnerUser",
+          },
+          {
+            id: "vid-2",
+            title: "Test Video 2",
+            provider: "youtube",
+            url: "https://youtube.com/watch?v=456",
+            duration: 90,
+            addedBy: "OwnerUser",
+          },
+        ],
+        playback: {
+          status: "playing",
+          basePosition: 10,
+          baseTimestamp: Date.now(),
+          rate: 1,
+        },
+      },
+      participantId: "user-1",
+      sendCommand: mockSendCommand,
+    });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    render(<Playlist />);
+
+    fireEvent.click(screen.getByTitle("Set as next: Test Video 2"));
+    expect(mockSendCommand).toHaveBeenCalledWith("set_next_item", {
+      itemId: "vid-2",
+    });
+
+    fireEvent.click(screen.getByTitle("Mark temporary: Test Video 2"));
+    expect(mockSendCommand).toHaveBeenCalledWith("toggle_item_temporary", {
+      itemId: "vid-2",
+    });
+
+    fireEvent.click(screen.getByTitle("Shuffle playlist"));
+    expect(mockSendCommand).toHaveBeenCalledWith("shuffle_playlist", {});
+
+    fireEvent.click(screen.getByTitle("Clear playlist"));
+    expect(mockSendCommand).toHaveBeenCalledWith("clear_playlist", {});
   });
 
   it("TC-UI-05: Shows an error when unsupported URLs are added", async () => {

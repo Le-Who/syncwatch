@@ -17,6 +17,14 @@ vi.mock("next/dynamic", () => ({
       return (
         <div data-testid="mock-react-player">
           {/* Mock events needed by tests */}
+          <button
+            data-testid="loadedmetadata-event"
+            onClick={() =>
+              props.onLoadedMetadata?.({ target: { duration: 123 } })
+            }
+          >
+            loadedmetadata
+          </button>
           <button data-testid="play-event" onClick={props.onPlay}>
             play
           </button>
@@ -37,6 +45,16 @@ vi.mock("motion/react", () => ({
 
 import { useStore, useSettingsStore } from "@/lib/store";
 
+let currentStoreState: any;
+
+function mockStoreState(state: any) {
+  currentStoreState = state;
+  (useStore as any).mockImplementation((selector: any) =>
+    selector ? selector(currentStoreState) : currentStoreState,
+  );
+  (useStore as any).getState = vi.fn(() => currentStoreState);
+}
+
 describe("Player Component", () => {
   const mockSendCommand = vi.fn();
 
@@ -53,14 +71,11 @@ describe("Player Component", () => {
       toggleTheaterMode: vi.fn(),
     });
 
-    (useStore as any).mockImplementation((selector: any) => {
-      const state = {
+    mockStoreState({
         room: null,
         participantId: "user1",
         sendCommand: mockSendCommand,
         serverClockOffset: 0,
-      };
-      return selector ? selector(state) : state;
     });
   });
 
@@ -70,8 +85,7 @@ describe("Player Component", () => {
   });
 
   it("should render the player when media is present", () => {
-    (useStore as any).mockImplementation((selector: any) => {
-      const state = {
+    mockStoreState({
         room: {
           currentMediaId: "1",
           playlist: [
@@ -82,7 +96,7 @@ describe("Player Component", () => {
               title: "Test Video",
             },
           ],
-          settings: { controlMode: "open" },
+          settings: { autoplayNext: true, looping: false },
           participants: {
             user1: { role: "viewer" },
           },
@@ -90,8 +104,6 @@ describe("Player Component", () => {
         participantId: "user1",
         sendCommand: mockSendCommand,
         serverClockOffset: 0,
-      };
-      return selector ? selector(state) : state;
     });
 
     render(<Player />);
@@ -99,8 +111,7 @@ describe("Player Component", () => {
   });
 
   it("should allow play/pause interactions if user has control", () => {
-    (useStore as any).mockImplementation((selector: any) => {
-      const state = {
+    mockStoreState({
         room: {
           currentMediaId: "1",
           playlist: [
@@ -110,7 +121,7 @@ describe("Player Component", () => {
               provider: "raw",
             },
           ],
-          settings: { controlMode: "open" },
+          settings: { autoplayNext: true, looping: false },
           playback: {
             status: "paused",
             basePosition: 0,
@@ -118,14 +129,12 @@ describe("Player Component", () => {
             rate: 1,
           },
           participants: {
-            user1: { role: "viewer" },
+            user1: { role: "owner" },
           },
         },
         participantId: "user1",
         sendCommand: mockSendCommand,
         serverClockOffset: 0,
-      };
-      return selector ? selector(state) : state;
     });
 
     render(<Player />);
@@ -153,32 +162,67 @@ describe("Player Component", () => {
   });
 
   it("should trigger a flashback seek when OCC rollback tick increments (TC-102)", () => {
-    (useStore as any).mockImplementation((selector: any) => {
-      const state = {
+    mockStoreState({
         room: {
           currentMediaId: "1",
           playlist: [
             { id: "1", url: "https://example.com/video.mp4", provider: "raw" },
           ],
-          settings: { controlMode: "open" },
+          settings: { autoplayNext: true, looping: false },
           playback: {
             status: "playing",
             basePosition: 10,
             baseTimestamp: Date.now() - 5000,
             rate: 1,
           },
-          participants: { user1: { role: "viewer" } },
+          participants: { user1: { role: "owner" } },
         },
         participantId: "user1",
         sendCommand: mockSendCommand,
         serverClockOffset: 0,
         occRollbackTick: 1, // trigger rollback
-      };
-      return selector ? selector(state) : state;
     });
 
     render(<Player />);
 
     expect(screen.getByTestId("mock-react-player")).toBeInTheDocument();
+  });
+
+  it("should report media readiness when the provider is ready", () => {
+    mockStoreState({
+        room: {
+          currentMediaId: "00000000-0000-4000-8000-000000000001",
+          playlist: [
+            {
+              id: "00000000-0000-4000-8000-000000000001",
+              url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+              provider: "youtube",
+              title: "Test Video",
+            },
+          ],
+          settings: { autoplayNext: true, looping: false },
+          playback: {
+            status: "paused",
+            basePosition: 0,
+            baseTimestamp: 0,
+            rate: 1,
+          },
+          participants: {
+            user1: { role: "viewer" },
+          },
+        },
+        participantId: "user1",
+        sendCommand: mockSendCommand,
+        serverClockOffset: 0,
+        occRollbackTick: 0,
+    });
+
+    render(<Player />);
+    fireEvent.click(screen.getByTestId("loadedmetadata-event"));
+
+    expect(mockSendCommand).toHaveBeenCalledWith("media_ready", {
+      mediaId: "00000000-0000-4000-8000-000000000001",
+      ready: true,
+    });
   });
 });

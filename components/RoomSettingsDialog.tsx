@@ -13,9 +13,9 @@ export default function RoomSettingsDialog({
   const { room, participantId, sendCommand } = useStore();
   const [settings, setSettings] = useState(
     room?.settings || {
-      controlMode: "open",
       autoplayNext: true,
       looping: false,
+      shuffle: false,
     },
   );
 
@@ -31,7 +31,14 @@ export default function RoomSettingsDialog({
 
   const handleSave = () => {
     if (isOwnerOrMod) {
-      sendCommand("update_settings", { settings });
+      const {
+        controlMode: _legacyControlMode,
+        playlistMode: _legacyPlaylistMode,
+        requestLeaderOnPause: _legacyRequestLeaderOnPause,
+        unpauseWithoutLeader: _legacyUnpauseWithoutLeader,
+        ...persistedSettings
+      } = settings as any;
+      sendCommand("update_settings", { settings: persistedSettings });
     }
     onClose();
   };
@@ -49,7 +56,7 @@ export default function RoomSettingsDialog({
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 10 }}
         transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-        className="bg-theme-bg/95 border-theme-border rounded-theme font-theme relative z-10 w-full max-w-md overflow-hidden border-2 tracking-wide uppercase shadow-[0_10px_40px_var(--color-theme-shadow)] backdrop-blur-3xl"
+        className="bg-theme-bg/95 border-theme-border rounded-theme font-theme relative z-10 flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden border-2 tracking-wide uppercase shadow-[0_10px_40px_var(--color-theme-shadow)] backdrop-blur-3xl"
       >
         <div className="border-theme-border/30 bg-theme-bg/50 flex items-center justify-between border-b-2 p-5">
           <h2 className="text-theme-text text-lg font-bold tracking-wide drop-shadow-sm">
@@ -63,89 +70,8 @@ export default function RoomSettingsDialog({
           </button>
         </div>
 
-        <div className="space-y-8 p-6">
+        <div className="scrollbar-thin scrollbar-thumb-theme-accent/50 scrollbar-track-transparent flex-1 space-y-8 overflow-y-auto p-6">
           <div className="space-y-5">
-            <h3 className="text-theme-accent text-xs font-bold tracking-[0.2em]">
-              Permissions
-            </h3>
-
-            <div className="space-y-4">
-              <label className="group flex cursor-pointer items-start space-x-4">
-                <div className="pt-1">
-                  <input
-                    type="radio"
-                    name="controlMode"
-                    value="open"
-                    checked={settings.controlMode === "open"}
-                    onChange={() =>
-                      setSettings({ ...settings, controlMode: "open" })
-                    }
-                    disabled={!isOwnerOrMod}
-                    className="text-theme-accent focus:ring-theme-accent/50 bg-theme-bg/50 border-theme-border h-4 w-4 transition-all focus:ring-offset-0 focus:ring-offset-transparent"
-                  />
-                </div>
-                <div>
-                  <p className="text-theme-text/80 group-hover:text-theme-accent text-sm font-bold transition-colors">
-                    Open Room
-                  </p>
-                  <p className="text-theme-muted mt-1 text-[10px] leading-relaxed font-bold tracking-widest">
-                    Everyone can control playback and edit the playlist.
-                  </p>
-                </div>
-              </label>
-
-              <label className="group flex cursor-pointer items-start space-x-4">
-                <div className="pt-1">
-                  <input
-                    type="radio"
-                    name="controlMode"
-                    value="hybrid"
-                    checked={settings.controlMode === "hybrid"}
-                    onChange={() =>
-                      setSettings({ ...settings, controlMode: "hybrid" })
-                    }
-                    disabled={!isOwnerOrMod}
-                    className="text-theme-accent focus:ring-theme-accent/50 bg-theme-bg/50 border-theme-border h-4 w-4 transition-all focus:ring-offset-0 focus:ring-offset-transparent"
-                  />
-                </div>
-                <div>
-                  <p className="text-theme-text/80 group-hover:text-theme-accent text-sm font-bold transition-colors">
-                    Hybrid Room
-                  </p>
-                  <p className="text-theme-muted mt-1 text-[10px] leading-relaxed font-bold tracking-widest">
-                    Everyone can play/pause, but only moderators can edit the
-                    playlist.
-                  </p>
-                </div>
-              </label>
-
-              <label className="group flex cursor-pointer items-start space-x-4">
-                <div className="pt-1">
-                  <input
-                    type="radio"
-                    name="controlMode"
-                    value="controlled"
-                    checked={settings.controlMode === "controlled"}
-                    onChange={() =>
-                      setSettings({ ...settings, controlMode: "controlled" })
-                    }
-                    disabled={!isOwnerOrMod}
-                    className="text-theme-accent focus:ring-theme-accent/50 bg-theme-bg/50 border-theme-border h-4 w-4 transition-all focus:ring-offset-0 focus:ring-offset-transparent"
-                  />
-                </div>
-                <div>
-                  <p className="text-theme-text/80 group-hover:text-theme-accent text-sm font-bold transition-colors">
-                    Controlled Room
-                  </p>
-                  <p className="text-theme-muted mt-1 text-[10px] leading-relaxed font-bold tracking-widest">
-                    Only moderators can control playback and edit the playlist.
-                  </p>
-                </div>
-              </label>
-            </div>
-          </div>
-
-          <div className="border-theme-border/30 space-y-5 border-t-2 pt-6">
             <h3 className="text-theme-accent text-xs font-bold tracking-[0.2em]">
               Playback
             </h3>
@@ -189,6 +115,33 @@ export default function RoomSettingsDialog({
                 className="text-theme-accent focus:ring-theme-accent/50 bg-theme-bg/50 border-theme-border h-5 w-5 rounded-md transition-all"
               />
             </label>
+          </div>
+
+          <div className="border-theme-border/30 space-y-5 border-t-2 pt-6">
+            <h3 className="text-theme-accent text-xs font-bold tracking-[0.2em]">
+              Queue
+            </h3>
+
+            <label className="group flex cursor-pointer items-center justify-between">
+              <div className="pr-4">
+                <p className="text-theme-text/80 group-hover:text-theme-accent text-sm font-bold transition-colors">
+                  Shuffle Playlist
+                </p>
+                <p className="text-theme-muted mt-1 text-[10px] leading-relaxed font-bold tracking-widest">
+                  Advance through queued items in randomized order.
+                </p>
+              </div>
+              <input
+                type="checkbox"
+                checked={Boolean(settings.shuffle)}
+                onChange={(e) =>
+                  setSettings({ ...settings, shuffle: e.target.checked })
+                }
+                disabled={!isOwnerOrMod}
+                className="text-theme-accent focus:ring-theme-accent/50 bg-theme-bg/50 border-theme-border h-5 w-5 rounded-md transition-all"
+              />
+            </label>
+
           </div>
 
           {!hasOwner && (

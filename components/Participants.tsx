@@ -9,6 +9,7 @@ import {
   MoreVertical,
   ShieldPlus,
   ShieldMinus,
+  RadioTower,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
@@ -32,6 +33,8 @@ export default function Participants() {
   const currentUserRole =
     room.participants[participantId || ""]?.role || "viewer";
   const isOwner = currentUserRole === "owner";
+  const isLeader = room.leaderId === participantId;
+  const leader = room.leaderId ? room.participants[room.leaderId] : null;
 
   const participants = Object.values(room.participants).sort((a, b) => {
     const roles = { owner: 3, moderator: 2, viewer: 1 };
@@ -43,9 +46,14 @@ export default function Participants() {
 
   const handleRoleChange = (targetParticipantId: string, newRole: string) => {
     sendCommand("update_role", {
-      participantId: targetParticipantId,
+      targetParticipantId,
       role: newRole,
     });
+    setOpenMenuId(null);
+  };
+
+  const handleTransferOwner = (targetParticipantId: string) => {
+    sendCommand("transfer_owner", { targetParticipantId });
     setOpenMenuId(null);
   };
 
@@ -54,6 +62,33 @@ export default function Participants() {
       className="scrollbar-thin scrollbar-thumb-theme-accent/50 scrollbar-track-transparent flex h-full flex-col overflow-y-auto bg-transparent p-4"
       onClick={() => setOpenMenuId(null)}
     >
+      <div className="border-theme-border/30 bg-theme-bg/35 rounded-theme mb-4 flex items-center justify-between border-2 p-3">
+        <div className="min-w-0">
+          <p className="text-theme-muted text-[10px] font-bold tracking-widest uppercase">
+            Leader
+          </p>
+          <p className="text-theme-text truncate text-sm font-bold">
+            {leader ? leader.nickname : "No active leader"}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            sendCommand(isLeader ? "release_leader" : "request_leader", {});
+          }}
+          aria-label={isLeader ? "Release leader" : "Request leader"}
+          className={`rounded-theme ring-theme-accent flex h-10 items-center gap-2 border-2 px-3 text-xs font-bold tracking-widest uppercase outline-none focus-visible:ring-2 ${
+            isLeader
+              ? "border-theme-danger text-theme-danger hover:bg-theme-danger/10"
+              : "border-theme-accent text-theme-accent hover:bg-theme-accent/10"
+          }`}
+        >
+          <RadioTower className="h-4 w-4" />
+          <span>{isLeader ? "Release" : "Lead"}</span>
+        </button>
+      </div>
+
       <div className="space-y-3">
         {participants.map((p) => (
           <div
@@ -116,10 +151,17 @@ export default function Participants() {
                       YOU
                     </span>
                   )}
+                  {room.leaderId === p.id && (
+                    <span className="border-theme-accent text-theme-accent rounded-sm border px-1.5 py-0.5 text-[9px] font-bold tracking-widest uppercase">
+                      LEADER
+                    </span>
+                  )}
                 </div>
                 <p className="text-theme-muted mt-1 flex items-center gap-1 px-1 text-[11px] font-bold tracking-widest uppercase">
                   {p.disconnected ? (
                     <span className="text-red-400">Reconnecting…</span>
+                  ) : p.ready === false ? (
+                    <span className="text-amber-400">Loading media</span>
                   ) : (
                     p.role
                   )}
@@ -178,7 +220,7 @@ export default function Participants() {
                                 `Are you sure you want to transfer ownership to ${p.nickname}? You will become a moderator.`,
                               )
                             ) {
-                              handleRoleChange(p.id, "owner");
+                              handleTransferOwner(p.id);
                             }
                           }}
                           className="text-theme-text flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold tracking-wide transition-colors hover:bg-amber-500/20 hover:text-amber-500"

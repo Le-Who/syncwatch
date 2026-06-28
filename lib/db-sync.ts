@@ -57,6 +57,13 @@ const forcePersistRoom = async (
   supabase: SupabaseClient | null,
 ) => {
   if (!supabase) return;
+  const {
+    controlMode: _legacyControlMode,
+    playlistMode: _legacyPlaylistMode,
+    requestLeaderOnPause: _legacyRequestLeaderOnPause,
+    unpauseWithoutLeader: _legacyUnpauseWithoutLeader,
+    ...settings
+  } = room.settings as any;
   try {
     const { error } = await supabase.rpc("sync_room_state", {
       p_room_id: getDeterministicUUID(room.id),
@@ -66,7 +73,10 @@ const forcePersistRoom = async (
       ),
       p_state: {
         name: room.name,
-        settings: room.settings,
+        settings,
+        chat: room.chat ?? [],
+        leaderId: room.leaderId,
+        flashbacks: room.flashbacks ?? {},
         playlist: room.playlist.map((item, index) => ({
           id: item.id,
           url: item.url,
@@ -74,6 +84,12 @@ const forcePersistRoom = async (
           title: item.title,
           duration: item.duration,
           addedBy: item.addedBy,
+          requesterId: item.requesterId,
+          author: item.author,
+          startPosition: item.startPosition || 0,
+          aspectRatio: item.aspectRatio,
+          isTemporary: item.isTemporary,
+          readyParticipants: item.readyParticipants,
           position: index,
           lastPosition: item.lastPosition || 0,
           thumbnail: item.thumbnail,
@@ -132,17 +148,28 @@ export async function loadRoomFromDB(
     const dbState = roomData.state as any;
     if (!dbState || typeof dbState !== "object") return null;
 
+    const {
+      controlMode: _legacyControlMode,
+      playlistMode: _legacyPlaylistMode,
+      requestLeaderOnPause: _legacyRequestLeaderOnPause,
+      unpauseWithoutLeader: _legacyUnpauseWithoutLeader,
+      ...dbSettings
+    } = dbState.settings || {};
+
     return {
       id: roomId,
       name: dbState.name || `Room ${roomId}`,
-      settings: dbState.settings || {
-        controlMode: "open",
+      settings: {
         autoplayNext: true,
         looping: false,
+        shuffle: false,
+        ...dbSettings,
       },
       participants: {},
       playlist: Array.isArray(dbState.playlist) ? dbState.playlist : [],
+      chat: Array.isArray(dbState.chat) ? dbState.chat : [],
       currentMediaId: dbState.playback?.mediaItemId || null,
+      leaderId: dbState.leaderId || null,
       playback: {
         status: dbState.playback?.status || "paused",
         basePosition: dbState.playback?.basePosition || 0,
@@ -150,6 +177,10 @@ export async function loadRoomFromDB(
         rate: dbState.playback?.rate || 1,
         updatedBy: dbState.playback?.updatedBy || "system",
       },
+      flashbacks:
+        dbState.flashbacks && typeof dbState.flashbacks === "object"
+          ? dbState.flashbacks
+          : {},
       version: dbState.version || 1,
       sequence: 1,
       lastActivity: Date.now(),
