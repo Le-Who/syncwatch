@@ -125,7 +125,14 @@ describe("Fast-Path OCC Logic", () => {
 
   it("TC-Fast-4: Should handle sync_correction with nonce", async () => {
     // First set to playing
-    await executeFastMutation(roomId, -1, "play", { position: 0 }, "u1", "Owner");
+    await executeFastMutation(
+      roomId,
+      -1,
+      "play",
+      { position: 0 },
+      "u1",
+      "Owner",
+    );
 
     const nonce = "test-nonce-123";
     const result = await executeFastMutation(
@@ -145,7 +152,14 @@ describe("Fast-Path OCC Logic", () => {
 
   it("TC-Fast-5: Should return NO_CHANGE when pausing an already-paused room", async () => {
     // Ensure paused first
-    await executeFastMutation(roomId, -1, "pause", { position: 10 }, "u1", "Owner");
+    await executeFastMutation(
+      roomId,
+      -1,
+      "pause",
+      { position: 10 },
+      "u1",
+      "Owner",
+    );
 
     const result = await executeFastMutation(
       roomId,

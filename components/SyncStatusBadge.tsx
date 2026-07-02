@@ -61,7 +61,8 @@ export function SyncStatusBadge({ driftRef }: SyncStatusBadgeProps) {
       // P6 Fix: During the first 2 seconds after a status transition (e.g.
       // paused → playing), suppress non-synced states. The driftRef is stale
       // during transitions and would cause a false "Sync Lost" badge flash.
-      const isInTransitionGrace = Date.now() - lastStatusChangeRef.current < BADGE_GRACE_PERIOD_MS;
+      const isInTransitionGrace =
+        Date.now() - lastStatusChangeRef.current < BADGE_GRACE_PERIOD_MS;
       if (isInTransitionGrace && newState !== "offline") {
         newState = "synced";
       }
