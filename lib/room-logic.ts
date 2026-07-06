@@ -163,9 +163,8 @@ export function applyRemoveItem(
       room.playlist.length > 0 ? room.playlist[0].id : null;
     room.playback.status =
       room.playback.status === "playing" ? "playing" : "paused";
-    const newHead = room.currentMediaId
-      ? room.playlist.find((i) => i.id === room.currentMediaId)
-      : null;
+    // Optimization: Directly access index 0 for O(1) access since we just set currentMediaId to playlist[0].id
+    const newHead = room.currentMediaId ? room.playlist[0] : null;
     room.playback.basePosition = newHead ? clampStart(newHead) : 0;
     room.playback.baseTimestamp = Date.now();
   }
@@ -291,10 +290,11 @@ export function applyVideoEnded(
   if (payload.currentMediaId !== room.currentMediaId) return false;
 
   snapshotActiveItemPosition(room);
-  const activeItem = room.playlist.find((i) => i.id === room.currentMediaId);
   const endedIndex = room.playlist.findIndex(
     (i) => i.id === room.currentMediaId,
   );
+  // Optimization: Reuse index for O(1) access instead of redundant O(n) find()
+  const activeItem = endedIndex !== -1 ? room.playlist[endedIndex] : undefined;
 
   if (endedIndex !== -1 && endedIndex < room.playlist.length - 1) {
     if (room.settings.autoplayNext) {
