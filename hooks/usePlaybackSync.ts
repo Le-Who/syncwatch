@@ -50,23 +50,46 @@ export function usePlaybackSync(props: {
       const playback = state.room?.playback;
       const serverClockOffset = state.serverClockOffset;
 
-      if (!playback || !p.getIsReady() || p.getSeeking()) {
+      if (!playback) {
         syncTimerRef.current = setTimeout(syncPlayback, 200) as any;
-        return;
-      }
-
-      // P1 Fix: Skip sync corrections during buffering — rate adjustments have
-      // no effect while the player is stalled. Reset hysteresis state so that
-      // buffer recovery starts with a clean correction decision.
-      if (p.getIsBuffering()) {
-        isAdjustingRateRef.current = false;
-        syncTimerRef.current = setTimeout(syncPlayback, 300) as any;
         return;
       }
 
       // ACK pipeline: acknowledge our pending nonce when the server echoes it back.
       // This deterministically unblocks native events instead of relying on timers.
       p.intentManager.acknowledgeServerNonce(playback.lastActionNonce);
+
+      if (!p.getIsReady() || p.getSeeking()) {
+        syncTimerRef.current = setTimeout(syncPlayback, 200) as any;
+        return;
+      }
+
+      const setPlaybackRateDirectly = (rate: number) => {
+        const rP = p.realPlayerRef.current;
+        if (rP?.getInternalPlayer) {
+          const internal = rP.getInternalPlayer();
+          if (internal?.setPlaybackRate) {
+            internal.setPlaybackRate(rate);
+            return;
+          }
+        }
+        if (
+          p.playerRef.current &&
+          p.playerRef.current.playbackRate !== undefined
+        ) {
+          p.playerRef.current.playbackRate = rate;
+        }
+      };
+
+      // P1 Fix: Skip sync corrections during buffering — rate adjustments have
+      // no effect while the player is stalled. Reset hysteresis state so that
+      // buffer recovery starts with a clean correction decision.
+      if (p.getIsBuffering()) {
+        isAdjustingRateRef.current = false;
+        setPlaybackRateDirectly(playback.rate);
+        syncTimerRef.current = setTimeout(syncPlayback, 300) as any;
+        return;
+      }
 
       if (p.intentManager.isAwaitingServerAck()) {
         // Optimistic UI barrier — server hasn't confirmed our command yet
@@ -126,23 +149,6 @@ export function usePlaybackSync(props: {
         );
         const isTwitch = currentMedia?.provider?.toLowerCase() === "twitch";
         const duration = p.getDuration();
-
-        const setPlaybackRateDirectly = (rate: number) => {
-          const rP = p.realPlayerRef.current;
-          if (rP?.getInternalPlayer) {
-            const internal = rP.getInternalPlayer();
-            if (internal?.setPlaybackRate) {
-              internal.setPlaybackRate(rate);
-              return;
-            }
-          }
-          if (
-            p.playerRef.current &&
-            p.playerRef.current.playbackRate !== undefined
-          ) {
-            p.playerRef.current.playbackRate = rate;
-          }
-        };
 
         // P4 Fix: During the first 3 seconds after joining, skip hard seeks
         // to let clock sync converge. Rate correction still applies.
