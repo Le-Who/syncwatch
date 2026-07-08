@@ -113,7 +113,7 @@ export default function Player() {
   const idleTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // P5 Fix: Sync ref with state so event handlers never read stale closure
-  useEffect(() => {
+  useLayoutEffect(() => {
     isSleepingRef.current = isSleeping;
   }, [isSleeping]);
 
