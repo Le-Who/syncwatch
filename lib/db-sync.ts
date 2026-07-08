@@ -52,6 +52,13 @@ export const persistRoomState = (
   markRoomForSync(room.id);
 };
 
+const VALID_PLAYBACK_STATUSES = new Set([
+  "playing",
+  "paused",
+  "buffering",
+  "ended",
+]);
+
 const forcePersistRoom = async (
   room: RoomState,
   supabase: SupabaseClient | null,
@@ -80,9 +87,7 @@ const forcePersistRoom = async (
         })),
         playback: {
           mediaItemId: room.currentMediaId,
-          status: ["playing", "paused", "buffering", "ended"].includes(
-            room.playback.status,
-          )
+          status: VALID_PLAYBACK_STATUSES.has(room.playback.status as string)
             ? room.playback.status
             : "paused",
           basePosition: room.playback.basePosition,
