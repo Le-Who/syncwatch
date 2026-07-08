@@ -18,27 +18,25 @@ import { useSettingsStore } from "@/lib/store";
 export default function RoomPage() {
   const params = useParams();
   const roomId = params.id as string;
-  const {
-    room,
-    isConnected,
-    nickname,
-    setNickname,
-    connect,
-    disconnect,
-    init,
-    sendCommand,
-    participantId,
-  } = useStore(useShallow((s) => ({
-    room: s.room,
-    isConnected: s.isConnected,
-    nickname: s.nickname,
-    setNickname: s.setNickname,
-    connect: s.connect,
-    disconnect: s.disconnect,
-    init: s.init,
-    sendCommand: s.sendCommand,
-    participantId: s.participantId,
-  })));
+  const isConnected = useStore((s) => s.isConnected);
+  const nickname = useStore((s) => s.nickname);
+  const setNickname = useStore((s) => s.setNickname);
+  const connect = useStore((s) => s.connect);
+  const disconnect = useStore((s) => s.disconnect);
+  const init = useStore((s) => s.init);
+  const sendCommand = useStore((s) => s.sendCommand);
+  const participantId = useStore((s) => s.participantId);
+
+  const hasRoom = useStore((s) => s.room !== null);
+  const roomName = useStore((s) => s.room?.name);
+  const myRole = useStore((s) =>
+    s.participantId && s.room
+      ? s.room.participants[s.participantId]?.role
+      : undefined,
+  );
+  const participantCount = useStore((s) =>
+    s.room ? Object.keys(s.room.participants).length : 0,
+  );
 
   const [isJoining, setIsJoining] = useState(true);
   const [tempName, setTempName] = useState("");
@@ -84,12 +82,10 @@ export default function RoomPage() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const participant = room?.participants[participantId!];
-  const canEditRoom =
-    participant?.role === "owner" || participant?.role === "moderator";
+  const canEditRoom = myRole === "owner" || myRole === "moderator";
 
   const handleRoomNameSubmit = () => {
-    if (editRoomName.trim() && editRoomName !== room?.name && canEditRoom) {
+    if (editRoomName.trim() && editRoomName !== roomName && canEditRoom) {
       sendCommand("update_room_name", { name: editRoomName.trim() });
     }
     setIsEditingRoomName(false);
@@ -151,7 +147,7 @@ export default function RoomPage() {
     );
   }
 
-  if (!isConnected || !room) {
+  if (!isConnected || !hasRoom) {
     return (
       <main className="font-theme relative flex min-h-screen items-center justify-center bg-transparent">
         <div className="theme-panel relative z-10 flex flex-col items-center space-y-8 p-10">
@@ -210,14 +206,14 @@ export default function RoomPage() {
                       : ""
                   }`}
                   onClick={() => {
-                    if (canEditRoom) {
-                      setEditRoomName(room.name);
+                    if (canEditRoom && roomName) {
+                      setEditRoomName(roomName);
                       setIsEditingRoomName(true);
                     }
                   }}
                   title={canEditRoom ? "Click to rename room" : ""}
                 >
-                  {room.name}
+                  {roomName}
                 </h2>
               )}
             </div>
@@ -301,9 +297,7 @@ export default function RoomPage() {
                   }`}
                 >
                   <Users className="h-4 w-4" />
-                  <span>
-                    Entities ({Object.keys(room.participants).length})
-                  </span>
+                  <span>Entities ({participantCount})</span>
                 </button>
               </div>
 
