@@ -260,15 +260,23 @@ export async function flushDbSyncQueue(supabase: SupabaseClient | null) {
     queue = Array.from(writeBehindQueue);
   }
 
-  for (const roomId of queue) {
-    let room;
-    const roomStr = await getRedisRoom(roomId);
-    if (roomStr) room = roomStr;
+  const BATCH_SIZE = 10;
+  for (let i = 0; i < queue.length; i += BATCH_SIZE) {
+    const batch = queue.slice(i, i + BATCH_SIZE);
+    await Promise.allSettled(
+      batch.map(async (roomId) => {
+        let room;
+        const roomStr = await getRedisRoom(roomId);
+        if (roomStr) room = roomStr;
 
-    if (room) {
-      await forcePersistRoom(room, supabase).catch(() => {});
-      if (redisClient)
-        await redisClient.zrem("pending_db_syncs", roomId).catch(() => {});
-    }
+        if (room) {
+          // P4 Fix: Process db syncs concurrently in batches to improve throughput
+          await forcePersistRoom(room, supabase).catch(() => {});
+          if (redisClient) {
+            await redisClient.zrem("pending_db_syncs", roomId).catch(() => {});
+          }
+        }
+      }),
+    );
   }
 }
