@@ -69,13 +69,11 @@ export default function Player() {
     (s) => s.participantId && s.room?.participants[s.participantId]?.role,
   );
 
-  const currentMedia = useStore(
-    useShallow((s) =>
-      s.room?.playlist.find((item) => item.id === s.room?.currentMediaId),
-    ),
+  const currentMedia = useStore((s) =>
+    s.room?.playlist.find((item) => item.id === s.room?.currentMediaId),
   );
 
-  const playback = useStore(useShallow((s) => s.room?.playback));
+  const playback = useStore((s) => s.room?.playback);
 
   const participantCount = useStore((s) =>
     s.room ? Object.keys(s.room.participants).length : 0,
@@ -537,14 +535,14 @@ export default function Player() {
 
   // formatTime is now imported from @/lib/utils
 
-  const nextItem = useStore(useShallow((s) => {
+  const nextItem = useStore((s) => {
     if (!s.room || !currentMediaId) return null;
     const idx = s.room.playlist.findIndex((i) => i.id === currentMediaId);
     if (idx === -1) return null;
     let n = s.room.playlist[idx + 1];
     if (!n && s.room.settings.looping) n = s.room.playlist[0];
     return n;
-  }));
+  });
 
   const [upNextState, setUpNextState] = useState({ show: false, remaining: 0 });
 

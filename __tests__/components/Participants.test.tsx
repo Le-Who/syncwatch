@@ -27,7 +27,7 @@ describe("Participants Component (Unit Tests)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
-    (useStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+    const mockState = {
       room: {
         participants: {
           "user-owner": { id: "user-owner", role: "owner", nickname: "Alice" },
@@ -42,6 +42,13 @@ describe("Participants Component (Unit Tests)", () => {
       participantId: "user-owner",
       sendCommand: mockSendCommand,
       setNickname: mockSetNickname,
+    };
+
+    (useStore as unknown as ReturnType<typeof vi.fn>).mockImplementation((selector: any) => {
+      if (typeof selector === "function") {
+        return selector(mockState);
+      }
+      return mockState;
     });
   });
 
@@ -84,7 +91,7 @@ describe("Participants Component (Unit Tests)", () => {
 
   it("TC-UI-12: Prevents Guests from seeing the manage menu", () => {
     // Change current user to viewer
-    (useStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+    const mockStateViewer = {
       room: {
         participants: {
           "user-owner": { id: "user-owner", role: "owner", nickname: "Alice" },
@@ -98,6 +105,13 @@ describe("Participants Component (Unit Tests)", () => {
       participantId: "user-viewer",
       sendCommand: mockSendCommand,
       setNickname: mockSetNickname,
+    };
+
+    (useStore as unknown as ReturnType<typeof vi.fn>).mockImplementation((selector: any) => {
+      if (typeof selector === "function") {
+        return selector(mockStateViewer);
+      }
+      return mockStateViewer;
     });
 
     render(<Participants />);
