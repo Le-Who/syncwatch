@@ -11,22 +11,27 @@ export default function RoomSettingsDialog({
 }: {
   onClose: () => void;
 }) {
-  const { room, participantId, sendCommand } = useStore(useShallow((s) => ({ room: s.room, participantId: s.participantId, sendCommand: s.sendCommand })));
+  // Optimization: Extract atomic properties to prevent re-renders on unrelated room changes
+  const participantId = useStore((s) => s.participantId);
+  const sendCommand = useStore((s) => s.sendCommand);
+  const participants = useStore(useShallow((s) => s.room?.participants));
+  const roomSettings = useStore(useShallow((s) => s.room?.settings));
+
   const [settings, setSettings] = useState(
-    room?.settings || {
+    roomSettings || {
       controlMode: "open",
       autoplayNext: true,
       looping: false,
     },
   );
 
-  if (!room) return null;
+  if (!participants || !roomSettings) return null;
 
   const isOwnerOrMod =
-    room.participants[participantId!]?.role === "owner" ||
-    room.participants[participantId!]?.role === "moderator";
+    participants[participantId!]?.role === "owner" ||
+    participants[participantId!]?.role === "moderator";
 
-  const hasOwner = Object.values(room.participants).some(
+  const hasOwner = Object.values(participants).some(
     (p) => p.role === "owner",
   );
 
