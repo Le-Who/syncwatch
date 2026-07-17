@@ -1,1 +1,2 @@
 # Palette's Journal
+## 2025-10-24 - Accessibility added to RoomSettingsDialog\n**Learning:** When using framer-motion's `<motion.div>` as a dialog overlay, screen readers may not read it correctly. Using standard dialog properties resolves this.\n**Action:** Use `role="dialog"`, `aria-modal="true"`, and `aria-labelledby` properties for all standard pop-up interactions, and add `aria-hidden="true"` to background overlays to ensure they are hidden to screen readers.
