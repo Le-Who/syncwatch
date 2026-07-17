@@ -19,7 +19,6 @@ export default function RoomPage() {
   const params = useParams();
   const roomId = params.id as string;
   const {
-    room,
     isConnected,
     nickname,
     setNickname,
@@ -28,8 +27,12 @@ export default function RoomPage() {
     init,
     sendCommand,
     participantId,
+    // ⚡ Bolt Optimization: Granular selectors
+    roomName,
+    myRole,
+    participantCount,
+    hasRoom,
   } = useStore(useShallow((s) => ({
-    room: s.room,
     isConnected: s.isConnected,
     nickname: s.nickname,
     setNickname: s.setNickname,
@@ -38,6 +41,10 @@ export default function RoomPage() {
     init: s.init,
     sendCommand: s.sendCommand,
     participantId: s.participantId,
+    roomName: s.room?.name,
+    myRole: s.participantId ? s.room?.participants[s.participantId]?.role : undefined,
+    participantCount: s.room ? Object.keys(s.room.participants).length : 0,
+    hasRoom: !!s.room,
   })));
 
   const [isJoining, setIsJoining] = useState(true);
@@ -84,12 +91,11 @@ export default function RoomPage() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const participant = room?.participants[participantId!];
   const canEditRoom =
-    participant?.role === "owner" || participant?.role === "moderator";
+    myRole === "owner" || myRole === "moderator";
 
   const handleRoomNameSubmit = () => {
-    if (editRoomName.trim() && editRoomName !== room?.name && canEditRoom) {
+    if (editRoomName.trim() && editRoomName !== roomName && canEditRoom) {
       sendCommand("update_room_name", { name: editRoomName.trim() });
     }
     setIsEditingRoomName(false);
@@ -151,7 +157,7 @@ export default function RoomPage() {
     );
   }
 
-  if (!isConnected || !room) {
+  if (!isConnected || !hasRoom) {
     return (
       <main className="font-theme relative flex min-h-screen items-center justify-center bg-transparent">
         <div className="theme-panel relative z-10 flex flex-col items-center space-y-8 p-10">
@@ -211,13 +217,13 @@ export default function RoomPage() {
                   }`}
                   onClick={() => {
                     if (canEditRoom) {
-                      setEditRoomName(room.name);
+                      setEditRoomName(roomName || "");
                       setIsEditingRoomName(true);
                     }
                   }}
                   title={canEditRoom ? "Click to rename room" : ""}
                 >
-                  {room.name}
+                  {roomName}
                 </h2>
               )}
             </div>
@@ -302,7 +308,7 @@ export default function RoomPage() {
                 >
                   <Users className="h-4 w-4" />
                   <span>
-                    Entities ({Object.keys(room.participants).length})
+                    Entities ({participantCount})
                   </span>
                 </button>
               </div>

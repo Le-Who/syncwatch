@@ -50,33 +50,7 @@ describe("Playlist Component (Unit Tests)", () => {
     vi.clearAllMocks();
 
     // Default store state: User is owner, room has 1 video
-    (useStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
-      room: {
-        settings: { controlMode: "controlled" },
-        currentMediaId: "vid-1",
-        participants: {
-          "user-1": { role: "owner" },
-        },
-        playlist: [
-          {
-            id: "vid-1",
-            title: "Test Video 1",
-            provider: "YouTube",
-            url: "https://youtube.com/watch?v=123",
-            duration: 100,
-            addedBy: "OwnerUser",
-          },
-        ],
-        playback: {
-          status: "playing",
-          basePosition: 10,
-          baseTimestamp: Date.now(),
-          rate: 1,
-        },
-      },
-      participantId: "user-1",
-      sendCommand: mockSendCommand,
-    });
+    (useStore as unknown as ReturnType<typeof vi.fn>).mockImplementation((selector) => selector({ room: { settings: { controlMode: "controlled" }, currentMediaId: "vid-1", participants: { "user-1": { role: "owner" }, "user-viewer": { role: "viewer" } }, playlist: [{ id: "vid-1", title: "Test Video 1", provider: "YouTube", url: "https://youtube.com/watch?v=123", duration: 100, addedBy: "OwnerUser" }], playback: { status: "playing", basePosition: 10, baseTimestamp: Date.now(), rate: 1 } }, participantId: "user-1", sendCommand: mockSendCommand }));
   });
 
   it("TC-UI-01: Renders the playlist and allows Owner to see 'Remove' and 'Input' elements", () => {
@@ -97,30 +71,7 @@ describe("Playlist Component (Unit Tests)", () => {
 
   it("TC-UI-02: Disables 'Remove' and 'Input' for Guests when not in Open mode", () => {
     // Override store for Guest
-    (useStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
-      room: {
-        settings: { controlMode: "controlled" }, // Not open
-        currentMediaId: "vid-1",
-        participants: {
-          "user-viewer": { role: "viewer" }, // Viewer role
-        },
-        playlist: [
-          {
-            id: "vid-1",
-            title: "Test Video 1",
-            provider: "YouTube",
-          },
-        ],
-        playback: {
-          status: "playing",
-          basePosition: 10,
-          baseTimestamp: Date.now(),
-          rate: 1,
-        },
-      },
-      participantId: "user-viewer",
-      sendCommand: mockSendCommand,
-    });
+    (useStore as unknown as ReturnType<typeof vi.fn>).mockImplementation((selector) => selector({ room: { settings: { controlMode: "controlled" }, currentMediaId: "vid-1", participants: { "user-1": { role: "owner" }, "user-viewer": { role: "viewer" } }, playlist: [{ id: "vid-1", title: "Test Video 1", provider: "YouTube", url: "https://youtube.com/watch?v=123", duration: 100, addedBy: "OwnerUser" }], playback: { status: "playing", basePosition: 10, baseTimestamp: Date.now(), rate: 1 } }, participantId: "user-viewer", sendCommand: mockSendCommand }));
 
     render(<Playlist />);
 

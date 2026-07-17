@@ -14,7 +14,13 @@ import {
 import { motion, AnimatePresence } from "motion/react";
 
 export default function Participants() {
-  const { room, participantId, setNickname, sendCommand } = useStore(useShallow((s) => ({ room: s.room, participantId: s.participantId, setNickname: s.setNickname, sendCommand: s.sendCommand })));
+  const { participantId, setNickname, sendCommand, roomParticipants } = useStore(useShallow((s) => ({
+    participantId: s.participantId,
+    setNickname: s.setNickname,
+    sendCommand: s.sendCommand,
+    // ⚡ Bolt Optimization: Granular selectors
+    roomParticipants: s.room?.participants
+  })));
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -28,13 +34,13 @@ export default function Participants() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  if (!room) return null;
+  if (!roomParticipants) return null;
 
   const currentUserRole =
-    room.participants[participantId || ""]?.role || "viewer";
+    roomParticipants[participantId || ""]?.role || "viewer";
   const isOwner = currentUserRole === "owner";
 
-  const participants = Object.values(room.participants).sort((a, b) => {
+  const participants = Object.values(roomParticipants).sort((a, b) => {
     const roles = { owner: 3, moderator: 2, viewer: 1 };
     const wA = roles[a.role as keyof typeof roles] || 0;
     const wB = roles[b.role as keyof typeof roles] || 0;
