@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { useStore } from "@/lib/store";
-import { useShallow } from "zustand/react/shallow";
 import { X, Save } from "lucide-react";
 import { motion } from "motion/react";
 
@@ -11,22 +10,25 @@ export default function RoomSettingsDialog({
 }: {
   onClose: () => void;
 }) {
-  const { room, participantId, sendCommand } = useStore(useShallow((s) => ({ room: s.room, participantId: s.participantId, sendCommand: s.sendCommand })));
+  const settingsState = useStore((s) => s.room?.settings);
+  const participants = useStore((s) => s.room?.participants);
+  const participantId = useStore((s) => s.participantId);
+  const sendCommand = useStore((s) => s.sendCommand);
   const [settings, setSettings] = useState(
-    room?.settings || {
+    settingsState || {
       controlMode: "open",
       autoplayNext: true,
       looping: false,
     },
   );
 
-  if (!room) return null;
+  if (!settingsState || !participants) return null;
 
   const isOwnerOrMod =
-    room.participants[participantId!]?.role === "owner" ||
-    room.participants[participantId!]?.role === "moderator";
+    participants[participantId!]?.role === "owner" ||
+    participants[participantId!]?.role === "moderator";
 
-  const hasOwner = Object.values(room.participants).some(
+  const hasOwner = Object.values(participants).some(
     (p) => p.role === "owner",
   );
 
