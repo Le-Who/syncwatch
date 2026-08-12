@@ -2,7 +2,11 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { executeFastMutation } from "../lib/redis-lua";
 import { applyAddItem } from "../lib/room-logic";
 import { getRedisClient } from "../lib/redis-rate-limit";
-import { setRedisRoom, getRedisRoom, setRedisRoomCAS } from "../lib/redis-actor";
+import {
+  setRedisRoom,
+  getRedisRoom,
+  setRedisRoomCAS,
+} from "../lib/redis-actor";
 import { RoomState } from "../lib/types";
 
 describe("OCC Thrashing Simulation (Phase 1)", () => {
@@ -61,7 +65,7 @@ describe("OCC Thrashing Simulation (Phase 1)", () => {
     for (let i = 0; i < 10; i++) {
       let retries = 10;
       while (retries > 0) {
-        const room = await getRedisRoom(roomId) as RoomState;
+        const room = (await getRedisRoom(roomId)) as RoomState;
         const baseVersion = room.version;
         const changed = applyAddItem(room, { url: `vid_${i}` }, "u1", "u1");
         if (changed) {
@@ -86,7 +90,9 @@ describe("OCC Thrashing Simulation (Phase 1)", () => {
       id: roomId,
       version: 5,
       sequence: 5,
-      participants: { u1: { id: "u1", role: "owner", nickname: "u1", lastSeen: Date.now() } },
+      participants: {
+        u1: { id: "u1", role: "owner", nickname: "u1", lastSeen: Date.now() },
+      },
       settings: { controlMode: "open", autoplayNext: true, looping: false },
       playlist: [],
       currentMediaId: null,
@@ -101,8 +107,22 @@ describe("OCC Thrashing Simulation (Phase 1)", () => {
       lastActivity: Date.now(),
     } as RoomState);
 
-    const reqA = executeFastMutation(roomId, 5, "play", { position: 10 }, "u1", "u1");
-    const reqB = executeFastMutation(roomId, 5, "seek", { position: 20 }, "u1", "u1");
+    const reqA = executeFastMutation(
+      roomId,
+      5,
+      "play",
+      { position: 10 },
+      "u1",
+      "u1",
+    );
+    const reqB = executeFastMutation(
+      roomId,
+      5,
+      "seek",
+      { position: 20 },
+      "u1",
+      "u1",
+    );
 
     const [resA, resB] = await Promise.all([reqA, reqB]);
 

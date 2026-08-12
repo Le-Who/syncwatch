@@ -43,7 +43,9 @@ export function LivePosition({
   useEffect(() => {
     // Immediate sync in an interval callback (not synchronous effect body)
     const update = () =>
-      setCurrentPos(computePosition(basePosition, baseTimestamp, rate, isPlaying));
+      setCurrentPos(
+        computePosition(basePosition, baseTimestamp, rate, isPlaying),
+      );
 
     // Sync to latest props immediately via a 0ms timeout
     const immediate = setTimeout(update, 0);
