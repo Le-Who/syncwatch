@@ -41,11 +41,15 @@ export default function RoomSettingsDialog({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Cinematic overlay */}
       <div
+        aria-hidden="true"
         className="bg-theme-bg/60 absolute inset-0 backdrop-blur-md"
         onClick={onClose}
       />
 
       <motion.div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="room-settings-title"
         initial={{ opacity: 0, scale: 0.95, y: 10 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 10 }}
@@ -53,12 +57,13 @@ export default function RoomSettingsDialog({
         className="bg-theme-bg/95 border-theme-border rounded-theme font-theme relative z-10 w-full max-w-md overflow-hidden border-2 tracking-wide uppercase shadow-[0_10px_40px_var(--color-theme-shadow)] backdrop-blur-3xl"
       >
         <div className="border-theme-border/30 bg-theme-bg/50 flex items-center justify-between border-b-2 p-5">
-          <h2 className="text-theme-text text-lg font-bold tracking-wide drop-shadow-sm">
+          <h2 id="room-settings-title" className="text-theme-text text-lg font-bold tracking-wide drop-shadow-sm">
             Terminal Settings
           </h2>
           <button
             onClick={onClose}
-            className="text-theme-muted hover:text-theme-accent hover:bg-theme-accent/10 rounded-theme p-2 transition-all"
+            aria-label="Close settings"
+            className="text-theme-muted hover:text-theme-accent hover:bg-theme-accent/10 ring-theme-accent rounded-theme p-2 transition-all outline-none focus-visible:ring-2"
           >
             <X className="h-5 w-5" />
           </button>
