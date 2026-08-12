@@ -217,7 +217,11 @@ export class PlaybackIntentManager {
     fallbackStatus: string | undefined,
   ): string | undefined {
     // Use nonce-based check first (deterministic), then fallback to time-based
-    if (this._pendingNonce && this.isAwaitingServerAck() && this.lastStateEmitted) {
+    if (
+      this._pendingNonce &&
+      this.isAwaitingServerAck() &&
+      this.lastStateEmitted
+    ) {
       return this.lastStateEmitted.status;
     }
     if (this.isRecentCommand(2000) && this.lastStateEmitted !== null) {
