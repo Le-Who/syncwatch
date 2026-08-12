@@ -37,23 +37,15 @@ export function QualityMenu({
           const internal = playerRef.current?.getInternalPlayer?.("youtube");
           if (internal?.getAvailableQualityLevels) {
             const levels = internal.getAvailableQualityLevels();
-            setProviderQualities(
-              levels.filter((l: string) => l !== "auto"),
-            );
-            setCurrentProviderQuality(
-              internal.getPlaybackQuality() || "auto",
-            );
+            setProviderQualities(levels.filter((l: string) => l !== "auto"));
+            setCurrentProviderQuality(internal.getPlaybackQuality() || "auto");
           }
         } else if (provider === "twitch") {
           const internal = playerRef.current?.getInternalPlayer?.("twitch");
           if (internal?.getQualities) {
             const levels = internal.getQualities();
-            setProviderQualities(
-              levels.map((l: any) => l.group),
-            );
-            setCurrentProviderQuality(
-              internal.getQuality() || "auto",
-            );
+            setProviderQualities(levels.map((l: any) => l.group));
+            setCurrentProviderQuality(internal.getQuality() || "auto");
           }
         }
       } catch (err) {
@@ -68,9 +60,13 @@ export function QualityMenu({
     try {
       if (provider === "youtube") {
         if (quality === "auto") {
-          playerRef.current?.getInternalPlayer?.("youtube")?.setPlaybackQualityRange?.("auto");
+          playerRef.current
+            ?.getInternalPlayer?.("youtube")
+            ?.setPlaybackQualityRange?.("auto");
         } else {
-          playerRef.current?.getInternalPlayer?.("youtube")?.setPlaybackQualityRange?.(quality, quality);
+          playerRef.current
+            ?.getInternalPlayer?.("youtube")
+            ?.setPlaybackQualityRange?.(quality, quality);
         }
       } else if (provider === "twitch") {
         playerRef.current?.getInternalPlayer?.("twitch")?.setQuality?.(quality);
@@ -102,7 +98,8 @@ export function QualityMenu({
           handleOpenMenu();
         }}
       >
-        <Settings className="h-5 w-5" />
+        <span className="sr-only">Quality settings</span>
+        <Settings className="h-5 w-5" aria-hidden="true" />
         {currentProviderQuality !== "auto" && providerQualities.length > 0 && (
           <div className="bg-theme-accent absolute top-1 right-1 h-2 w-2 animate-pulse rounded-full shadow-[0_0_8px_var(--color-theme-accent)]" />
         )}
@@ -139,8 +136,12 @@ export function QualityMenu({
                     }}
                     className={`border-theme-border/10 hover:bg-theme-accent/20 flex items-center justify-between border-b px-4 py-3 text-left text-xs font-bold transition-all ${currentProviderQuality === q ? "text-theme-accent bg-theme-accent/10 shadow-[inset_2px_0_0_var(--color-theme-accent)]" : "text-theme-text"}`}
                   >
-                    <span className={q === "highres" ? "text-theme-accent" : ""}>
-                      {q === "highres" ? "Target Ultra/4K" : q.replace(/hd/, "").toUpperCase()}
+                    <span
+                      className={q === "highres" ? "text-theme-accent" : ""}
+                    >
+                      {q === "highres"
+                        ? "Target Ultra/4K"
+                        : q.replace(/hd/, "").toUpperCase()}
                     </span>
                     {currentProviderQuality === q && (
                       <div className="bg-theme-accent h-2 w-2 rounded-full shadow-[0_0_5px_currentColor]"></div>
