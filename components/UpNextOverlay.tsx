@@ -21,8 +21,9 @@ export function UpNextOverlay({
           e.stopPropagation();
           onDismiss();
         }}
-        className="text-theme-muted hover:text-theme-text absolute top-1.5 right-1.5 rounded-full p-1 transition-colors"
+        className="text-theme-muted hover:text-theme-text ring-theme-accent absolute top-1.5 right-1.5 rounded-full p-1 transition-colors outline-none focus-visible:ring-2"
         title="Dismiss"
+        aria-label="Dismiss up next overlay"
       >
         <X className="h-3.5 w-3.5" />
       </button>

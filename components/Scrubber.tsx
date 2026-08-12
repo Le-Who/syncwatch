@@ -59,7 +59,10 @@ export function Scrubber({
           }
           // P5 Fix: Only call formatTime when the floored second changes (~1/s vs 60/s)
           const flooredSecond = Math.floor(currentTime);
-          if (timeDisplayRef.current && flooredSecond !== lastFormattedSecondRef.current) {
+          if (
+            timeDisplayRef.current &&
+            flooredSecond !== lastFormattedSecondRef.current
+          ) {
             lastFormattedSecondRef.current = flooredSecond;
             timeDisplayRef.current.innerText = formatTime(flooredSecond);
           }
@@ -168,7 +171,10 @@ export function Scrubber({
           <div
             ref={progressBarRef}
             className="from-theme-accent/80 to-theme-accent absolute top-0 left-0 h-full rounded-r-full bg-linear-to-r shadow-[0_0_12px_var(--color-theme-accent)] transition-transform duration-75"
-            style={{ width: "0%", transition: isScrubbing ? "none" : "width 100ms linear" }}
+            style={{
+              width: "0%",
+              transition: isScrubbing ? "none" : "width 100ms linear",
+            }}
           />
         </div>
 
