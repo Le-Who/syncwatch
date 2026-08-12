@@ -260,15 +260,33 @@ export async function flushDbSyncQueue(supabase: SupabaseClient | null) {
     queue = Array.from(writeBehindQueue);
   }
 
-  for (const roomId of queue) {
-    let room;
-    const roomStr = await getRedisRoom(roomId);
-    if (roomStr) room = roomStr;
+  // Performance optimization: Process Redis queue items concurrently in batches
+  // to prevent network interleaving bottleneck during shutdown.
+  const BATCH_SIZE = 10;
+  for (let i = 0; i < queue.length; i += BATCH_SIZE) {
+    const batch = queue.slice(i, i + BATCH_SIZE);
 
-    if (room) {
-      await forcePersistRoom(room, supabase).catch(() => {});
-      if (redisClient)
-        await redisClient.zrem("pending_db_syncs", roomId).catch(() => {});
-    }
+    const roomStrs = await Promise.allSettled(
+      batch.map((roomId) => getRedisRoom(roomId)),
+    );
+
+    const promises = batch.map(async (roomId, index) => {
+      let room;
+      const result = roomStrs[index];
+      if (result.status === "fulfilled" && result.value) {
+        room = result.value;
+      } else if (result.status === "rejected") {
+        console.error(`[DB Sync] Failed to fetch room ${roomId} from Redis:`, result.reason);
+      }
+
+      if (room) {
+        await forcePersistRoom(room, supabase).catch(() => {});
+        if (redisClient) {
+          await redisClient.zrem("pending_db_syncs", roomId).catch(() => {});
+        }
+      }
+    });
+
+    await Promise.allSettled(promises);
   }
 }
