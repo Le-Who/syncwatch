@@ -28,17 +28,19 @@ export default function RoomPage() {
     init,
     sendCommand,
     participantId,
-  } = useStore(useShallow((s) => ({
-    room: s.room,
-    isConnected: s.isConnected,
-    nickname: s.nickname,
-    setNickname: s.setNickname,
-    connect: s.connect,
-    disconnect: s.disconnect,
-    init: s.init,
-    sendCommand: s.sendCommand,
-    participantId: s.participantId,
-  })));
+  } = useStore(
+    useShallow((s) => ({
+      room: s.room,
+      isConnected: s.isConnected,
+      nickname: s.nickname,
+      setNickname: s.setNickname,
+      connect: s.connect,
+      disconnect: s.disconnect,
+      init: s.init,
+      sendCommand: s.sendCommand,
+      participantId: s.participantId,
+    })),
+  );
 
   const [isJoining, setIsJoining] = useState(true);
   const [tempName, setTempName] = useState("");
