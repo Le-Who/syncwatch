@@ -111,3 +111,84 @@ export function useLiveProgress({
 
   return progress;
 }
+
+interface LiveProgressIndicatorProps {
+  isActive: boolean;
+  basePosition: number;
+  baseTimestamp: number;
+  rate: number;
+  isPlaying: boolean;
+  duration: number;
+  lastPosition?: number;
+}
+
+/**
+ * ⚡ Bolt Optimization: Extracted LiveProgressIndicator to prevent O(N) re-renders
+ * of the 500-item playlist. This component isolates the interval-based progress
+ * updates to just the active progress bar.
+ */
+export function LiveProgressIndicator({
+  isActive,
+  basePosition,
+  baseTimestamp,
+  rate,
+  isPlaying,
+  duration,
+  lastPosition,
+}: LiveProgressIndicatorProps) {
+  // We only run the active progress hook if this item is actually active
+  if (isActive) {
+    return (
+      <ActiveIndicator
+        basePosition={basePosition}
+        baseTimestamp={baseTimestamp}
+        rate={rate}
+        isPlaying={isPlaying}
+        duration={duration}
+      />
+    );
+  }
+
+  const progress =
+    lastPosition && duration
+      ? Math.min((lastPosition / duration) * 100, 100)
+      : 0;
+
+  if (progress <= 0) return null;
+
+  return (
+    <div className="bg-theme-border/30 rounded-b-theme absolute right-0 bottom-0 left-0 h-[3px] overflow-hidden">
+      <div
+        className="bg-theme-muted/50 h-full transition-all duration-1000"
+        style={{ width: `${progress}%` }}
+      />
+    </div>
+  );
+}
+
+function ActiveIndicator({
+  basePosition,
+  baseTimestamp,
+  rate,
+  isPlaying,
+  duration,
+}: LivePositionProps) {
+  const liveProgress = useLiveProgress({
+    basePosition,
+    baseTimestamp,
+    rate,
+    isPlaying,
+    duration,
+  });
+
+  if (liveProgress <= 0) return null;
+
+  return (
+    <div className="bg-theme-border/30 rounded-b-theme absolute right-0 bottom-0 left-0 h-[3px] overflow-hidden">
+      <div
+        className="bg-theme-accent h-full shadow-[0_0_8px_var(--color-theme-accent)] transition-all duration-1000"
+        style={{ width: `${liveProgress}%` }}
+      />
+    </div>
+  );
+}

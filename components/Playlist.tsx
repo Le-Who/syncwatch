@@ -4,7 +4,7 @@
 import { useStore } from "@/lib/store";
 import { useShallow } from "zustand/react/shallow";
 import { formatTime } from "@/lib/utils";
-import { LivePosition } from "./LivePosition";
+import { LivePosition, LiveProgressIndicator } from "./LivePosition";
 import { Trash2, GripVertical, PlayCircle } from "lucide-react";
 import { motion, Reorder } from "motion/react";
 import { PlaylistSearchForm } from "./PlaylistSearchForm";
@@ -141,41 +141,15 @@ export default function Playlist() {
                 </div>
 
                 {/* Progress Bar inside card */}
-                {(() => {
-                  let progress = 0;
-                  if (room.currentMediaId === item.id) {
-                    const elapsed =
-                      room.playback.status === "playing"
-                        ? (Date.now() - room.playback.baseTimestamp) / 1000
-                        : 0;
-                    const currentPos =
-                      room.playback.basePosition + elapsed * room.playback.rate;
-                    progress = item.duration
-                      ? Math.min((currentPos / item.duration) * 100, 100)
-                      : 0;
-                  } else if (item.lastPosition && item.duration) {
-                    progress = Math.min(
-                      (item.lastPosition / item.duration) * 100,
-                      100,
-                    );
-                  }
-
-                  if (progress > 0) {
-                    return (
-                      <div className="bg-theme-border/30 rounded-b-theme absolute right-0 bottom-0 left-0 h-[3px] overflow-hidden">
-                        <div
-                          className={`h-full transition-all duration-1000 ${
-                            room.currentMediaId === item.id
-                              ? "bg-theme-accent shadow-[0_0_8px_var(--color-theme-accent)]"
-                              : "bg-theme-muted/50"
-                          }`}
-                          style={{ width: `${progress}%` }}
-                        />
-                      </div>
-                    );
-                  }
-                  return null;
-                })()}
+                <LiveProgressIndicator
+                  isActive={room.currentMediaId === item.id}
+                  basePosition={room.playback.basePosition}
+                  baseTimestamp={room.playback.baseTimestamp}
+                  rate={room.playback.rate}
+                  isPlaying={room.playback.status === "playing"}
+                  duration={item.duration}
+                  lastPosition={item.lastPosition}
+                />
 
                 {canEdit && (
                   <button
