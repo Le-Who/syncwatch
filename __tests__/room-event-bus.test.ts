@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { participant } from "./helpers/room-fixtures";
 import { RoomEventBus, type RoomEventEnvelope } from "../lib/room-event-bus";
 import { setupPubSubListeners } from "../lib/socket/pubsub";
+import { createEmptyRoom } from "../lib/room-handler";
 
 describe("RoomEventBus", () => {
   const joinedEvent = {
@@ -110,5 +111,39 @@ describe("RoomEventBus", () => {
 
     expect(subscriber.psubscribe).toHaveBeenCalledWith("room_events:*");
     expect(localEmit).toHaveBeenCalledWith("room-a", envelope.event);
+  });
+
+  it("keeps origin-socket exclusion local while delivering owner repair to every remote member", async () => {
+    const originEmit = vi.fn();
+    const remoteEmit = vi.fn();
+    const redisPublish = vi.fn().mockResolvedValue(1);
+    const originBus = new RoomEventBus(
+      originEmit,
+      { publish: redisPublish },
+      "node-a",
+    );
+    const remoteBus = new RoomEventBus(remoteEmit, null, "node-b");
+    const repairEvent = {
+      type: "room_state",
+      room: createEmptyRoom("room-a", "Room A"),
+      serverTime: 10,
+      excludeSocketId: "origin-joining-socket",
+    } as const;
+
+    await originBus.publish("room-a", repairEvent);
+    const envelope = JSON.parse(
+      redisPublish.mock.calls[0][1],
+    ) as RoomEventEnvelope;
+    remoteBus.handleRemote(envelope);
+
+    expect(originEmit).toHaveBeenCalledOnce();
+    expect(originEmit).toHaveBeenCalledWith("room-a", repairEvent);
+    expect(envelope.event).not.toHaveProperty("excludeSocketId");
+    expect(remoteEmit).toHaveBeenCalledOnce();
+    expect(remoteEmit).toHaveBeenCalledWith("room-a", {
+      type: "room_state",
+      room: repairEvent.room,
+      serverTime: repairEvent.serverTime,
+    });
   });
 });

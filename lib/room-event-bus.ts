@@ -51,10 +51,18 @@ export class RoomEventBus {
 
     if (!this.redisPublisher) return;
 
+    const remoteEvent: RoomEvent =
+      event.type === "room_state" && event.excludeSocketId
+        ? {
+            type: "room_state",
+            room: event.room,
+            serverTime: event.serverTime,
+          }
+        : event;
     const envelope: RoomEventEnvelope = {
       sourceNodeId: this.nodeId,
       roomId,
-      event,
+      event: remoteEvent,
     };
     await this.redisPublisher.publish(
       `room_events:${roomId}`,

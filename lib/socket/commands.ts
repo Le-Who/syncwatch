@@ -156,9 +156,14 @@ export function handleCommandEvents(
       let occRetries = 10;
       let finalRoomState = null;
       let stateChanged = false;
+      let committedUpgradeParticipantId: string | null = null;
+      const upgradeSourceParticipantId =
+        type === "upgrade_session" ? context.currentParticipantId : null;
 
       while (occRetries > 0) {
-        if (!context.currentParticipantId) {
+        const currentParticipantId =
+          upgradeSourceParticipantId ?? context.currentParticipantId;
+        if (!currentParticipantId) {
           socket.emit("error", {
             message: "Unauthorized command. No participant ID.",
           });
@@ -170,7 +175,7 @@ export function handleCommandEvents(
 
         const baseVersion = room.version;
         room.lastActivity = Date.now();
-        const participant = room.participants[context.currentParticipantId];
+        const participant = room.participants[currentParticipantId];
 
         if (!participant) {
           socket.emit("error", {
@@ -189,7 +194,7 @@ export function handleCommandEvents(
             -1,
             type,
             payload,
-            context.currentParticipantId,
+            currentParticipantId,
             participant.nickname,
           );
 
@@ -226,7 +231,7 @@ export function handleCommandEvents(
               room,
               type,
               payload,
-              context.currentParticipantId,
+              currentParticipantId,
               participant.nickname,
             );
 
@@ -275,6 +280,7 @@ export function handleCommandEvents(
         }
 
         if (type === "upgrade_session") {
+          let upgradeCandidateParticipantId: string | null = null;
           try {
             if (typeof payload.token !== "string")
               throw new Error("Missing token");
@@ -284,11 +290,10 @@ export function handleCommandEvents(
             );
             if (jwtPayload.participantId) {
               const newPid = jwtPayload.participantId as string;
-              const oldParticipant =
-                room.participants[context.currentParticipantId];
+              const oldParticipant = room.participants[currentParticipantId];
               room = upgradeParticipantIdentity(
                 room,
-                context.currentParticipantId,
+                currentParticipantId,
                 {
                   id: newPid,
                   nickname:
@@ -300,21 +305,19 @@ export function handleCommandEvents(
                 socket.id,
               );
 
-              socket.data.participantId = newPid;
-              context.currentParticipantId = newPid;
+              upgradeCandidateParticipantId = newPid;
               stateChanged = true;
-
-              socket.emit("session_upgraded", { participantId: newPid });
             }
           } catch (e) {
             socket.emit("error", {
               message: "Invalid session upgrade token",
             });
           }
-          if (stateChanged) {
+          if (upgradeCandidateParticipantId) {
             const success = await setRedisRoomCAS(roomId, room, baseVersion);
             if (success) {
               finalRoomState = room;
+              committedUpgradeParticipantId = upgradeCandidateParticipantId;
               break;
             }
             await new Promise((r) => setTimeout(r, 10 + Math.random() * 20));
@@ -330,7 +333,7 @@ export function handleCommandEvents(
           room,
           type,
           payload,
-          context.currentParticipantId,
+          currentParticipantId,
           participant.nickname,
         );
 
@@ -339,7 +342,7 @@ export function handleCommandEvents(
             room,
             type,
             payload,
-            context.currentParticipantId,
+            currentParticipantId,
           );
           if (message) {
             socket.emit("error", { message });
@@ -387,6 +390,13 @@ export function handleCommandEvents(
       }
 
       if (finalRoomState) {
+        if (committedUpgradeParticipantId) {
+          socket.data.participantId = committedUpgradeParticipantId;
+          context.currentParticipantId = committedUpgradeParticipantId;
+          socket.emit("session_upgraded", {
+            participantId: committedUpgradeParticipantId,
+          });
+        }
         const sanitizedRoom = sanitizeRoom(finalRoomState);
         const pClient = pubClient();
         if (pClient) {

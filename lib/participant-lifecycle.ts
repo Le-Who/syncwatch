@@ -133,10 +133,24 @@ function compareParticipantAge(left: Participant, right: Participant): number {
   return left.joinedAt - right.joinedAt || left.id.localeCompare(right.id);
 }
 
-function electOwner(participants: Participant[]): Participant | null {
-  const connected = participants.filter(
-    (participant) => participant.connection === "connected",
+function hasAuthoritativeConnection(participant: Participant): boolean {
+  return (
+    participant.connection === "connected" &&
+    (participant.connectionIds?.length ?? 0) > 0
   );
+}
+
+function isValidOwner(participant: Participant, now: number): boolean {
+  return (
+    participant.role === "owner" &&
+    (hasAuthoritativeConnection(participant) ||
+      (participant.connection !== "connected" &&
+        now - participant.lastSeen < PARTICIPANT_GRACE_MS))
+  );
+}
+
+function electOwner(participants: Participant[]): Participant | null {
+  const connected = participants.filter(hasAuthoritativeConnection);
   const currentOwner = connected
     .filter((participant) => participant.role === "owner")
     .sort(compareParticipantAge)[0];
@@ -156,21 +170,12 @@ function electOwner(participants: Participant[]): Participant | null {
 
 function ensureOwnerWhenConnected(room: RoomState, now: number): RoomState {
   const participantValues = Object.values(room.participants);
-  if (
-    !participantValues.some(
-      (participant) => participant.connection === "connected",
-    )
-  ) {
+  if (!participantValues.some(hasAuthoritativeConnection)) {
     return room;
   }
 
   const validOwner = participantValues
-    .filter(
-      (participant) =>
-        participant.role === "owner" &&
-        (participant.connection === "connected" ||
-          now - participant.lastSeen < PARTICIPANT_GRACE_MS),
-    )
+    .filter((participant) => isValidOwner(participant, now))
     .sort(compareParticipantAge)[0];
   const selectedOwner = validOwner ?? electOwner(participantValues);
   if (!selectedOwner) return room;
@@ -286,12 +291,7 @@ function selectOwnerAfterDeparture(
 ): Participant | null {
   if (departing.role !== "owner") {
     const validOwner = participants
-      .filter(
-        (participant) =>
-          participant.role === "owner" &&
-          (participant.connection === "connected" ||
-            now - participant.lastSeen < PARTICIPANT_GRACE_MS),
-      )
+      .filter((participant) => isValidOwner(participant, now))
       .sort(compareParticipantAge)[0];
     if (validOwner) return validOwner;
   }

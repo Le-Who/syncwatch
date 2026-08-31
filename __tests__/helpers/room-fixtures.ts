@@ -37,7 +37,10 @@ export function roomWithParticipants(
           : options.moderatorIds?.includes(id)
             ? "moderator"
             : "viewer";
-      return [id, participant(id, role, index)];
+      return [
+        id,
+        { ...participant(id, role, index), connectionIds: [`socket-${id}`] },
+      ];
     }),
   );
   room.leaderId = options.leaderId ?? null;

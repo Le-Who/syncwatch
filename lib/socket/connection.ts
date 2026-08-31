@@ -160,6 +160,7 @@ export function handleConnectionEvents(
           type: "room_state",
           room: sanitizedRoom,
           serverTime: Date.now(),
+          excludeSocketId: socket.id,
         })
         .catch((error) =>
           console.error("Failed publishing repaired owner state", error),

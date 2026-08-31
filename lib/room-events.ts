@@ -18,7 +18,12 @@ export interface CanonicalPlayback {
 }
 
 export type RoomEvent =
-  | { type: "room_state"; room: RoomState; serverTime: number }
+  | {
+      type: "room_state";
+      room: RoomState;
+      serverTime: number;
+      excludeSocketId?: string;
+    }
   | {
       type: "playback_updated";
       playback: CanonicalPlayback;
@@ -52,12 +57,16 @@ export function emitRoomEventToSocketIo(
   const room = io.to(roomId);
 
   switch (event.type) {
-    case "room_state":
-      room.emit("room_state", {
+    case "room_state": {
+      const recipients = event.excludeSocketId
+        ? room.except(event.excludeSocketId)
+        : room;
+      recipients.emit("room_state", {
         room: event.room,
         serverTime: event.serverTime,
       });
       return;
+    }
     case "playback_updated":
       room.emit("playback_updated", {
         playback: event.playback,

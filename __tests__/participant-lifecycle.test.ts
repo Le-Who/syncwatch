@@ -276,4 +276,55 @@ describe("participant lifecycle", () => {
       ),
     ).toHaveLength(1);
   });
+
+  it("ignores legacy connected ghosts with no authoritative connections when the real joiner needs an owner", () => {
+    const room = roomWithParticipants(5, {
+      ownerId: "missing-owner",
+      moderatorIds: ["p1", "p2"],
+    });
+    for (const participant of Object.values(room.participants)) {
+      participant.connection = "connected";
+      participant.connectionIds = [];
+    }
+
+    const joined = joinParticipant(
+      room,
+      participant("actual-joiner", "viewer", 10_000),
+      10_000,
+      "actual-live-socket",
+    );
+
+    expect(joined.participants["actual-joiner"]).toMatchObject({
+      role: "owner",
+      connectionIds: ["actual-live-socket"],
+    });
+    expect(joined.participants.p1.role).toBe("moderator");
+    expect(
+      Object.values(joined.participants).filter(({ role }) => role === "owner"),
+    ).toHaveLength(1);
+  });
+
+  it("protects a valid in-grace owner while another participant establishes liveness", () => {
+    const room = roomWithParticipants(3, { moderatorIds: ["p1"] });
+    const ownerInGrace = markParticipantDisconnected(room, "p0", 1_000);
+    ownerInGrace.participants.p1.connection = "connected";
+    ownerInGrace.participants.p1.connectionIds = [];
+
+    const joined = joinParticipant(
+      ownerInGrace,
+      participant("p2", "viewer", 15_999),
+      15_999,
+      "p2-live-socket",
+    );
+
+    expect(joined.participants.p0).toMatchObject({
+      role: "owner",
+      connection: "reconnecting",
+      connectionIds: [],
+    });
+    expect(joined.participants.p2.role).toBe("viewer");
+    expect(
+      Object.values(joined.participants).filter(({ role }) => role === "owner"),
+    ).toHaveLength(1);
+  });
 });

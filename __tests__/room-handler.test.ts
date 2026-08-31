@@ -1,7 +1,15 @@
 /**
  * @vitest-environment node
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+  afterEach,
+  type Mock,
+} from "vitest";
 import {
   createEmptyRoom,
   normalizeRoomState,
@@ -53,7 +61,13 @@ describe("Room Handler Security & Auth Boundary", () => {
   let mockIo: Partial<Server>;
   let mockSocket: any;
   let socketEventHandlers: Record<string, Function>;
-  let roomEmit: ReturnType<typeof vi.fn>;
+  let roomEmit: Mock<(event: string, payload: any) => void>;
+  let joiningSocketRoomEmit: Mock<(event: string, payload: any) => void>;
+  let roomExcept: Mock<
+    (excludedSocketId: string) => {
+      emit: (event: string, payload: any) => void;
+    }
+  >;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -62,7 +76,24 @@ describe("Room Handler Security & Auth Boundary", () => {
     socketEventHandlers = {};
 
     roomEmit = vi.fn();
-    mockIo = { to: vi.fn().mockReturnValue({ emit: roomEmit }) };
+    joiningSocketRoomEmit = vi.fn();
+    roomExcept = vi.fn((excludedSocketId: string) => ({
+      emit: (event: string, payload: any) => {
+        roomEmit(event, payload);
+        if (excludedSocketId !== "mock-socket-id") {
+          joiningSocketRoomEmit(event, payload);
+        }
+      },
+    }));
+    mockIo = {
+      to: vi.fn().mockReturnValue({
+        emit: (event: string, payload: any) => {
+          roomEmit(event, payload);
+          joiningSocketRoomEmit(event, payload);
+        },
+        except: roomExcept,
+      }),
+    };
 
     mockSocket = {
       id: "mock-socket-id",
@@ -219,6 +250,217 @@ describe("Room Handler Security & Auth Boundary", () => {
     ).toBeUndefined();
   });
 
+  it("commits an existing-target upgrade after one CAS conflict before changing socket identity once", async () => {
+    const roomId = "upgrade-transaction-retry-room";
+    const sourceId = "fallback-transaction-source";
+    const targetId = "account-transaction-target";
+    let storedRoom = createEmptyRoom(roomId, "Transactional Upgrade Room");
+    storedRoom.participants[sourceId] = {
+      id: sourceId,
+      nickname: "Source",
+      role: "owner",
+      joinedAt: 1,
+      lastSeen: 1,
+      connection: "connected",
+      playbackHealth: "idle",
+      readyMediaId: null,
+    };
+    storedRoom.participants[targetId] = {
+      id: targetId,
+      nickname: "Existing Target",
+      role: "viewer",
+      joinedAt: 2,
+      lastSeen: 2,
+      connection: "connected",
+      connectionIds: [],
+      playbackHealth: "idle",
+      readyMediaId: null,
+    };
+    (redisActor.getRedisRoom as any).mockImplementation(async () =>
+      structuredClone(storedRoom),
+    );
+    (redisActor.setRedisRoomCAS as any).mockImplementation(
+      async (_roomId: string, nextRoom: any) => {
+        storedRoom = structuredClone(nextRoom);
+        return true;
+      },
+    );
+    mockSocket.data.participantId = sourceId;
+    await socketEventHandlers.join_room({ roomId, nickname: "Source" });
+
+    const candidates: any[] = [];
+    let commandCasCalls = 0;
+    (redisActor.setRedisRoomCAS as any).mockImplementation(
+      async (_roomId: string, nextRoom: any) => {
+        commandCasCalls++;
+        candidates.push(structuredClone(nextRoom));
+        if (commandCasCalls === 1) return false;
+        storedRoom = structuredClone(nextRoom);
+        return true;
+      },
+    );
+    mockSocket.emit.mockClear();
+
+    await socketEventHandlers.command({
+      roomId,
+      type: "upgrade_session",
+      payload: { token: await upgradeToken(targetId, "Committed Target") },
+      sequence: 2,
+    });
+
+    expect(commandCasCalls).toBe(2);
+    expect(candidates).toHaveLength(2);
+    for (const candidate of candidates) {
+      expect(candidate.participants[sourceId]).toBeUndefined();
+      expect(candidate.participants[targetId].connectionIds).toEqual([
+        mockSocket.id,
+      ]);
+      expect(
+        Object.values(candidate.participants).flatMap(
+          (participant: any) => participant.connectionIds ?? [],
+        ),
+      ).toEqual([mockSocket.id]);
+    }
+    expect(storedRoom.participants[sourceId]).toBeUndefined();
+    expect(storedRoom.participants[targetId]).toMatchObject({
+      nickname: "Committed Target",
+      role: "owner",
+      connectionIds: [mockSocket.id],
+    });
+    expect(mockSocket.data.participantId).toBe(targetId);
+    expect(
+      mockSocket.emit.mock.calls.filter(
+        ([event]: any[]) => event === "session_upgraded",
+      ),
+    ).toEqual([["session_upgraded", { participantId: targetId }]]);
+
+    vi.useFakeTimers();
+    socketEventHandlers.disconnect();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(storedRoom.participants[targetId].connection).toBe("reconnecting");
+    await vi.advanceTimersByTimeAsync(PARTICIPANT_GRACE_MS);
+    expect(storedRoom.participants[targetId]).toBeUndefined();
+    expect(
+      roomEmit.mock.calls.filter(
+        ([event, payload]) =>
+          event === "participant_left" && payload.participantId === targetId,
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("keeps the source identity authoritative when every upgrade CAS attempt conflicts", async () => {
+    const roomId = "upgrade-transaction-failure-room";
+    const sourceId = "fallback-failed-source";
+    const targetId = "account-never-committed";
+    let storedRoom = createEmptyRoom(roomId, "Failed Upgrade Room");
+    storedRoom.participants[sourceId] = {
+      id: sourceId,
+      nickname: "Source",
+      role: "owner",
+      joinedAt: 1,
+      lastSeen: 1,
+      connection: "connected",
+      playbackHealth: "idle",
+      readyMediaId: null,
+    };
+    (redisActor.getRedisRoom as any).mockImplementation(async () =>
+      structuredClone(storedRoom),
+    );
+    (redisActor.setRedisRoomCAS as any).mockImplementation(
+      async (_roomId: string, nextRoom: any) => {
+        storedRoom = structuredClone(nextRoom);
+        return true;
+      },
+    );
+    mockSocket.data.participantId = sourceId;
+    await socketEventHandlers.join_room({ roomId, nickname: "Source" });
+
+    (redisActor.setRedisRoomCAS as any).mockResolvedValue(false);
+    (redisActor.setRedisRoomCAS as any).mockClear();
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    mockSocket.emit.mockClear();
+    await socketEventHandlers.command({
+      roomId,
+      type: "upgrade_session",
+      payload: { token: await upgradeToken(targetId, "Never Committed") },
+      sequence: 2,
+    });
+
+    expect(redisActor.setRedisRoomCAS).toHaveBeenCalledTimes(10);
+    expect(mockSocket.data.participantId).toBe(sourceId);
+    expect(storedRoom.participants[sourceId]).toMatchObject({
+      role: "owner",
+      connection: "connected",
+      connectionIds: [mockSocket.id],
+    });
+    expect(storedRoom.participants[targetId]).toBeUndefined();
+    expect(
+      mockSocket.emit.mock.calls.filter(
+        ([event]: any[]) => event === "session_upgraded",
+      ),
+    ).toHaveLength(0);
+    expect(mockSocket.emit).toHaveBeenCalledWith("error", {
+      message: "System busy acquiring room lock. Try again.",
+    });
+  });
+
+  it("retries a same-identity upgrade without duplicating ownership or success events", async () => {
+    const roomId = "upgrade-same-identity-room";
+    const participantId = "same-identity";
+    let storedRoom = createEmptyRoom(roomId, "Same Identity Room");
+    storedRoom.participants[participantId] = {
+      id: participantId,
+      nickname: "Before",
+      role: "owner",
+      joinedAt: 1,
+      lastSeen: 1,
+      connection: "connected",
+      playbackHealth: "idle",
+      readyMediaId: null,
+    };
+    (redisActor.getRedisRoom as any).mockImplementation(async () =>
+      structuredClone(storedRoom),
+    );
+    (redisActor.setRedisRoomCAS as any).mockImplementation(
+      async (_roomId: string, nextRoom: any) => {
+        storedRoom = structuredClone(nextRoom);
+        return true;
+      },
+    );
+    mockSocket.data.participantId = participantId;
+    await socketEventHandlers.join_room({ roomId, nickname: "Before" });
+
+    let commandCasCalls = 0;
+    (redisActor.setRedisRoomCAS as any).mockImplementation(
+      async (_roomId: string, nextRoom: any) => {
+        commandCasCalls++;
+        if (commandCasCalls === 1) return false;
+        storedRoom = structuredClone(nextRoom);
+        return true;
+      },
+    );
+    mockSocket.emit.mockClear();
+    await socketEventHandlers.command({
+      roomId,
+      type: "upgrade_session",
+      payload: { token: await upgradeToken(participantId, "After") },
+      sequence: 2,
+    });
+
+    expect(commandCasCalls).toBe(2);
+    expect(Object.keys(storedRoom.participants)).toEqual([participantId]);
+    expect(storedRoom.participants[participantId]).toMatchObject({
+      nickname: "After",
+      connectionIds: [mockSocket.id],
+    });
+    expect(mockSocket.data.participantId).toBe(participantId);
+    expect(
+      mockSocket.emit.mock.calls.filter(
+        ([event]: any[]) => event === "session_upgraded",
+      ),
+    ).toEqual([["session_upgraded", { participantId }]]);
+  });
+
   it("broadcasts the repaired owner when joining an ownerless room promotes another participant", async () => {
     const roomId = "ownerless-recovery-room";
     let storedRoom = createEmptyRoom(roomId, "Ownerless Room");
@@ -255,6 +497,20 @@ describe("Room Handler Security & Auth Boundary", () => {
       Object.values(repairedSnapshot.participants).filter(
         (participant: any) => participant.role === "owner",
       ),
+    ).toHaveLength(1);
+    expect(roomExcept).toHaveBeenCalledWith(mockSocket.id);
+    expect(
+      mockSocket.emit.mock.calls.filter(
+        ([event]: any[]) => event === "room_state",
+      ),
+    ).toHaveLength(1);
+    expect(
+      joiningSocketRoomEmit.mock.calls.filter(
+        ([event]: any[]) => event === "room_state",
+      ),
+    ).toHaveLength(0);
+    expect(
+      roomEmit.mock.calls.filter(([event]) => event === "room_state"),
     ).toHaveLength(1);
   });
 
@@ -324,6 +580,7 @@ describe("Room Handler Security & Auth Boundary", () => {
       joinedAt: 0,
       lastSeen: Date.now(),
       connection: "connected",
+      connectionIds: [mockSocket.id],
       playbackHealth: "idle",
       readyMediaId: null,
     };
@@ -377,6 +634,7 @@ describe("Room Handler Security & Auth Boundary", () => {
       joinedAt: 0,
       lastSeen: Date.now(),
       connection: "connected",
+      connectionIds: ["leader-socket"],
       playbackHealth: "idle",
       readyMediaId: null,
     };
@@ -387,6 +645,7 @@ describe("Room Handler Security & Auth Boundary", () => {
       joinedAt: 0,
       lastSeen: Date.now(),
       connection: "connected",
+      connectionIds: [mockSocket.id],
       playbackHealth: "idle",
       readyMediaId: null,
     };
