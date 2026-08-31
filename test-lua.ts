@@ -12,7 +12,11 @@ async function runTest() {
     id: "user-1",
     role: "owner",
     nickname: "Alice",
+    joinedAt: 0,
     lastSeen: Date.now(),
+    connection: "connected",
+    playbackHealth: "idle",
+    readyMediaId: null,
   };
   room.settings.controlMode = "open";
   room.playback.status = "paused";

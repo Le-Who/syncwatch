@@ -1,7 +1,7 @@
 import { SupabaseClient } from "@supabase/supabase-js";
 import { getRedisClient } from "./redis-rate-limit";
 import { getRedisRoom } from "./redis-actor";
-import { RoomState } from "./types";
+import { normalizeRoomState, RoomState } from "./types";
 import { v5 as uuidv5 } from "uuid";
 
 const SYNCWATCH_NAMESPACE = "1b671a64-40d5-491e-99b0-da01ff1f3341";
@@ -96,11 +96,7 @@ const forcePersistRoom = async (
         })),
         playback: {
           mediaItemId: room.currentMediaId,
-          status: ["playing", "paused", "buffering", "ended"].includes(
-            room.playback.status,
-          )
-            ? room.playback.status
-            : "paused",
+          status: room.playback.status,
           basePosition: room.playback.basePosition,
           baseTimestamp: room.playback.baseTimestamp,
           rate: room.playback.rate,
@@ -156,7 +152,7 @@ export async function loadRoomFromDB(
       ...dbSettings
     } = dbState.settings || {};
 
-    return {
+    return normalizeRoomState({
       id: roomId,
       name: dbState.name || `Room ${roomId}`,
       settings: {
@@ -184,7 +180,7 @@ export async function loadRoomFromDB(
       version: dbState.version || 1,
       sequence: 1,
       lastActivity: Date.now(),
-    };
+    });
   } catch (err) {
     console.error(`Failed to load room ${roomId} from DB:`, err);
     return null;

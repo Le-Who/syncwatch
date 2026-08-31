@@ -11,7 +11,7 @@
  */
 
 import { randomUUID } from "crypto";
-import { PlaylistItem, RoomState } from "./types";
+import { LegacyPlaybackStatus, PlaylistItem, RoomState } from "./types";
 import { getParticipantPermissions } from "./permissions";
 
 export const FAST_COMMAND_TYPES = [
@@ -24,7 +24,11 @@ export const FAST_COMMAND_TYPES = [
 ] as const;
 
 export type FastCommandType = (typeof FAST_COMMAND_TYPES)[number];
-export type FastCommandResult = "changed" | "unchanged" | "unauthorized" | "invalid";
+export type FastCommandResult =
+  | "changed"
+  | "unchanged"
+  | "unauthorized"
+  | "invalid";
 
 export function isFastCommand(type: string): type is FastCommandType {
   return (FAST_COMMAND_TYPES as readonly string[]).includes(type);
@@ -33,7 +37,11 @@ export function isFastCommand(type: string): type is FastCommandType {
 // ─── Helpers ───────────────────────────────────────────────────────────
 
 /** Clamp start position: if within 5s of end, reset to 0. */
-function clampStart(item: { lastPosition?: number; startPosition?: number; duration: number }): number {
+function clampStart(item: {
+  lastPosition?: number;
+  startPosition?: number;
+  duration: number;
+}): number {
   let start = item.lastPosition || item.startPosition || 0;
   if (item.duration > 0 && start >= item.duration - 5) {
     start = 0;
@@ -84,14 +92,19 @@ export function applyFastCommand(
       return "invalid";
     }
 
-    if (type === "play" && room.playback.status === "playing" && !payload.forceSeek) {
+    if (
+      type === "play" &&
+      room.playback.status === "playing" &&
+      !payload.forceSeek
+    ) {
       return "unchanged";
     }
 
     if (type === "play") {
       room.playback.status = "playing";
     } else if (type === "buffering") {
-      room.playback.status = "buffering";
+      // Legacy wire mutation retained until the playback-health migration.
+      (room.playback as { status: LegacyPlaybackStatus }).status = "buffering";
     }
     room.playback.basePosition = payload.position;
     room.playback.baseTimestamp = now;
@@ -197,7 +210,9 @@ function insertPlaylistItems(
     return;
   }
 
-  const currentIndex = room.playlist.findIndex((i) => i.id === room.currentMediaId);
+  const currentIndex = room.playlist.findIndex(
+    (i) => i.id === room.currentMediaId,
+  );
   if (currentIndex === -1) {
     room.playlist.push(...items);
     return;
@@ -205,7 +220,10 @@ function insertPlaylistItems(
   room.playlist.splice(currentIndex + 1, 0, ...items);
 }
 
-function setInitialMediaIfNeeded(room: RoomState, firstItem: PlaylistItem): void {
+function setInitialMediaIfNeeded(
+  room: RoomState,
+  firstItem: PlaylistItem,
+): void {
   if (room.currentMediaId) return;
   room.currentMediaId = firstItem.id;
   room.playback.basePosition = firstItem.startPosition || 0;
@@ -231,7 +249,11 @@ export function applyAddItem(
 
   if (room.playlist.some((item) => item.url === payload.url)) return false;
 
-  const newItem = createPlaylistItem(payload, participantId, participantNickname);
+  const newItem = createPlaylistItem(
+    payload,
+    participantId,
+    participantNickname,
+  );
   insertPlaylistItems(
     room,
     [newItem],
@@ -308,8 +330,7 @@ export function applyRemoveItem(
   if (room.playlist.length >= initialLength) return false;
 
   if (room.currentMediaId === payload.itemId) {
-    room.currentMediaId =
-      room.playlist.length > 0 ? room.playlist[0].id : null;
+    room.currentMediaId = room.playlist.length > 0 ? room.playlist[0].id : null;
     room.playback.status =
       room.playback.status === "playing" ? "playing" : "paused";
     const newHead = room.currentMediaId
@@ -355,7 +376,10 @@ export function applySetMedia(
   participantId: string,
   participantNickname: string,
 ): boolean {
-  const { canControlPlayback, canEditPlaylist } = getParticipantPermissions(room, participantId);
+  const { canControlPlayback, canEditPlaylist } = getParticipantPermissions(
+    room,
+    participantId,
+  );
   if (!canControlPlayback && !canEditPlaylist) return false;
 
   snapshotActiveItemPosition(room);
@@ -500,10 +524,7 @@ export function applyVideoEnded(
   }
 }
 
-export function applyUpdateDuration(
-  room: RoomState,
-  payload: any,
-): boolean {
+export function applyUpdateDuration(room: RoomState, payload: any): boolean {
   const { mediaId, duration: newDuration } = payload;
   const mediaItem = room.playlist.find((i) => i.id === mediaId);
   if (mediaItem && typeof newDuration === "number" && newDuration > 0) {
@@ -521,14 +542,22 @@ export function applySetNextItem(
   const { canEditPlaylist } = getParticipantPermissions(room, participantId);
   if (!canEditPlaylist || !room.currentMediaId) return false;
 
-  const currentIndex = room.playlist.findIndex((i) => i.id === room.currentMediaId);
+  const currentIndex = room.playlist.findIndex(
+    (i) => i.id === room.currentMediaId,
+  );
   const targetIndex = room.playlist.findIndex((i) => i.id === payload.itemId);
-  if (currentIndex === -1 || targetIndex === -1 || currentIndex === targetIndex) {
+  if (
+    currentIndex === -1 ||
+    targetIndex === -1 ||
+    currentIndex === targetIndex
+  ) {
     return false;
   }
 
   const [target] = room.playlist.splice(targetIndex, 1);
-  const newCurrentIndex = room.playlist.findIndex((i) => i.id === room.currentMediaId);
+  const newCurrentIndex = room.playlist.findIndex(
+    (i) => i.id === room.currentMediaId,
+  );
   room.playlist.splice(newCurrentIndex + 1, 0, target);
   return true;
 }
@@ -599,7 +628,8 @@ export function applyTransferOwner(
 ): boolean {
   const owner = room.participants[participantId];
   const target = room.participants[payload.targetParticipantId];
-  if (owner?.role !== "owner" || !target || target.id === owner.id) return false;
+  if (owner?.role !== "owner" || !target || target.id === owner.id)
+    return false;
 
   owner.role = "moderator";
   target.role = "owner";

@@ -24,12 +24,52 @@ function item(id: string, title: string): PlaylistItem {
 function roomFixture(): RoomState {
   const room = createEmptyRoom("parity-room", "Parity Room");
   room.participants = {
-    owner: { id: "owner", nickname: "Owner", role: "owner", lastSeen: 1 },
-    mod: { id: "mod", nickname: "Mod", role: "moderator", lastSeen: 1 },
-    viewer: { id: "viewer", nickname: "Viewer", role: "viewer", lastSeen: 1 },
-    other: { id: "other", nickname: "Other", role: "viewer", lastSeen: 1 },
+    owner: {
+      id: "owner",
+      nickname: "Owner",
+      role: "owner",
+      joinedAt: 1,
+      lastSeen: 1,
+      connection: "connected",
+      playbackHealth: "idle",
+      readyMediaId: null,
+    },
+    mod: {
+      id: "mod",
+      nickname: "Mod",
+      role: "moderator",
+      joinedAt: 1,
+      lastSeen: 1,
+      connection: "connected",
+      playbackHealth: "idle",
+      readyMediaId: null,
+    },
+    viewer: {
+      id: "viewer",
+      nickname: "Viewer",
+      role: "viewer",
+      joinedAt: 1,
+      lastSeen: 1,
+      connection: "connected",
+      playbackHealth: "idle",
+      readyMediaId: null,
+    },
+    other: {
+      id: "other",
+      nickname: "Other",
+      role: "viewer",
+      joinedAt: 1,
+      lastSeen: 1,
+      connection: "connected",
+      playbackHealth: "idle",
+      readyMediaId: null,
+    },
   };
-  room.playlist = [item(ids.one, "One"), item(ids.two, "Two"), item(ids.three, "Three")];
+  room.playlist = [
+    item(ids.one, "One"),
+    item(ids.two, "Two"),
+    item(ids.three, "Three"),
+  ];
   room.currentMediaId = ids.one;
   room.playback = {
     status: "playing",
@@ -52,8 +92,16 @@ describe("SyncTube parity room mutations", () => {
       {
         insertMode: "next",
         items: [
-          { url: "https://example.com/new-a.mp4", title: "New A", provider: "direct" },
-          { url: "https://example.com/new-b.mp4", title: "New B", provider: "direct" },
+          {
+            url: "https://example.com/new-a.mp4",
+            title: "New A",
+            provider: "direct",
+          },
+          {
+            url: "https://example.com/new-b.mp4",
+            title: "New B",
+            provider: "direct",
+          },
         ],
       },
       "viewer",
@@ -121,7 +169,11 @@ describe("SyncTube parity room mutations", () => {
 
     expect(changed).toBe(true);
     expect(room.currentMediaId).toBe(ids.one);
-    expect(room.playlist.map((i) => i.id)).toEqual([ids.one, ids.three, ids.two]);
+    expect(room.playlist.map((i) => i.id)).toEqual([
+      ids.one,
+      ids.three,
+      ids.two,
+    ]);
   });
 
   it("toggles temporary queue state", () => {
@@ -163,9 +215,9 @@ describe("SyncTube parity room mutations", () => {
     ).toBe(true);
     expect(room.leaderId).toBe("viewer");
 
-    expect(
-      applySlowCommand(room, "request_leader", {}, "other", "Other"),
-    ).toBe(false);
+    expect(applySlowCommand(room, "request_leader", {}, "other", "Other")).toBe(
+      false,
+    );
     expect(room.leaderId).toBe("viewer");
   });
 
@@ -175,13 +227,7 @@ describe("SyncTube parity room mutations", () => {
     room.playback.basePosition = 90;
 
     expect(
-      applySlowCommand(
-        room,
-        "rewind",
-        { seconds: -30 },
-        "viewer",
-        "Viewer",
-      ),
+      applySlowCommand(room, "rewind", { seconds: -30 }, "viewer", "Viewer"),
     ).toBe(true);
     expect(room.playback.basePosition).toBe(60);
     expect(room.playback.updatedBy).toBe("Viewer");
@@ -201,7 +247,13 @@ describe("SyncTube parity room mutations", () => {
 
     room.leaderId = "viewer";
     expect(
-      applyFastCommand(room, "play", { position: 44, forceSeek: true }, "other", "Other"),
+      applyFastCommand(
+        room,
+        "play",
+        { position: 44, forceSeek: true },
+        "other",
+        "Other",
+      ),
     ).toBe("unauthorized");
     expect(room.playback.basePosition).toBe(12);
 
@@ -211,9 +263,9 @@ describe("SyncTube parity room mutations", () => {
     expect(room.playback.status).toBe("paused");
     expect(room.playback.basePosition).toBe(20);
 
-    expect(
-      applyFastCommand(room, "seek", { position: 33 }, "mod", "Mod"),
-    ).toBe("changed");
+    expect(applyFastCommand(room, "seek", { position: 33 }, "mod", "Mod")).toBe(
+      "changed",
+    );
     expect(room.playback.status).toBe("paused");
     expect(room.playback.basePosition).toBe(33);
     expect(room.playback.updatedBy).toBe("Mod");
@@ -226,35 +278,17 @@ describe("SyncTube parity room mutations", () => {
     room.playback.basePosition = 90;
 
     expect(
-      applySlowCommand(
-        room,
-        "rewind",
-        { seconds: -30 },
-        "other",
-        "Other",
-      ),
+      applySlowCommand(room, "rewind", { seconds: -30 }, "other", "Other"),
     ).toBe(false);
     expect(room.playback.basePosition).toBe(90);
 
     expect(
-      applySlowCommand(
-        room,
-        "rewind",
-        { seconds: -30 },
-        "viewer",
-        "Viewer",
-      ),
+      applySlowCommand(room, "rewind", { seconds: -30 }, "viewer", "Viewer"),
     ).toBe(true);
     expect(room.playback.basePosition).toBe(60);
 
     expect(
-      applySlowCommand(
-        room,
-        "rewind",
-        { seconds: 10 },
-        "mod",
-        "Mod",
-      ),
+      applySlowCommand(room, "rewind", { seconds: 10 }, "mod", "Mod"),
     ).toBe(true);
     expect(room.playback.basePosition).toBe(70);
   });
@@ -322,37 +356,23 @@ describe("SyncTube parity room mutations", () => {
     room.playback.basePosition = 90;
 
     expect(
-      applySlowCommand(
-        room,
-        "rewind",
-        { seconds: -30 },
-        "viewer",
-        "Viewer",
-      ),
+      applySlowCommand(room, "rewind", { seconds: -30 }, "viewer", "Viewer"),
     ).toBe(true);
     expect(room.playback.basePosition).toBe(60);
 
     room.playback.basePosition = 90;
 
     expect(
-      applySlowCommand(
-        room,
-        "rewind",
-        { seconds: -30 },
-        "mod",
-        "Mod",
-      ),
+      applySlowCommand(room, "rewind", { seconds: -30 }, "mod", "Mod"),
     ).toBe(true);
     expect(room.playback.basePosition).toBe(60);
 
-    expect(
-      applySlowCommand(room, "flashback", {}, "viewer", "Viewer"),
-    ).toBe(true);
+    expect(applySlowCommand(room, "flashback", {}, "viewer", "Viewer")).toBe(
+      true,
+    );
     expect(room.playback.basePosition).toBe(90);
 
-    expect(
-      applySlowCommand(room, "flashback", {}, "mod", "Mod"),
-    ).toBe(true);
+    expect(applySlowCommand(room, "flashback", {}, "mod", "Mod")).toBe(true);
     expect(room.playback.basePosition).toBe(60);
   });
 
@@ -371,13 +391,7 @@ describe("SyncTube parity room mutations", () => {
     expect(room.currentMediaId).toBe(ids.two);
 
     expect(
-      applySlowCommand(
-        room,
-        "set_media",
-        { itemId: ids.three },
-        "mod",
-        "Mod",
-      ),
+      applySlowCommand(room, "set_media", { itemId: ids.three }, "mod", "Mod"),
     ).toBe(true);
     expect(room.currentMediaId).toBe(ids.three);
   });

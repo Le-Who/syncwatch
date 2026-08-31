@@ -24,7 +24,7 @@ function useEventCallback<Args extends unknown[], Return>(
 }
 import fscreen from "fscreen";
 import { calculateDrift } from "@/lib/utils";
-import { PlayerMethods } from "@/lib/types";
+import { LegacyPlaybackStatus, PlayerMethods } from "@/lib/types";
 import { usePlayerShortcuts } from "@/hooks/usePlayerShortcuts";
 import { useFlashback } from "@/hooks/useFlashback";
 import { usePlaybackSync } from "@/hooks/usePlaybackSync";
@@ -179,10 +179,13 @@ export default function Player() {
   }, [currentMedia?.provider]);
 
   const providerName = currentMedia?.provider?.toLowerCase() || "";
-  const usesNativeProviderControls = ["youtube", "twitch"].includes(providerName);
+  const usesNativeProviderControls = ["youtube", "twitch"].includes(
+    providerName,
+  );
 
   const handleNativeVolumeChange = useEventCallback((event: any) => {
-    const target = event?.currentTarget || event?.target || realPlayerRef.current;
+    const target =
+      event?.currentTarget || event?.target || realPlayerRef.current;
     if (!target) return;
 
     if (typeof target.volume === "number" && Number.isFinite(target.volume)) {
@@ -284,36 +287,39 @@ export default function Player() {
   // Removed ResizeObserver effect
 
   // In strict server state, we don't emit commands from native events
-  const emitCommand = useCallback((type: string, payload: any) => {
-    // BACKGROUND TAB FIX: Block false-positive pause/seek events from throttled tabs
-    if (
-      !isDocumentVisibleRef.current &&
-      payload?.fromNative &&
-      ["play", "pause", "seek", "buffering"].includes(type)
-    ) {
-      return;
-    }
-    // Respect existing nonce if provided (e.g. from usePlaybackSync sync_correction),
-    // otherwise generate a fresh one for UI-driven actions.
-    const nonce = payload?.nonce || crypto.randomUUID();
+  const emitCommand = useCallback(
+    (type: string, payload: any) => {
+      // BACKGROUND TAB FIX: Block false-positive pause/seek events from throttled tabs
+      if (
+        !isDocumentVisibleRef.current &&
+        payload?.fromNative &&
+        ["play", "pause", "seek", "buffering"].includes(type)
+      ) {
+        return;
+      }
+      // Respect existing nonce if provided (e.g. from usePlaybackSync sync_correction),
+      // otherwise generate a fresh one for UI-driven actions.
+      const nonce = payload?.nonce || crypto.randomUUID();
 
-    // Normalize command types to playback statuses for getExpectedStatus comparisons
-    // ("play" → "playing", "pause" → "paused") so guards like
-    // `expectedStatus !== "playing"` work correctly.
-    const statusMap: Record<string, string> = {
-      play: "playing",
-      pause: "paused",
-      seek: "playing",
-      buffering: "buffering",
-      sync_correction: "playing",
-    };
-    intentManager.markCommandEmitted(
-      statusMap[type] || type,
-      payload?.position,
-      nonce,
-    );
-    sendCommand(type, { ...payload, nonce });
-  }, [intentManager, sendCommand]);
+      // Normalize command types to playback statuses for getExpectedStatus comparisons
+      // ("play" → "playing", "pause" → "paused") so guards like
+      // `expectedStatus !== "playing"` work correctly.
+      const statusMap: Record<string, string> = {
+        play: "playing",
+        pause: "paused",
+        seek: "playing",
+        buffering: "buffering",
+        sync_correction: "playing",
+      };
+      intentManager.markCommandEmitted(
+        statusMap[type] || type,
+        payload?.position,
+        nonce,
+      );
+      sendCommand(type, { ...payload, nonce });
+    },
+    [intentManager, sendCommand],
+  );
 
   // P4 Fix: Capture join time for clock sync grace period
   const [joinedAt] = useState(() => Date.now());
@@ -449,7 +455,12 @@ export default function Player() {
 
   useEffect(() => {
     if (!isReady || providerName !== "twitch") return;
-    applyTwitchEventProxy(playerRef, realPlayerRef, handleNativePlay, handleNativePause);
+    applyTwitchEventProxy(
+      playerRef,
+      realPlayerRef,
+      handleNativePlay,
+      handleNativePause,
+    );
   }, [
     isReady,
     providerName,
@@ -573,14 +584,16 @@ export default function Player() {
 
   // formatTime is now imported from @/lib/utils
 
-  const nextItem = useStore(useShallow((s) => {
-    if (!s.room || !currentMediaId) return null;
-    const idx = s.room.playlist.findIndex((i) => i.id === currentMediaId);
-    if (idx === -1) return null;
-    let n = s.room.playlist[idx + 1];
-    if (!n && s.room.settings.looping) n = s.room.playlist[0];
-    return n;
-  }));
+  const nextItem = useStore(
+    useShallow((s) => {
+      if (!s.room || !currentMediaId) return null;
+      const idx = s.room.playlist.findIndex((i) => i.id === currentMediaId);
+      if (idx === -1) return null;
+      let n = s.room.playlist[idx + 1];
+      if (!n && s.room.settings.looping) n = s.room.playlist[0];
+      return n;
+    }),
+  );
 
   const [upNextState, setUpNextState] = useState({ show: false, remaining: 0 });
 
@@ -654,11 +667,17 @@ export default function Player() {
               muted={userJoined ? muted : true}
               onVolumeChange={handleNativeVolumeChange}
               onLoadedMetadata={() =>
-                playerEvents.handleReady(playerRef.current, providerName === "twitch")
+                playerEvents.handleReady(
+                  playerRef.current,
+                  providerName === "twitch",
+                )
               }
               onError={playerEvents.handleError}
               onSeeked={() => {
-                playerEvents.handleSeek(getAccurateTime(), providerName === "twitch");
+                playerEvents.handleSeek(
+                  getAccurateTime(),
+                  providerName === "twitch",
+                );
                 playerEvents.handleSeeked();
               }}
               onDurationChange={playerEvents.handleDurationChange}
@@ -731,10 +750,15 @@ export default function Player() {
         {error && <ErrorOverlay message={error} />}
 
         {/* Buffering Overlay - Yield to explicit Pause state */}
-        {(isBuffering || playback?.status === "buffering") &&
+        {(isBuffering ||
+          (playback?.status as LegacyPlaybackStatus | undefined) ===
+            "buffering") &&
           playing &&
           !error && (
-            <BufferingOverlay playback={playback} isLocalBuffering={isBuffering} />
+            <BufferingOverlay
+              playback={playback}
+              isLocalBuffering={isBuffering}
+            />
           )}
 
         {/* PAUSED Overlay */}
@@ -783,4 +807,3 @@ export default function Player() {
     </div>
   );
 }
-

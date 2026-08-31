@@ -1,5 +1,19 @@
 import { z } from "zod";
 
+export const canonicalPlaybackStatusSchema = z.enum([
+  "playing",
+  "paused",
+  "ended",
+]);
+
+/** Accepts legacy persisted and wire state until buffering mutations are removed. */
+export const legacyPlaybackStatusSchema = z.enum([
+  "playing",
+  "paused",
+  "buffering",
+  "ended",
+]);
+
 export const commandSchema = z.discriminatedUnion("type", [
   // Fast Path
   z.object({

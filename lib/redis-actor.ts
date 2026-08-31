@@ -1,4 +1,5 @@
 import { getRedisClient } from "./redis-rate-limit";
+import { normalizeRoomState } from "./types";
 import type { Redis } from "ioredis";
 
 export const pubClient = getRedisClient;
@@ -82,10 +83,11 @@ export async function withLock<T>(
 export async function getRedisRoom(roomId: string): Promise<any | null> {
   const redisClient = getRedisClient();
   if (!redisClient) {
-    return localRooms.get(roomId);
+    const room = localRooms.get(roomId);
+    return room ? normalizeRoomState(room) : null;
   }
   const data = await redisClient.get(`room_state:${roomId}`);
-  return data ? JSON.parse(data) : null;
+  return data ? normalizeRoomState(JSON.parse(data)) : null;
 }
 
 /**

@@ -9,8 +9,16 @@ import {
   pubClient,
 } from "../redis-actor";
 import { executeFastMutation } from "../redis-lua";
-import { applyFastCommand, applySlowCommand, isFastCommand } from "../room-logic";
-import { persistRoomState, isSystemDegraded, markRoomForSync } from "../db-sync";
+import {
+  applyFastCommand,
+  applySlowCommand,
+  isFastCommand,
+} from "../room-logic";
+import {
+  persistRoomState,
+  isSystemDegraded,
+  markRoomForSync,
+} from "../db-sync";
 import { sanitizeRoom } from "../room-handler";
 import { SocketContext } from "./context";
 import { RoomState } from "../types";
@@ -48,11 +56,13 @@ export function getSlowCommandRejectionMessage(
     if (!canAddPlaylist) return "You do not have permission to add media.";
     if (room.playlist.length >= 500) return "Playlist is full.";
     const submittedItems = Array.isArray(payload?.items) ? payload.items : [];
-    if (submittedItems.length === 0) return "No playable media items were submitted.";
+    if (submittedItems.length === 0)
+      return "No playable media items were submitted.";
     const existingUrls = new Set(room.playlist.map((item) => item.url));
     if (
       submittedItems.every(
-        (item: any) => typeof item?.url === "string" && existingUrls.has(item.url),
+        (item: any) =>
+          typeof item?.url === "string" && existingUrls.has(item.url),
       )
     ) {
       return "All submitted media is already in the queue.";
@@ -89,7 +99,11 @@ export function getSlowCommandRejectionMessage(
     return "Leader release was denied.";
   }
 
-  if (type === "transfer_owner" || type === "update_role" || type === "kick_participant") {
+  if (
+    type === "transfer_owner" ||
+    type === "update_role" ||
+    type === "kick_participant"
+  ) {
     return "Only the room owner can change participant roles.";
   }
 
@@ -223,7 +237,9 @@ export function handleCommandEvents(
               break;
             }
             if (fastResult === "invalid") {
-              socket.emit("error", { message: "Invalid command payload format." });
+              socket.emit("error", {
+                message: "Invalid command payload format.",
+              });
               break;
             }
 
@@ -280,7 +296,11 @@ export function handleCommandEvents(
                   oldParticipant?.nickname ||
                   `User`,
                 role: isFirst ? "owner" : "viewer",
+                joinedAt: oldParticipant?.joinedAt ?? Date.now(),
                 lastSeen: Date.now(),
+                connection: "connected",
+                playbackHealth: "idle",
+                readyMediaId: null,
               };
 
               if (oldParticipant) {

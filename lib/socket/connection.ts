@@ -79,7 +79,11 @@ export function handleConnectionEvents(
           id: pId,
           nickname: nickname || `Guest ${Math.floor(Math.random() * 1000)}`,
           role: isFirst ? "owner" : "viewer",
+          joinedAt: Date.now(),
           lastSeen: Date.now(),
+          connection: "connected",
+          playbackHealth: "idle",
+          readyMediaId: null,
         };
       }
 

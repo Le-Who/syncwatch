@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { registerRoomHandlers, createEmptyRoom } from "../lib/room-handler";
+import {
+  createEmptyRoom,
+  normalizeRoomState,
+  registerRoomHandlers,
+} from "../lib/room-handler";
 import * as redisRateLimit from "../lib/redis-rate-limit";
 import * as redisActor from "../lib/redis-actor";
 import * as redisLua from "../lib/redis-lua";
@@ -25,9 +29,10 @@ vi.mock("../lib/db-sync", () => ({
 }));
 
 vi.mock("../lib/room-logic", async () => {
-  const actual = await vi.importActual<typeof import("../lib/room-logic")>(
-    "../lib/room-logic",
-  );
+  const actual =
+    await vi.importActual<typeof import("../lib/room-logic")>(
+      "../lib/room-logic",
+    );
   return actual;
 });
 
@@ -85,7 +90,11 @@ describe("Room Handler Security & Auth Boundary", () => {
       id: fallbackId,
       nickname: "Fallback123",
       role: "viewer",
+      joinedAt: 0,
       lastSeen: Date.now(),
+      connection: "connected",
+      playbackHealth: "idle",
+      readyMediaId: null,
     };
 
     (redisActor.getRedisRoom as any).mockResolvedValue(mockRoom);
@@ -132,7 +141,11 @@ describe("Room Handler Security & Auth Boundary", () => {
       id: participantId,
       nickname: "Mod",
       role: "moderator",
+      joinedAt: 0,
       lastSeen: Date.now(),
+      connection: "connected",
+      playbackHealth: "idle",
+      readyMediaId: null,
     };
     mockRoom.currentMediaId = "media-1";
     mockRoom.playlist = [
@@ -181,13 +194,21 @@ describe("Room Handler Security & Auth Boundary", () => {
       id: leaderId,
       nickname: "Leader",
       role: "viewer",
+      joinedAt: 0,
       lastSeen: Date.now(),
+      connection: "connected",
+      playbackHealth: "idle",
+      readyMediaId: null,
     };
     storedRoom.participants[viewerId] = {
       id: viewerId,
       nickname: "Viewer",
       role: "viewer",
+      joinedAt: 0,
       lastSeen: Date.now(),
+      connection: "connected",
+      playbackHealth: "idle",
+      readyMediaId: null,
     };
     storedRoom.leaderId = leaderId;
     storedRoom.playback.status = "paused";
@@ -224,5 +245,43 @@ describe("Room Handler Security & Auth Boundary", () => {
     });
     expect(storedRoom.playback.status).toBe("paused");
     expect(storedRoom.playback.basePosition).toBe(12);
+  });
+});
+
+describe("room state normalization", () => {
+  it("maps legacy buffering state and absent runtime fields to canonical defaults", () => {
+    const room = normalizeRoomState({
+      id: "legacy-room",
+      name: "Legacy Room",
+      settings: { autoplayNext: true, looping: false },
+      participants: {
+        viewer: {
+          id: "viewer",
+          nickname: "Viewer",
+          role: "viewer",
+          lastSeen: 10,
+        },
+      },
+      playlist: [],
+      currentMediaId: null,
+      playback: {
+        status: "buffering",
+        basePosition: 5,
+        baseTimestamp: 10,
+        rate: 1,
+        updatedBy: "viewer",
+      },
+      version: 1,
+      sequence: 1,
+      lastActivity: 10,
+    });
+
+    expect(room.playback.status).toBe("paused");
+    expect(room.chat).toEqual([]);
+    expect(room.leaderId).toBeNull();
+    expect(room.flashbacks).toEqual({});
+    expect(room.participants.viewer.connection).toBe("connected");
+    expect(room.participants.viewer.playbackHealth).toBe("idle");
+    expect(room.participants.viewer.readyMediaId).toBeNull();
   });
 });

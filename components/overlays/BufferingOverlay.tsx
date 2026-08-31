@@ -1,7 +1,7 @@
 "use client";
 
 import { useStore } from "@/lib/store";
-import { PlaybackState, Participant } from "@/lib/types";
+import { LegacyPlaybackStatus, PlaybackState, Participant } from "@/lib/types";
 
 interface BufferingOverlayProps {
   playback: PlaybackState | undefined;
@@ -19,7 +19,8 @@ export function BufferingOverlay({
   // P8 Fix: Use a proper Zustand selector instead of getState() in render
   const bufferingNickname = useStore((s) => {
     if (
-      playback?.status === "buffering" &&
+      playback &&
+      (playback.status as LegacyPlaybackStatus) === "buffering" &&
       !isLocalBuffering &&
       playback.updatedBy
     ) {
