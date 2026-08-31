@@ -1,5 +1,14 @@
-import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
+import {
+  describe,
+  it,
+  expect,
+  beforeAll,
+  beforeEach,
+  afterAll,
+  vi,
+} from "vitest";
 import { executeFastMutation } from "../lib/redis-lua";
+import * as permissions from "../lib/permissions";
 import { getRedisClient } from "../lib/redis-rate-limit";
 import {
   setRedisRoomCAS,
@@ -144,6 +153,64 @@ describe("Fast-Path OCC Logic", () => {
     const viewerState = await getRedisRoom(roomId);
     expect(viewerState.playback.basePosition).toBe(12);
     expect(viewerState.playback.updatedBy).toBe("Viewer");
+  });
+
+  it("uses the shared permission policy before applying an atomic fast mutation", async () => {
+    const permissionSpy = vi
+      .spyOn(permissions, "getParticipantPermissions")
+      .mockReturnValue({
+        canAddPlaylist: true,
+        canEditPlaylist: false,
+        canControlPlayback: false,
+        canManageRoom: false,
+        isOwner: false,
+        isOwnerOrMod: false,
+        isLeader: false,
+        hasActiveLeader: false,
+      });
+
+    const result = await executeFastMutation(
+      roomId,
+      -1,
+      "play",
+      { position: 12 },
+      "u2",
+      "Viewer",
+    );
+
+    expect(result).toEqual({ success: false, error: "UNAUTHORIZED" });
+    expect((await getRedisRoom(roomId)).playback.basePosition).toBe(0);
+    permissionSpy.mockRestore();
+  });
+
+  it("normalizes a legacy Redis room before returning it to the fast path", async () => {
+    await setRedisRoom(roomId, {
+      id: roomId,
+      name: "Legacy Fast Path Room",
+      settings: { autoplayNext: true, looping: false },
+      participants: {
+        u2: { id: "u2", nickname: "Viewer", role: "viewer", lastSeen: 1 },
+      },
+      playlist: [],
+      currentMediaId: null,
+      playback: {
+        status: "buffering",
+        basePosition: 4,
+        baseTimestamp: 1,
+        rate: 1,
+        updatedBy: "u2",
+      },
+      version: 1,
+      sequence: 1,
+      lastActivity: 1,
+    });
+
+    const room = await getRedisRoom(roomId);
+
+    expect(room.playback.status).toBe("paused");
+    expect(room.chat).toEqual([]);
+    expect(room.flashbacks).toEqual({});
+    expect(room.participants.u2.connection).toBe("connected");
   });
 
   it("TC-Fast-2c: Should reject non-leader playback control while allowing leader and moderator control", async () => {

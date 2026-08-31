@@ -162,6 +162,8 @@ const mockRedis = {
       const participantId = args[4] as string;
       const participantNickname = args[5] as string;
       const now = Number(args[6]);
+      const authorizedLeaderId = args[7] as string;
+      const authorizedRole = args[8] as string;
 
       const val = store.get(key);
       if (!val) return "ROOM_NOT_FOUND";
@@ -175,15 +177,21 @@ const mockRedis = {
       const participant = room.participants?.[participantId];
       if (!participant) return "UNAUTHORIZED";
 
-      const hasActiveLeader = Boolean(
-        room.leaderId && room.participants?.[room.leaderId],
-      );
-      const canControl =
-        participant.role === "owner" ||
-        participant.role === "moderator" ||
-        !hasActiveLeader ||
-        room.leaderId === participantId;
-      if (!canControl) return "UNAUTHORIZED";
+      const activeLeaderId =
+        typeof room.leaderId === "string" && room.participants?.[room.leaderId]
+          ? room.leaderId
+          : "";
+      const participantRole = ["owner", "moderator", "viewer"].includes(
+        participant.role,
+      )
+        ? participant.role
+        : "viewer";
+      if (
+        activeLeaderId !== authorizedLeaderId ||
+        participantRole !== authorizedRole
+      ) {
+        return "VERSION_CONFLICT";
+      }
 
       let changed = false;
 

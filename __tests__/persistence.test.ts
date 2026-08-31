@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { checkRedisRateLimit, getRedisClient } from "../lib/redis-rate-limit";
+import { loadRoomFromDB } from "../lib/db-sync";
 
 const mockZadd = vi.fn().mockResolvedValue(1);
 const mockZremrangebyscore = vi.fn().mockReturnThis();
@@ -82,5 +83,41 @@ describe("Redis Rate Limit & Persistence Fallbacks", () => {
       1060000,
       "room_abc123",
     );
+  });
+
+  it("normalizes a legacy persisted room during database hydration", async () => {
+    const supabase = {
+      from: () => ({
+        select: () => ({
+          eq: () => ({
+            single: async () => ({
+              data: {
+                state: {
+                  name: "Legacy Database Room",
+                  settings: { autoplayNext: true, looping: false },
+                  playlist: [],
+                  playback: {
+                    status: "buffering",
+                    basePosition: 6,
+                    baseTimestamp: 1,
+                    rate: 1,
+                    updatedBy: "legacy",
+                  },
+                  version: 1,
+                },
+              },
+              error: null,
+            }),
+          }),
+        }),
+      }),
+    };
+
+    const room = await loadRoomFromDB("legacy-db-room", supabase as any);
+
+    expect(room?.playback.status).toBe("paused");
+    expect(room?.chat).toEqual([]);
+    expect(room?.leaderId).toBeNull();
+    expect(room?.flashbacks).toEqual({});
   });
 });

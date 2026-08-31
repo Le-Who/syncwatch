@@ -3,6 +3,7 @@ import {
   createEmptyRoom,
   normalizeRoomState,
   registerRoomHandlers,
+  sanitizeRoom,
 } from "../lib/room-handler";
 import * as redisRateLimit from "../lib/redis-rate-limit";
 import * as redisActor from "../lib/redis-actor";
@@ -283,5 +284,31 @@ describe("room state normalization", () => {
     expect(room.participants.viewer.connection).toBe("connected");
     expect(room.participants.viewer.playbackHealth).toBe("idle");
     expect(room.participants.viewer.readyMediaId).toBeNull();
+  });
+
+  it("normalizes legacy state before emitting a sanitized snapshot", () => {
+    const room = sanitizeRoom({
+      id: "legacy-snapshot",
+      name: "Legacy Snapshot",
+      settings: { autoplayNext: true, looping: false },
+      participants: {},
+      playlist: [],
+      currentMediaId: null,
+      playback: {
+        status: "buffering",
+        basePosition: 0,
+        baseTimestamp: 1,
+        rate: 1,
+        updatedBy: "system",
+      },
+      version: 1,
+      sequence: 1,
+      lastActivity: 1,
+    } as any);
+
+    expect(room.playback.status).toBe("paused");
+    expect(room.chat).toEqual([]);
+    expect(room.leaderId).toBeNull();
+    expect(room.flashbacks).toEqual({});
   });
 });

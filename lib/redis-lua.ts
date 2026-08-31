@@ -1,4 +1,6 @@
 import { getRedisClient } from "./redis-rate-limit";
+import * as permissions from "./permissions";
+import { normalizeRoomState } from "./types";
 
 // Centralized Lua scripts for atomic fast-path mutations
 const LUA_FAST_MUTATION = `
@@ -9,6 +11,8 @@ const LUA_FAST_MUTATION = `
   local participant_id = ARGV[4]
   local participant_nickname = ARGV[5]
   local now = tonumber(ARGV[6])
+  local authorized_leader_id = ARGV[7]
+  local authorized_role = ARGV[8]
 
   local val = redis.call("get", room_key)
   if not val then return "ROOM_NOT_FOUND" end
@@ -24,11 +28,20 @@ const LUA_FAST_MUTATION = `
   local participant = room.participants[participant_id]
   if not participant then return "UNAUTHORIZED" end
 
-  local leader_id = room.leaderId
-  local has_active_leader = type(leader_id) == "string" and room.participants[leader_id] ~= nil
-  local can_control = participant.role == "owner" or participant.role == "moderator" or not has_active_leader or leader_id == participant_id
-
-  if not can_control then return "UNAUTHORIZED" end
+  -- The shared TypeScript permission policy authorizes the mutation before
+  -- this script runs. These snapshots make that authorization atomic without
+  -- maintaining a second role/leader policy in Lua.
+  local active_leader_id = ""
+  if type(room.leaderId) == "string" and room.participants[room.leaderId] ~= nil then
+    active_leader_id = room.leaderId
+  end
+  local participant_role = participant.role
+  if participant_role ~= "owner" and participant_role ~= "moderator" and participant_role ~= "viewer" then
+    participant_role = "viewer"
+  end
+  if active_leader_id ~= authorized_leader_id or participant_role ~= authorized_role then
+    return "VERSION_CONFLICT"
+  end
 
   local changed = false
 
@@ -113,6 +126,16 @@ export async function executeFastMutation(
   }
 
   try {
+    const serializedRoom = await redisClient.get(`room_state:${roomId}`);
+    if (!serializedRoom) return { success: false, error: "ROOM_NOT_FOUND" };
+
+    const room = normalizeRoomState(JSON.parse(serializedRoom));
+    const participant = room.participants[participantId];
+    if (!participant) return { success: false, error: "UNAUTHORIZED" };
+    if (!permissions.getParticipantPermissions(room, participantId).canControlPlayback) {
+      return { success: false, error: "UNAUTHORIZED" };
+    }
+
     const result = (await (redisClient as any).eval(
       LUA_FAST_MUTATION,
       1,
@@ -123,6 +146,8 @@ export async function executeFastMutation(
       participantId,
       participantNickname,
       Date.now().toString(),
+      room.leaderId ?? "",
+      participant.role,
     )) as string;
 
     if (typeof result === "string") {

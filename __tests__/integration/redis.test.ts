@@ -86,6 +86,36 @@ describe("Redis Actor & Queue Integration Tests", () => {
     expect(current.data).toBe("second");
   });
 
+  it("normalizes legacy persisted data when reading from Redis", async () => {
+    if (!redis) return;
+    const roomId = `legacy_read_${TEST_RUN_ID}`;
+    await setRedisRoom(roomId, {
+      id: roomId,
+      name: "Legacy Redis Room",
+      settings: { autoplayNext: true, looping: false },
+      participants: {},
+      playlist: [],
+      currentMediaId: null,
+      playback: {
+        status: "buffering",
+        basePosition: 0,
+        baseTimestamp: 1,
+        rate: 1,
+        updatedBy: "system",
+      },
+      version: 1,
+      sequence: 1,
+      lastActivity: 1,
+    });
+
+    const room = await getRedisRoom(roomId);
+
+    expect(room.playback.status).toBe("paused");
+    expect(room.chat).toEqual([]);
+    expect(room.leaderId).toBeNull();
+    expect(room.flashbacks).toEqual({});
+  });
+
   it("3. applySlowCommand + CAS: should apply and persist add_item via the new inline CAS path", async () => {
     if (!redis) return;
 
