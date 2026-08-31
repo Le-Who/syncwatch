@@ -74,11 +74,25 @@ const waitForSocketEvent = (
   });
 };
 
+const waitForCondition = async (
+  condition: () => boolean,
+  timeoutMs: number = 2000,
+) => {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition()) {
+    if (Date.now() >= deadline) {
+      throw new Error("Timeout waiting for socket state convergence");
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+};
+
 describe("server.ts Real Socket.IO Integration", () => {
   let clientSocket: ClientSocket;
   let viewerSocket: ClientSocket;
   let hostileSocket: ClientSocket;
   let recoverySocket: ClientSocket;
+  const presenceSockets: ClientSocket[] = [];
 
   beforeAll(async () => {
     // Import server.ts to trigger app.prepare().then(...)
@@ -110,6 +124,7 @@ describe("server.ts Real Socket.IO Integration", () => {
     if (viewerSocket) viewerSocket.close();
     if (hostileSocket) hostileSocket.close();
     if (recoverySocket) recoverySocket.close();
+    presenceSockets.forEach((socket) => socket.close());
     if (httpServer) httpServer.close();
   });
 
@@ -283,5 +298,52 @@ describe("server.ts Real Socket.IO Integration", () => {
     expect(participant).toBeDefined();
     expect(participant.role).toBe("owner"); // Should remain owner
     expect(participant.nickname).toBe("OwnerUserRecovered"); // Should update nickname
+  });
+
+  it("TC-05: Five clients observe every later join and converge without Redis", async () => {
+    const participantSets = Array.from({ length: 5 }, () => new Set<string>());
+    const joinedEventCounts = Array.from({ length: 5 }, () => 0);
+    const roomId = "test-room-five-participants";
+
+    for (let index = 0; index < 5; index++) {
+      const socket = Client(ioServerPath, {
+        path: "/socket.io",
+        transports: ["websocket"],
+        forceNew: true,
+        auth: { participantId: `friend-${index}` },
+      });
+      presenceSockets.push(socket);
+      socket.on("room_state", ({ room }) => {
+        participantSets[index] = new Set(Object.keys(room.participants));
+      });
+      socket.on("participant_joined", (participant) => {
+        participantSets[index].add(participant.id);
+        joinedEventCounts[index]++;
+      });
+
+      await waitForSocketEvent(socket, "connect");
+      const roomState = waitForSocketEvent(socket, "room_state");
+      socket.emit("join_room", {
+        roomId,
+        nickname: `Friend ${index}`,
+        participantId: `friend-${index}`,
+      });
+      await roomState;
+    }
+
+    await waitForCondition(() =>
+      participantSets.every((set) => set.size === 5),
+    );
+
+    expect(participantSets.map((set) => [...set].sort())).toEqual(
+      Array.from({ length: 5 }, () => [
+        "friend-0",
+        "friend-1",
+        "friend-2",
+        "friend-3",
+        "friend-4",
+      ]),
+    );
+    expect(joinedEventCounts).toEqual([5, 4, 3, 2, 1]);
   });
 });

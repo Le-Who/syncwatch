@@ -11,6 +11,8 @@ vi.mock("../lib/socket", () => {
       joinRoom: vi.fn(),
       on: vi.fn(),
       off: vi.fn(),
+      onRoomEvent: vi.fn(),
+      offRoomEvent: vi.fn(),
       emit: vi.fn(),
     },
   };

@@ -5,6 +5,9 @@ export { normalizeRoomState } from "./types";
 import { SocketContext } from "./socket/context";
 import { handleConnectionEvents } from "./socket/connection";
 import { handleCommandEvents } from "./socket/commands";
+import { RoomEventBus } from "./room-event-bus";
+import { emitRoomEventToSocketIo } from "./room-events";
+import { pubClient } from "./redis-actor";
 
 export function createEmptyRoom(id: string, name: string): RoomState {
   return normalizeRoomState({
@@ -51,12 +54,20 @@ export function registerRoomHandlers(
   io: Server,
   socket: Socket,
   supabase: SupabaseClient | null,
+  suppliedEventBus?: RoomEventBus,
 ) {
   const context: SocketContext = {
     currentRoomId: null,
     currentParticipantId: null,
   };
 
-  handleConnectionEvents(io, socket, supabase, context);
+  const eventBus =
+    suppliedEventBus ??
+    new RoomEventBus(
+      (roomId, event) => emitRoomEventToSocketIo(io, roomId, event),
+      pubClient(),
+    );
+
+  handleConnectionEvents(io, socket, supabase, context, eventBus);
   handleCommandEvents(io, socket, supabase, context);
 }

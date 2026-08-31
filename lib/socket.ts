@@ -1,21 +1,21 @@
 import { io, Socket } from "socket.io-client";
+import type { RoomEvent } from "./room-events";
 
 type RoomSocketEvent =
   | "connected"
   | "disconnected"
-  | "room_state"
-  | "participant_joined"
-  | "participant_left"
-  | "participant_disconnected"
   | "session_upgraded"
   | "clock_sync"
   | "error";
 
 type Listener = (data?: any) => void;
+type RoomEventListener = (event: RoomEvent) => void;
 
-class RoomSocketService {
+export class RoomSocketService {
   private socket: Socket | null = null;
-  private listeners: Record<string, Listener[]> = {};
+  private listeners: Partial<Record<RoomSocketEvent, Set<Listener>>> = {};
+  private readonly roomEventListeners = new Set<RoomEventListener>();
+  private eventsBound = false;
 
   private pingInterval: NodeJS.Timeout | null = null;
   public commandQueue: any[] = [];
@@ -24,21 +24,94 @@ class RoomSocketService {
   private latestSessionToken: string | null = null;
   private latestParticipantId: string | null = null;
 
+  private readonly handleConnect = () => {
+    this.emit("connected");
+    this.syncClock();
+  };
+
+  private readonly handleDisconnect = () => {
+    this.emit("disconnected");
+    if (this.pingInterval) clearInterval(this.pingInterval);
+  };
+
+  private readonly handleRoomState = (payload: any) => {
+    this.emitRoomEvent({
+      type: "room_state",
+      room: payload.room,
+      serverTime: payload.serverTime,
+    });
+  };
+
+  private readonly handlePlaybackUpdated = (payload: any) => {
+    this.emitRoomEvent({
+      type: "playback_updated",
+      playback: payload.playback,
+      serverTime: payload.serverTime,
+    });
+  };
+
+  private readonly handleParticipantJoined = (participant: any) => {
+    this.emitRoomEvent({ type: "participant_joined", participant });
+  };
+
+  private readonly handleParticipantReconnected = (participant: any) => {
+    this.emitRoomEvent({ type: "participant_reconnected", participant });
+  };
+
+  private readonly handleParticipantDisconnected = ({ participantId }: any) => {
+    this.emitRoomEvent({ type: "participant_disconnected", participantId });
+  };
+
+  private readonly handleParticipantLeft = ({
+    participantId,
+    ownerId,
+  }: any) => {
+    this.emitRoomEvent({
+      type: "participant_left",
+      participantId,
+      ownerId: ownerId ?? null,
+    });
+  };
+
+  private readonly handleParticipantHealth = ({
+    participantId,
+    health,
+  }: any) => {
+    this.emitRoomEvent({ type: "participant_health", participantId, health });
+  };
+
+  private readonly handleSessionUpgraded = ({ participantId }: any) => {
+    this.emit("session_upgraded", { participantId });
+  };
+
+  private readonly handleError = (error: any) => {
+    this.emit("error", error);
+  };
+
   public on(event: RoomSocketEvent, callback: Listener) {
-    if (!this.listeners[event]) this.listeners[event] = [];
-    this.listeners[event].push(callback);
+    const listeners = this.listeners[event] ?? new Set<Listener>();
+    listeners.add(callback);
+    this.listeners[event] = listeners;
   }
 
   public off(event: RoomSocketEvent, callback: Listener) {
-    if (!this.listeners[event]) return;
-    this.listeners[event] = this.listeners[event].filter(
-      (cb) => cb !== callback,
-    );
+    this.listeners[event]?.delete(callback);
+  }
+
+  public onRoomEvent(callback: RoomEventListener) {
+    this.roomEventListeners.add(callback);
+  }
+
+  public offRoomEvent(callback: RoomEventListener) {
+    this.roomEventListeners.delete(callback);
   }
 
   public emit(event: RoomSocketEvent, data?: any) {
-    if (!this.listeners[event]) return;
-    this.listeners[event].forEach((cb) => cb(data));
+    this.listeners[event]?.forEach((callback) => callback(data));
+  }
+
+  private emitRoomEvent(event: RoomEvent) {
+    this.roomEventListeners.forEach((callback) => callback(event));
   }
 
   getSocket() {
@@ -59,50 +132,42 @@ class RoomSocketService {
           });
         },
       });
-
-      this.bindEvents();
     }
     return this.socket;
   }
 
   private bindEvents() {
-    if (!this.socket) return;
+    if (!this.socket || this.eventsBound) return;
     const socket = this.socket;
+    socket.on("connect", this.handleConnect);
+    socket.on("disconnect", this.handleDisconnect);
+    socket.on("room_state", this.handleRoomState);
+    socket.on("playback_updated", this.handlePlaybackUpdated);
+    socket.on("participant_joined", this.handleParticipantJoined);
+    socket.on("participant_reconnected", this.handleParticipantReconnected);
+    socket.on("participant_disconnected", this.handleParticipantDisconnected);
+    socket.on("participant_left", this.handleParticipantLeft);
+    socket.on("participant_health", this.handleParticipantHealth);
+    socket.on("session_upgraded", this.handleSessionUpgraded);
+    socket.on("error", this.handleError);
+    this.eventsBound = true;
+  }
 
-    socket.on("connect", () => {
-      this.emit("connected");
-      this.syncClock();
-    });
-
-    socket.on("disconnect", () => {
-      this.emit("disconnected");
-      if (this.pingInterval) clearInterval(this.pingInterval);
-    });
-
-    socket.on("room_state", (payload: any) => {
-      this.emit("room_state", payload);
-    });
-
-    socket.on("participant_joined", (participant: any) => {
-      this.emit("participant_joined", participant);
-    });
-
-    socket.on("participant_left", ({ participantId }) => {
-      this.emit("participant_left", { participantId });
-    });
-
-    // P7: Forward immediate disconnect notification for UI dimming
-    socket.on("participant_disconnected", ({ participantId }) => {
-      this.emit("participant_disconnected", { participantId });
-    });
-
-    socket.on("session_upgraded", ({ participantId }) => {
-      this.emit("session_upgraded", { participantId });
-    });
-
-    socket.on("error", async (error: any) => {
-      this.emit("error", error);
-    });
+  private unbindEvents() {
+    if (!this.socket || !this.eventsBound) return;
+    const socket = this.socket;
+    socket.off("connect", this.handleConnect);
+    socket.off("disconnect", this.handleDisconnect);
+    socket.off("room_state", this.handleRoomState);
+    socket.off("playback_updated", this.handlePlaybackUpdated);
+    socket.off("participant_joined", this.handleParticipantJoined);
+    socket.off("participant_reconnected", this.handleParticipantReconnected);
+    socket.off("participant_disconnected", this.handleParticipantDisconnected);
+    socket.off("participant_left", this.handleParticipantLeft);
+    socket.off("participant_health", this.handleParticipantHealth);
+    socket.off("session_upgraded", this.handleSessionUpgraded);
+    socket.off("error", this.handleError);
+    this.eventsBound = false;
   }
 
   public connect(
@@ -114,6 +179,7 @@ class RoomSocketService {
     this.latestSessionToken = sessionToken;
     this.latestParticipantId = pId;
     const socket = this.getSocket();
+    this.bindEvents();
     if (!socket.connected) {
       socket.connect();
     }
@@ -127,8 +193,11 @@ class RoomSocketService {
 
   public disconnect() {
     if (this.socket) {
+      this.unbindEvents();
       this.socket.disconnect();
     }
+    if (this.pingInterval) clearTimeout(this.pingInterval);
+    this.emit("disconnected");
   }
 
   public sendCommand(

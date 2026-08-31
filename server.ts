@@ -6,6 +6,9 @@ import { registerRoomHandlers } from "./lib/room-handler";
 import { startDbSyncWorker, flushDbSyncQueue } from "./lib/db-sync";
 import { setupSocketAuth } from "./lib/socket/setup";
 import { setupPubSubListeners } from "./lib/socket/pubsub";
+import { RoomEventBus } from "./lib/room-event-bus";
+import { emitRoomEventToSocketIo } from "./lib/room-events";
+import { pubClient } from "./lib/redis-actor";
 
 // Load environment variables manually for the custom server
 import { loadEnvConfig } from "@next/env";
@@ -105,11 +108,16 @@ app.prepare().then(() => {
     pingInterval: 25000,
   });
 
+  const roomEventBus = new RoomEventBus(
+    (roomId, event) => emitRoomEventToSocketIo(io, roomId, event),
+    pubClient(),
+  );
+
   setupSocketAuth(io);
-  setupPubSubListeners(io);
+  setupPubSubListeners(roomEventBus);
 
   io.on("connection", (socket) => {
-    registerRoomHandlers(io, socket, supabase);
+    registerRoomHandlers(io, socket, supabase, roomEventBus);
   });
 
   const port = process.env.PORT || 3000;

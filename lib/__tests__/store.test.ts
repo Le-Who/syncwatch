@@ -2,6 +2,53 @@ import { renderHook, act } from "@testing-library/react";
 import { useStore, useSettingsStore } from "../store";
 import { roomSocketService } from "../socket";
 import { vi, describe, beforeEach, it, expect } from "vitest";
+import {
+  participant,
+  roomWithParticipants,
+} from "../../__tests__/helpers/room-fixtures";
+
+const socketDouble = vi.hoisted(() => {
+  const handlers = new Map<string, Set<(payload?: any) => void>>();
+  const socket = {
+    connected: false,
+    on: vi.fn((event: string, listener: (payload?: any) => void) => {
+      const listeners = handlers.get(event) ?? new Set();
+      listeners.add(listener);
+      handlers.set(event, listeners);
+      return socket;
+    }),
+    off: vi.fn((event: string, listener: (payload?: any) => void) => {
+      handlers.get(event)?.delete(listener);
+      return socket;
+    }),
+    emit: vi.fn(),
+    connect: vi.fn(() => {
+      socket.connected = true;
+      return socket;
+    }),
+    disconnect: vi.fn(() => {
+      socket.connected = false;
+      return socket;
+    }),
+    serverEmit(event: string, payload?: any) {
+      for (const listener of handlers.get(event) ?? []) listener(payload);
+    },
+    reset() {
+      handlers.clear();
+      socket.connected = false;
+      socket.on.mockClear();
+      socket.off.mockClear();
+      socket.emit.mockClear();
+      socket.connect.mockClear();
+      socket.disconnect.mockClear();
+    },
+  };
+  return socket;
+});
+
+vi.mock("socket.io-client", () => ({
+  io: vi.fn(() => socketDouble),
+}));
 
 vi.mock("../socket", () => {
   return {
@@ -13,6 +60,8 @@ vi.mock("../socket", () => {
       joinRoom: vi.fn(),
       on: vi.fn(),
       off: vi.fn(),
+      onRoomEvent: vi.fn(),
+      offRoomEvent: vi.fn(),
       emit: vi.fn(),
       commandQueue: [],
     },
@@ -79,6 +128,7 @@ describe("useStore", () => {
       });
     });
     vi.clearAllMocks();
+    socketDouble.reset();
   });
 
   it("should initialize with correct default state", () => {
@@ -98,6 +148,68 @@ describe("useStore", () => {
 
     expect(result.current.nickname).toBe("TestUser");
     expect(result.current.participantId).toBe("1234");
+  });
+
+  it("reduces participant lifecycle events through one exhaustive room listener", () => {
+    const { result } = renderHook(() => useStore());
+    act(() => {
+      useStore.setState({
+        room: roomWithParticipants(3, { leaderId: "p0" }),
+        participantId: "p2",
+      });
+      result.current.init();
+    });
+    const onRoomEvent = vi.mocked(roomSocketService.onRoomEvent).mock
+      .calls[0]?.[0];
+    expect(onRoomEvent).toEqual(expect.any(Function));
+
+    act(() => {
+      onRoomEvent({ type: "participant_disconnected", participantId: "p1" });
+    });
+    expect(result.current.room?.participants.p1.connection).toBe(
+      "reconnecting",
+    );
+
+    act(() => {
+      onRoomEvent({
+        type: "participant_reconnected",
+        participant: { ...participant("p1", "viewer", 1), nickname: "Back" },
+      });
+      onRoomEvent({
+        type: "participant_health",
+        participantId: "p1",
+        health: "buffering",
+      });
+      onRoomEvent({
+        type: "participant_left",
+        participantId: "p0",
+        ownerId: "p1",
+      });
+    });
+
+    expect(result.current.room?.participants.p0).toBeUndefined();
+    expect(result.current.room?.leaderId).toBeNull();
+    expect(result.current.room?.participants.p1).toMatchObject({
+      nickname: "Back",
+      role: "owner",
+      connection: "connected",
+      playbackHealth: "buffering",
+    });
+  });
+
+  it("delivers one room event after connect, disconnect, and reconnect", async () => {
+    const actual =
+      await vi.importActual<typeof import("../socket")>("../socket");
+    const service = new actual.RoomSocketService();
+    const onRoomEvent = vi.fn();
+    service.onRoomEvent(onRoomEvent);
+
+    service.connect("room-a", "Friend", "p0", "token");
+    service.disconnect();
+    service.connect("room-a", "Friend", "p0", "token");
+    socketDouble.serverEmit("participant_joined", participant("p1"));
+
+    expect(onRoomEvent).toHaveBeenCalledOnce();
   });
 
   it("should update nickname and omit emitting if not connected", () => {

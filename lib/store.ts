@@ -2,14 +2,8 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { roomSocketService } from "./socket";
 import { toast } from "sonner";
-import {
-  RoomState,
-  PlaybackStatus,
-  PlaybackState,
-  PlaylistItem,
-  Participant,
-  RoomSettings,
-} from "./types";
+import type { RoomEvent } from "./room-events";
+import type { RoomState } from "./types";
 
 interface LocalSettingsState {
   volume: number;
@@ -54,6 +48,204 @@ interface AppState {
   sendCommand: (type: string, payload?: any) => void;
   triggerOccRollback: () => void;
   init: () => void;
+}
+
+function assertNever(value: never): never {
+  throw new Error(`Unhandled room event: ${JSON.stringify(value)}`);
+}
+
+function handleConnected() {
+  useStore.setState({ isConnected: true });
+  const state = useStore.getState();
+  if (state.room && state.participantId) {
+    roomSocketService.joinRoom(
+      state.room.id,
+      state.room.participants[state.participantId]?.nickname || "User",
+      state.participantId,
+    );
+  }
+  if (state.sessionToken && state.room) {
+    roomSocketService.upgradeSession(
+      state.room.id,
+      state.commandSequence,
+      state.sessionToken,
+    );
+  }
+}
+
+function handleDisconnected() {
+  useStore.setState({ isConnected: false });
+}
+
+function handleClockSync({ offset }: { offset: number }) {
+  useStore.setState({ serverClockOffset: offset });
+}
+
+function handleSessionUpgraded({ participantId }: { participantId: string }) {
+  useStore.setState({ participantId });
+}
+
+function handleRoomEvent(event: RoomEvent) {
+  const state = useStore.getState();
+
+  switch (event.type) {
+    case "room_state": {
+      let newOffset = state.serverClockOffset;
+      if (!state.clockSyncReady) {
+        newOffset = event.serverTime - Date.now();
+      }
+      useStore.setState({
+        room: event.room,
+        serverClockOffset: newOffset,
+        commandSequence: event.room.sequence,
+        clockSyncReady: true,
+      });
+      return;
+    }
+    case "playback_updated": {
+      if (!state.room) return;
+      const playback = event.playback;
+      useStore.setState({
+        room: {
+          ...state.room,
+          currentMediaId: playback.mediaItemId,
+          sequence: playback.sequence,
+          playback: {
+            status: playback.status,
+            basePosition: playback.basePosition,
+            baseTimestamp: playback.baseTimestamp,
+            rate: playback.rate,
+            updatedBy: playback.updatedBy,
+            ...(playback.lastActionNonce
+              ? { lastActionNonce: playback.lastActionNonce }
+              : {}),
+          },
+        },
+      });
+      return;
+    }
+    case "participant_joined":
+    case "participant_reconnected": {
+      if (!state.room) return;
+      const participant = event.participant;
+      if (
+        event.type === "participant_joined" &&
+        participant.id !== state.participantId
+      ) {
+        toast(`${participant.nickname || "Someone"} joined`, {
+          icon: "👋",
+          duration: 3000,
+        });
+      }
+      useStore.setState({
+        room: {
+          ...state.room,
+          participants: {
+            ...state.room.participants,
+            [participant.id]: participant,
+          },
+        },
+      });
+      return;
+    }
+    case "participant_disconnected": {
+      const participant = state.room?.participants[event.participantId];
+      if (!state.room || !participant) return;
+      if (event.participantId === state.participantId) return;
+      useStore.setState({
+        room: {
+          ...state.room,
+          participants: {
+            ...state.room.participants,
+            [event.participantId]: {
+              ...participant,
+              connection: "reconnecting",
+              disconnected: true,
+            },
+          },
+        },
+      });
+      return;
+    }
+    case "participant_left": {
+      if (!state.room) return;
+      const leavingParticipant = state.room.participants[event.participantId];
+      if (leavingParticipant && event.participantId !== state.participantId) {
+        toast(`${leavingParticipant.nickname || "Someone"} left`, {
+          icon: "🚪",
+          duration: 3000,
+        });
+      }
+      const participants = Object.fromEntries(
+        Object.entries(state.room.participants)
+          .filter(([id]) => id !== event.participantId)
+          .map(([id, participant]) => [
+            id,
+            id === event.ownerId
+              ? { ...participant, role: "owner" as const }
+              : participant,
+          ]),
+      );
+      useStore.setState({
+        room: {
+          ...state.room,
+          participants,
+          leaderId:
+            state.room.leaderId === event.participantId
+              ? null
+              : state.room.leaderId,
+        },
+      });
+      return;
+    }
+    case "participant_health": {
+      const participant = state.room?.participants[event.participantId];
+      if (!state.room || !participant) return;
+      useStore.setState({
+        room: {
+          ...state.room,
+          participants: {
+            ...state.room.participants,
+            [event.participantId]: {
+              ...participant,
+              playbackHealth: event.health,
+            },
+          },
+        },
+      });
+      return;
+    }
+    default:
+      return assertNever(event);
+  }
+}
+
+function handleSocketError(error: any) {
+  const state = useStore.getState();
+  const message = error.message || "An error occurred";
+  if (message === "VERSION_CONFLICT") {
+    state.triggerOccRollback();
+    return;
+  }
+
+  if (
+    !message.includes("Too many") &&
+    !message.includes("Rate limit") &&
+    !message.includes("Guest commands blocked")
+  ) {
+    toast.error(message);
+  }
+
+  if (message.includes("Unauthorized") || message.includes("Guest")) {
+    if (
+      roomSocketService.lastCommand &&
+      !roomSocketService.commandQueue.includes(roomSocketService.lastCommand)
+    ) {
+      roomSocketService.commandQueue.push(roomSocketService.lastCommand);
+      roomSocketService.lastCommand = null;
+    }
+    void state.resyncSession();
+  }
 }
 
 export const useStore = create<AppState>((set, get) => ({
@@ -133,139 +325,12 @@ export const useStore = create<AppState>((set, get) => ({
       (window as any).useRoomStore = { getState: get, setState: set };
       (window as any).__roomSocketService = roomSocketService;
 
-      roomSocketService.on("connected", () => {
-        set({ isConnected: true });
-        const state = get();
-        if (state.room && state.participantId) {
-          roomSocketService.joinRoom(
-            state.room.id,
-            state.room.participants[state.participantId]?.nickname || "User",
-            state.participantId,
-          );
-        }
-        if (state.sessionToken && state.room) {
-          roomSocketService.upgradeSession(
-            state.room.id,
-            state.commandSequence,
-            state.sessionToken,
-          );
-        }
-      });
-
-      roomSocketService.on("disconnected", () => {
-        set({ isConnected: false });
-      });
-
-      roomSocketService.on("room_state", (payload: any) => {
-        const { serverClockOffset, clockSyncReady } = get();
-        let newOffset = serverClockOffset;
-        // P2 Fix: Use a dedicated flag instead of checking `=== 0`.
-        // Before the first clock_sync response arrives, compute an initial offset
-        // from the room_state payload to prevent spurious hard seeks on first sync cycle.
-        if (!clockSyncReady) {
-          newOffset = payload.serverTime - Date.now();
-        }
-        set({
-          room: payload.room,
-          serverClockOffset: newOffset,
-          commandSequence: payload.room.sequence,
-          clockSyncReady: true,
-        });
-      });
-
-      roomSocketService.on("clock_sync", ({ offset }) => {
-        set({ serverClockOffset: offset });
-      });
-
-      roomSocketService.on("participant_joined", (participant: any) => {
-        const state = get();
-        if (!state.room) return;
-        // B4: Toast notification for participant join (skip self)
-        if (participant.id !== state.participantId) {
-          toast(`${participant.nickname || "Someone"} joined`, {
-            icon: "👋",
-            duration: 3000,
-          });
-        }
-        set({
-          room: {
-            ...state.room,
-            participants: {
-              ...state.room.participants,
-              [participant.id]: participant,
-            },
-          },
-        });
-      });
-
-      roomSocketService.on("participant_left", ({ participantId }) => {
-        const state = get();
-        if (!state.room) return;
-        // B4: Toast notification for participant leave
-        const leavingParticipant = state.room.participants[participantId];
-        if (leavingParticipant && participantId !== state.participantId) {
-          toast(`${leavingParticipant.nickname || "Someone"} left`, {
-            icon: "🚪",
-            duration: 3000,
-          });
-        }
-        const newParticipants = { ...state.room.participants };
-        delete newParticipants[participantId];
-        set({ room: { ...state.room, participants: newParticipants } });
-      });
-
-      // P7: Mark participant as disconnected (dimmed in UI) while
-      // preserving their entry for the 15s reconnection window.
-      roomSocketService.on("participant_disconnected", ({ participantId }) => {
-        const state = get();
-        if (!state.room || !state.room.participants[participantId]) return;
-        if (participantId === state.participantId) return; // Don't dim self
-        set({
-          room: {
-            ...state.room,
-            participants: {
-              ...state.room.participants,
-              [participantId]: {
-                ...state.room.participants[participantId],
-                disconnected: true,
-              },
-            },
-          },
-        });
-      });
-
-      roomSocketService.on("session_upgraded", ({ participantId }) => {
-        set({ participantId });
-      });
-
-      roomSocketService.on("error", (error: any) => {
-        const msg = error.message || "An error occurred";
-        if (msg === "VERSION_CONFLICT") {
-          get().triggerOccRollback();
-          return;
-        }
-
-        if (
-          !msg.includes("Too many") &&
-          !msg.includes("Rate limit") &&
-          !msg.includes("Guest commands blocked")
-        ) {
-          toast.error(msg);
-        }
-
-        if (msg.includes("Unauthorized") || msg.includes("Guest")) {
-          if (
-            roomSocketService.lastCommand &&
-            !roomSocketService.commandQueue.includes(
-              roomSocketService.lastCommand,
-            )
-          ) {
-            roomSocketService.commandQueue.push(roomSocketService.lastCommand);
-            roomSocketService.lastCommand = null;
-          }
-          get().resyncSession();
-        }
-      });
+      roomSocketService.on("connected", handleConnected);
+      roomSocketService.on("disconnected", handleDisconnected);
+      roomSocketService.on("clock_sync", handleClockSync);
+      roomSocketService.on("session_upgraded", handleSessionUpgraded);
+      roomSocketService.on("error", handleSocketError);
+      roomSocketService.onRoomEvent(handleRoomEvent);
     }
   },
   setNickname: (name: string) => {

@@ -5,6 +5,8 @@ vi.mock("../lib/socket", () => {
     roomSocketService: {
       on: vi.fn(),
       off: vi.fn(),
+      onRoomEvent: vi.fn(),
+      offRoomEvent: vi.fn(),
       emit: vi.fn(),
       connect: vi.fn(),
       disconnect: vi.fn(),
