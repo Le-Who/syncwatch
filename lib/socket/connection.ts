@@ -58,6 +58,7 @@ export function handleConnectionEvents(
     let finalRoomState: RoomState | null = null;
     let reconnected = false;
     let expiredParticipant = false;
+    let ownerRolesChanged = false;
 
     while (occRetries > 0) {
       let room: RoomState | null = await getRedisRoom(roomId);
@@ -94,6 +95,17 @@ export function handleConnectionEvents(
       const success = await setRedisRoomCAS(roomId, nextRoom, room.version);
       if (success) {
         finalRoomState = nextRoom;
+        const ownerIdsBefore = Object.values(room.participants)
+          .filter((participant) => participant.role === "owner")
+          .map((participant) => participant.id)
+          .sort();
+        const ownerIdsAfter = Object.values(nextRoom.participants)
+          .filter((participant) => participant.role === "owner")
+          .map((participant) => participant.id)
+          .sort();
+        ownerRolesChanged =
+          Object.keys(room.participants).length > 0 &&
+          ownerIdsBefore.join("\0") !== ownerIdsAfter.join("\0");
         expiredParticipant =
           Boolean(existingParticipant) &&
           existingParticipant.connection !== "connected" &&
@@ -136,12 +148,25 @@ export function handleConnectionEvents(
     context.currentRoomId = roomId;
     context.currentParticipantId = pId;
 
+    const sanitizedRoom = sanitizeRoom(finalRoomState);
     socket.emit("room_state", {
-      room: sanitizeRoom(finalRoomState),
+      room: sanitizedRoom,
       serverTime: Date.now(),
     });
 
-    const joinedInfo = sanitizeRoom(finalRoomState).participants[pId];
+    if (ownerRolesChanged) {
+      await eventBus
+        .publish(roomId, {
+          type: "room_state",
+          room: sanitizedRoom,
+          serverTime: Date.now(),
+        })
+        .catch((error) =>
+          console.error("Failed publishing repaired owner state", error),
+        );
+    }
+
+    const joinedInfo = sanitizedRoom.participants[pId];
     await eventBus
       .publish(roomId, {
         type: reconnected ? "participant_reconnected" : "participant_joined",

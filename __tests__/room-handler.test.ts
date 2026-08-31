@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment node
+ */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   createEmptyRoom,
@@ -9,6 +12,8 @@ import * as redisRateLimit from "../lib/redis-rate-limit";
 import * as redisActor from "../lib/redis-actor";
 import * as redisLua from "../lib/redis-lua";
 import { Server, Socket } from "socket.io";
+import { SignJWT } from "jose";
+import { PARTICIPANT_GRACE_MS } from "../lib/participant-lifecycle";
 
 vi.mock("../lib/redis-rate-limit", () => ({
   checkRedisRateLimit: vi.fn(),
@@ -48,6 +53,7 @@ describe("Room Handler Security & Auth Boundary", () => {
   let mockIo: Partial<Server>;
   let mockSocket: any;
   let socketEventHandlers: Record<string, Function>;
+  let roomEmit: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -55,9 +61,8 @@ describe("Room Handler Security & Auth Boundary", () => {
 
     socketEventHandlers = {};
 
-    mockIo = {
-      to: vi.fn().mockReturnValue({ emit: vi.fn() }),
-    };
+    roomEmit = vi.fn();
+    mockIo = { to: vi.fn().mockReturnValue({ emit: roomEmit }) };
 
     mockSocket = {
       id: "mock-socket-id",
@@ -76,7 +81,181 @@ describe("Room Handler Security & Auth Boundary", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
+  });
+
+  const upgradeToken = (participantId: string, nickname: string) =>
+    new SignJWT({ participantId, nickname })
+      .setProtectedHeader({ alg: "HS256" })
+      .setIssuedAt()
+      .setExpirationTime("1h")
+      .sign(new TextEncoder().encode("default_local_secret_dont_use_in_prod"));
+
+  it("transfers the upgrading socket and removes the replacement identity after final grace without leaking connection IDs", async () => {
+    const roomId = "upgrade-connection-room";
+    const fallbackId = "fallback-upgrade";
+    const accountId = "account-upgrade";
+    let storedRoom = createEmptyRoom(roomId, "Upgrade Room");
+    storedRoom.participants[fallbackId] = {
+      id: fallbackId,
+      nickname: "Fallback",
+      role: "owner",
+      joinedAt: 1,
+      lastSeen: 1,
+      connection: "connected",
+      playbackHealth: "idle",
+      readyMediaId: null,
+    };
+    (redisActor.getRedisRoom as any).mockImplementation(async () =>
+      structuredClone(storedRoom),
+    );
+    (redisActor.setRedisRoomCAS as any).mockImplementation(
+      async (_roomId: string, nextRoom: any) => {
+        storedRoom = structuredClone(nextRoom);
+        return true;
+      },
+    );
+
+    mockSocket.data.participantId = fallbackId;
+    await socketEventHandlers.join_room({ roomId, nickname: "Fallback" });
+    roomEmit.mockClear();
+    await socketEventHandlers.command({
+      roomId,
+      type: "upgrade_session",
+      payload: { token: await upgradeToken(accountId, "Account") },
+      sequence: 2,
+    });
+
+    expect(storedRoom.participants[fallbackId]).toBeUndefined();
+    expect(storedRoom.participants[accountId].connectionIds).toEqual([
+      mockSocket.id,
+    ]);
+    const upgradeSnapshot = roomEmit.mock.calls.find(
+      ([event]) => event === "room_state",
+    )?.[1].room;
+    expect(
+      upgradeSnapshot.participants[accountId].connectionIds,
+    ).toBeUndefined();
+
+    vi.useFakeTimers();
+    socketEventHandlers.disconnect();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(storedRoom.participants[accountId].connection).toBe("reconnecting");
+
+    await vi.advanceTimersByTimeAsync(PARTICIPANT_GRACE_MS);
+    expect(storedRoom.participants[accountId]).toBeUndefined();
+    expect(
+      roomEmit.mock.calls.filter(
+        ([event, payload]) =>
+          event === "participant_left" && payload.participantId === accountId,
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("merges the upgrading socket into an existing target identity and sanitizes the Redis event", async () => {
+    const roomId = "upgrade-existing-target-room";
+    const fallbackId = "fallback-existing";
+    const accountId = "account-existing";
+    let storedRoom = createEmptyRoom(roomId, "Existing Target Room");
+    storedRoom.participants[fallbackId] = {
+      id: fallbackId,
+      nickname: "Fallback",
+      role: "owner",
+      joinedAt: 1,
+      lastSeen: 1,
+      connection: "connected",
+      connectionIds: ["secondary-fallback-socket"],
+      playbackHealth: "idle",
+      readyMediaId: null,
+    };
+    storedRoom.participants[accountId] = {
+      id: accountId,
+      nickname: "Account",
+      role: "viewer",
+      joinedAt: 2,
+      lastSeen: 2,
+      connection: "connected",
+      connectionIds: ["existing-target-socket"],
+      playbackHealth: "idle",
+      readyMediaId: null,
+    };
+    (redisActor.getRedisRoom as any).mockImplementation(async () =>
+      structuredClone(storedRoom),
+    );
+    (redisActor.setRedisRoomCAS as any).mockImplementation(
+      async (_roomId: string, nextRoom: any) => {
+        storedRoom = structuredClone(nextRoom);
+        return true;
+      },
+    );
+
+    mockSocket.data.participantId = fallbackId;
+    await socketEventHandlers.join_room({ roomId, nickname: "Fallback" });
+    (redisActor.pubClient as any).mockReturnValue({ publish: vi.fn() });
+    await socketEventHandlers.command({
+      roomId,
+      type: "upgrade_session",
+      payload: { token: await upgradeToken(accountId, "Signed Account") },
+      sequence: 2,
+    });
+
+    expect(storedRoom.participants[fallbackId]).toMatchObject({
+      role: "owner",
+      connection: "connected",
+      connectionIds: ["secondary-fallback-socket"],
+    });
+    expect(storedRoom.participants[accountId]).toMatchObject({
+      nickname: "Signed Account",
+      role: "viewer",
+      connection: "connected",
+      connectionIds: ["existing-target-socket", mockSocket.id],
+    });
+    const stateUpdate = (redisActor.publishRoomEvent as any).mock.calls.find(
+      ([, event]: any[]) => event.type === "state_update",
+    )[1];
+    expect(
+      stateUpdate.payload.participants[accountId].connectionIds,
+    ).toBeUndefined();
+  });
+
+  it("broadcasts the repaired owner when joining an ownerless room promotes another participant", async () => {
+    const roomId = "ownerless-recovery-room";
+    let storedRoom = createEmptyRoom(roomId, "Ownerless Room");
+    storedRoom.participants.moderator = {
+      id: "moderator",
+      nickname: "Moderator",
+      role: "moderator",
+      joinedAt: 1,
+      lastSeen: 1,
+      connection: "connected",
+      connectionIds: ["moderator-socket"],
+      playbackHealth: "idle",
+      readyMediaId: null,
+    };
+    (redisActor.getRedisRoom as any).mockImplementation(async () =>
+      structuredClone(storedRoom),
+    );
+    (redisActor.setRedisRoomCAS as any).mockImplementation(
+      async (_roomId: string, nextRoom: any) => {
+        storedRoom = structuredClone(nextRoom);
+        return true;
+      },
+    );
+
+    mockSocket.data.participantId = "new-viewer";
+    await socketEventHandlers.join_room({ roomId, nickname: "New Viewer" });
+
+    expect(storedRoom.participants.moderator.role).toBe("owner");
+    const repairedSnapshot = roomEmit.mock.calls.find(
+      ([event]) => event === "room_state",
+    )?.[1].room;
+    expect(repairedSnapshot.participants.moderator.role).toBe("owner");
+    expect(
+      Object.values(repairedSnapshot.participants).filter(
+        (participant: any) => participant.role === "owner",
+      ),
+    ).toHaveLength(1);
   });
 
   it("TC-U02: Fallback users command passes socket validation (Guest concept removed)", async () => {

@@ -376,11 +376,21 @@ describe("server.ts Real Socket.IO Integration", () => {
       const observer = await connectAndJoin("shared-observer", "Observer");
       let disconnectEvents = 0;
       let leaveEvents = 0;
+      const lifecycleOrder: string[] = [];
       observer.on("participant_disconnected", ({ participantId: id }) => {
-        if (id === participantId) disconnectEvents++;
+        if (id === participantId) {
+          disconnectEvents++;
+          lifecycleOrder.push("disconnected");
+        }
       });
       observer.on("participant_left", ({ participantId: id }) => {
-        if (id === participantId) leaveEvents++;
+        if (id === participantId) {
+          leaveEvents++;
+          lifecycleOrder.push("left");
+        }
+      });
+      observer.on("participant_joined", ({ id }) => {
+        if (id === participantId) lifecycleOrder.push("joined");
       });
 
       secondary.close();
@@ -414,7 +424,34 @@ describe("server.ts Real Socket.IO Integration", () => {
 
       expect(disconnectEvents).toBe(1);
       expect(leaveEvents).toBe(0);
+
+      await waitForCondition(
+        () => leaveEvents === 1,
+        PARTICIPANT_GRACE_MS + 2_000,
+      );
+      const removedSnapshotPromise = waitForSocketEvent(observer, "room_state");
+      observer.emit("join_room", {
+        roomId,
+        nickname: "Observer",
+        participantId: "shared-observer",
+      });
+      const removedSnapshot = await removedSnapshotPromise;
+
+      expect(removedSnapshot.room.participants[participantId]).toBeUndefined();
+      expect(leaveEvents).toBe(1);
+
+      const freshJoinEvent = waitForSocketEvent(observer, "participant_joined");
+      await connectAndJoin(participantId, "Shared Friend Returned");
+      const freshParticipant = await freshJoinEvent;
+
+      expect(freshParticipant).toMatchObject({
+        id: participantId,
+        role: "viewer",
+        connection: "connected",
+      });
+      expect(lifecycleOrder).toEqual(["disconnected", "left", "joined"]);
+      expect(leaveEvents).toBe(1);
     },
-    PARTICIPANT_GRACE_MS + 5_000,
+    PARTICIPANT_GRACE_MS * 2 + 10_000,
   );
 });

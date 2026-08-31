@@ -85,9 +85,12 @@ export function joinParticipant(
 
   delete nextParticipant.disconnected;
 
-  return withParticipantChange(
-    room,
-    { ...room.participants, [nextParticipant.id]: nextParticipant },
+  return ensureOwnerWhenConnected(
+    withParticipantChange(
+      room,
+      { ...room.participants, [nextParticipant.id]: nextParticipant },
+      now,
+    ),
     now,
   );
 }
@@ -149,6 +152,131 @@ function electOwner(participants: Participant[]): Participant | null {
       .filter((participant) => participant.role === "viewer")
       .sort(compareParticipantAge)[0] ?? null
   );
+}
+
+function ensureOwnerWhenConnected(room: RoomState, now: number): RoomState {
+  const participantValues = Object.values(room.participants);
+  if (
+    !participantValues.some(
+      (participant) => participant.connection === "connected",
+    )
+  ) {
+    return room;
+  }
+
+  const validOwner = participantValues
+    .filter(
+      (participant) =>
+        participant.role === "owner" &&
+        (participant.connection === "connected" ||
+          now - participant.lastSeen < PARTICIPANT_GRACE_MS),
+    )
+    .sort(compareParticipantAge)[0];
+  const selectedOwner = validOwner ?? electOwner(participantValues);
+  if (!selectedOwner) return room;
+
+  let changed = false;
+  const participants = Object.fromEntries(
+    Object.entries(room.participants).map(([id, participant]) => {
+      const role: Participant["role"] =
+        id === selectedOwner.id
+          ? "owner"
+          : participant.role === "owner"
+            ? "viewer"
+            : participant.role;
+      changed ||= role !== participant.role;
+      return [
+        id,
+        role === participant.role ? participant : { ...participant, role },
+      ];
+    }),
+  );
+
+  return changed ? { ...room, participants } : room;
+}
+
+export function upgradeParticipantIdentity(
+  room: RoomState,
+  currentParticipantId: string,
+  replacement: { id: string; nickname: string },
+  now: number,
+  connectionId: string,
+): RoomState {
+  const current = room.participants[currentParticipantId];
+  if (!current) return room;
+
+  if (replacement.id === currentParticipantId) {
+    const connectionIds = Array.from(
+      new Set([...(current.connectionIds ?? []), connectionId]),
+    );
+    const participant: Participant = {
+      ...current,
+      nickname: replacement.nickname || current.nickname,
+      connection: "connected",
+      connectionIds,
+      lastSeen: now,
+    };
+    delete participant.disconnected;
+    return ensureOwnerWhenConnected(
+      withParticipantChange(
+        room,
+        { ...room.participants, [currentParticipantId]: participant },
+        now,
+      ),
+      now,
+    );
+  }
+
+  const currentConnectionIds = current.connectionIds ?? [];
+  const remainingCurrentConnectionIds = currentConnectionIds.filter(
+    (activeId) => activeId !== connectionId,
+  );
+  const replacesCurrentIdentity =
+    currentConnectionIds.length === 0 ||
+    remainingCurrentConnectionIds.length === 0;
+  const existingReplacement = room.participants[replacement.id];
+  const replacementConnectionIds = Array.from(
+    new Set([...(existingReplacement?.connectionIds ?? []), connectionId]),
+  );
+  const replacementParticipant: Participant = {
+    ...(existingReplacement ?? current),
+    id: replacement.id,
+    nickname:
+      replacement.nickname || existingReplacement?.nickname || current.nickname,
+    role:
+      replacesCurrentIdentity && current.role === "owner"
+        ? "owner"
+        : (existingReplacement?.role ??
+          (replacesCurrentIdentity ? current.role : "viewer")),
+    joinedAt:
+      existingReplacement?.joinedAt ??
+      (replacesCurrentIdentity ? current.joinedAt : now),
+    lastSeen: now,
+    connection: "connected",
+    connectionIds: replacementConnectionIds,
+  };
+  delete replacementParticipant.disconnected;
+
+  const participants = { ...room.participants };
+  if (replacesCurrentIdentity) {
+    delete participants[currentParticipantId];
+  } else {
+    participants[currentParticipantId] = {
+      ...current,
+      connection: "connected",
+      connectionIds: remainingCurrentConnectionIds,
+    };
+  }
+  participants[replacement.id] = replacementParticipant;
+
+  const upgradedRoom = {
+    ...withParticipantChange(room, participants, now),
+    leaderId:
+      replacesCurrentIdentity && room.leaderId === currentParticipantId
+        ? replacement.id
+        : room.leaderId,
+  };
+  return ensureOwnerWhenConnected(upgradedRoom, now);
 }
 
 function selectOwnerAfterDeparture(

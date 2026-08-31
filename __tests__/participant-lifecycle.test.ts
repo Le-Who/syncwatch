@@ -190,4 +190,90 @@ describe("participant lifecycle", () => {
 
     expect(next.participants.p1.role).toBe("owner");
   });
+
+  it("promotes the first connected successor when an expired owner left everyone reconnecting", () => {
+    let room = roomWithParticipants(5, {
+      moderatorIds: ["p1", "p2"],
+      leaderId: "p0",
+    });
+    for (const id of Object.keys(room.participants)) {
+      room = markParticipantDisconnected(room, id, 1_000 + Number(id.slice(1)));
+    }
+    room = removeParticipantAfterGrace(room, "p0", 16_000);
+
+    expect(
+      Object.values(room.participants).filter(({ role }) => role === "owner"),
+    ).toHaveLength(0);
+
+    const reconnected = joinParticipant(
+      room,
+      participant("p2", "viewer", 16_001),
+      16_001,
+      "p2-new-socket",
+    );
+
+    expect(reconnected.participants.p2.role).toBe("owner");
+    expect(
+      Object.values(reconnected.participants).filter(
+        ({ role }) => role === "owner",
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("does not replace the valid owner when a higher-priority participant reconnects later", () => {
+    let room = roomWithParticipants(5, {
+      moderatorIds: ["p1", "p2"],
+      leaderId: "p0",
+    });
+    room = markParticipantDisconnected(room, "p0", 1_000);
+    for (const id of Object.keys(room.participants).filter(
+      (participantId) => participantId !== "p0",
+    )) {
+      room = markParticipantDisconnected(room, id, 2_000);
+    }
+    room = removeParticipantAfterGrace(room, "p0", 16_000);
+    room = joinParticipant(
+      room,
+      participant("p3", "viewer", 16_001),
+      16_001,
+      "p3-new-socket",
+    );
+    room = joinParticipant(
+      room,
+      participant("p1", "viewer", 16_002),
+      16_002,
+      "p1-new-socket",
+    );
+
+    expect(room.participants.p3.role).toBe("owner");
+    expect(room.participants.p1.role).toBe("moderator");
+    expect(
+      Object.values(room.participants).filter(({ role }) => role === "owner"),
+    ).toHaveLength(1);
+  });
+
+  it("repairs arbitrary ownerless connected state using moderator age and ID order", () => {
+    const room = roomWithParticipants(25, {
+      ownerId: "missing-owner",
+      moderatorIds: ["p8", "p11", "p14"],
+    });
+    room.participants.p8.joinedAt = 40;
+    room.participants.p11.joinedAt = 20;
+    room.participants.p14.joinedAt = 20;
+
+    const repaired = joinParticipant(
+      room,
+      participant("p24", "viewer", 50_000),
+      50_000,
+      "p24-new-socket",
+    );
+
+    expect(repaired.participants.p11.role).toBe("owner");
+    expect(repaired.participants.p14.role).toBe("moderator");
+    expect(
+      Object.values(repaired.participants).filter(
+        ({ role }) => role === "owner",
+      ),
+    ).toHaveLength(1);
+  });
 });

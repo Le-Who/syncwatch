@@ -23,6 +23,7 @@ import { sanitizeRoom } from "../room-handler";
 import { SocketContext } from "./context";
 import { RoomState } from "../types";
 import { getParticipantPermissions } from "../permissions";
+import { upgradeParticipantIdentity } from "../participant-lifecycle";
 
 import { getJwtSecret } from "../jwt-config";
 
@@ -283,31 +284,21 @@ export function handleCommandEvents(
             );
             if (jwtPayload.participantId) {
               const newPid = jwtPayload.participantId as string;
-
               const oldParticipant =
                 room.participants[context.currentParticipantId];
-              const isFirst =
-                Object.keys(room.participants).length === 1 && oldParticipant;
-
-              room.participants[newPid] = {
-                id: newPid,
-                nickname:
-                  (jwtPayload.nickname as string) ||
-                  oldParticipant?.nickname ||
-                  `User`,
-                role: isFirst ? "owner" : "viewer",
-                joinedAt: oldParticipant?.joinedAt ?? Date.now(),
-                lastSeen: Date.now(),
-                connection: "connected",
-                playbackHealth: "idle",
-                readyMediaId: null,
-              };
-
-              if (oldParticipant) {
-                if (oldParticipant.role === "owner")
-                  room.participants[newPid].role = "owner";
-                delete room.participants[context.currentParticipantId];
-              }
+              room = upgradeParticipantIdentity(
+                room,
+                context.currentParticipantId,
+                {
+                  id: newPid,
+                  nickname:
+                    (jwtPayload.nickname as string) ||
+                    oldParticipant?.nickname ||
+                    "User",
+                },
+                Date.now(),
+                socket.id,
+              );
 
               socket.data.participantId = newPid;
               context.currentParticipantId = newPid;
@@ -396,16 +387,17 @@ export function handleCommandEvents(
       }
 
       if (finalRoomState) {
+        const sanitizedRoom = sanitizeRoom(finalRoomState);
         const pClient = pubClient();
         if (pClient) {
           await publishRoomEvent(roomId, {
             type: "state_update",
             roomId,
-            payload: finalRoomState,
+            payload: sanitizedRoom,
           });
         } else {
           io.to(roomId).emit("room_state", {
-            room: finalRoomState,
+            room: sanitizedRoom,
             serverTime: Date.now(),
           });
         }
