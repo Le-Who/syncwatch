@@ -24,6 +24,7 @@ blob-report/
 .vscode/
 .idea/
 .agents/
+.worktrees/
 .eslintcache
 .stylelintcache
 npm-debug.log*
