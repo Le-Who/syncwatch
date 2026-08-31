@@ -151,6 +151,7 @@ export function applyFastCommand(
 
     room.playback.basePosition = payload.position;
     room.playback.baseTimestamp = now;
+    room.playback.updatedBy = participantId;
     if (payload.nonce) room.playback.lastActionNonce = payload.nonce;
     return "changed";
   }
@@ -706,6 +707,7 @@ export function applySendChat(
   payload: any,
   participantId: string,
   participantNickname: string,
+  now = Date.now(),
 ): boolean {
   const participant = room.participants[participantId];
   const message =
@@ -718,11 +720,11 @@ export function applySendChat(
     participantId,
     nickname: participantNickname || participant.nickname,
     message: message.slice(0, 500),
-    sentAt: Date.now(),
+    sentAt: now,
   });
 
-  if (room.chat.length > 100) {
-    room.chat = room.chat.slice(-100);
+  if (room.chat.length > 200) {
+    room.chat = room.chat.slice(-200);
   }
 
   return true;
@@ -824,6 +826,7 @@ export function applySlowCommand(
   payload: any,
   participantId: string,
   participantNickname: string,
+  now = Date.now(),
 ): boolean {
   switch (type) {
     case "add_item":
@@ -865,7 +868,13 @@ export function applySlowCommand(
     case "flashback":
       return applyFlashback(room, participantId, participantNickname);
     case "send_chat":
-      return applySendChat(room, payload, participantId, participantNickname);
+      return applySendChat(
+        room,
+        payload,
+        participantId,
+        participantNickname,
+        now,
+      );
     case "update_room_name":
       return applyUpdateRoomName(room, payload, participantId);
     case "update_nickname":

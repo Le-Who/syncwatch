@@ -4,6 +4,7 @@ import { roomSocketService } from "./socket";
 import { toast } from "sonner";
 import type { RoomEvent } from "./room-events";
 import type { RoomState } from "./types";
+import type { CommandAcknowledgement } from "./room-command-contract";
 
 interface LocalSettingsState {
   volume: number;
@@ -41,6 +42,8 @@ interface AppState {
   clockSyncReady: boolean;
   occRollbackTick: number;
   isResyncing: boolean;
+  lastCommandAcknowledgement: CommandAcknowledgement | null;
+  commandError: string | null;
   resyncSession: () => Promise<void>;
   setNickname: (name: string) => void;
   connect: (roomId: string, nickname: string) => Promise<void>;
@@ -83,6 +86,18 @@ function handleClockSync({ offset }: { offset: number }) {
 
 function handleSessionUpgraded({ participantId }: { participantId: string }) {
   useStore.setState({ participantId });
+}
+
+function handleCommandAcknowledgement(acknowledgement: CommandAcknowledgement) {
+  const message =
+    acknowledgement.status === "rejected"
+      ? acknowledgement.message || "This action could not be applied."
+      : null;
+  useStore.setState({
+    lastCommandAcknowledgement: acknowledgement,
+    commandError: message,
+  });
+  if (message) toast.error(message);
 }
 
 function handleRoomEvent(event: RoomEvent) {
@@ -225,6 +240,7 @@ function handleRoomEvent(event: RoomEvent) {
 function handleSocketError(error: any) {
   const state = useStore.getState();
   const message = error.message || "An error occurred";
+  if (state.commandError === message) return;
   if (message === "VERSION_CONFLICT") {
     state.triggerOccRollback();
     return;
@@ -261,6 +277,8 @@ export const useStore = create<AppState>((set, get) => ({
   clockSyncReady: false,
   occRollbackTick: 0,
   isResyncing: false,
+  lastCommandAcknowledgement: null,
+  commandError: null,
   triggerOccRollback: () =>
     set((state) => ({ occRollbackTick: state.occRollbackTick + 1 })),
   resyncSession: async () => {
@@ -331,6 +349,7 @@ export const useStore = create<AppState>((set, get) => ({
       roomSocketService.on("disconnected", handleDisconnected);
       roomSocketService.on("clock_sync", handleClockSync);
       roomSocketService.on("session_upgraded", handleSessionUpgraded);
+      roomSocketService.on("command_ack", handleCommandAcknowledgement);
       roomSocketService.on("error", handleSocketError);
       roomSocketService.onRoomEvent(handleRoomEvent);
     }

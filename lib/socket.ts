@@ -1,10 +1,12 @@
 import { io, Socket } from "socket.io-client";
 import type { RoomEvent } from "./room-events";
+import type { CommandAcknowledgement } from "./room-command-contract";
 
 type RoomSocketEvent =
   | "connected"
   | "disconnected"
   | "session_upgraded"
+  | "command_ack"
   | "clock_sync"
   | "error";
 
@@ -84,6 +86,12 @@ export class RoomSocketService {
     this.emit("session_upgraded", { participantId });
   };
 
+  private readonly handleCommandAcknowledgement = (
+    acknowledgement: CommandAcknowledgement,
+  ) => {
+    this.emit("command_ack", acknowledgement);
+  };
+
   private readonly handleError = (error: any) => {
     this.emit("error", error);
   };
@@ -149,6 +157,7 @@ export class RoomSocketService {
     socket.on("participant_left", this.handleParticipantLeft);
     socket.on("participant_health", this.handleParticipantHealth);
     socket.on("session_upgraded", this.handleSessionUpgraded);
+    socket.on("command_ack", this.handleCommandAcknowledgement);
     socket.on("error", this.handleError);
     this.eventsBound = true;
   }
@@ -166,6 +175,7 @@ export class RoomSocketService {
     socket.off("participant_left", this.handleParticipantLeft);
     socket.off("participant_health", this.handleParticipantHealth);
     socket.off("session_upgraded", this.handleSessionUpgraded);
+    socket.off("command_ack", this.handleCommandAcknowledgement);
     socket.off("error", this.handleError);
     this.eventsBound = false;
   }
@@ -207,28 +217,33 @@ export class RoomSocketService {
     payload?: any,
     participantId?: string | null,
   ) {
-    if (!this.socket || !this.socket.connected) return;
+    if (!this.socket || !this.socket.connected) return null;
 
-    this.lastCommand = { type, payload, roomId, sequence };
+    const nonce = crypto.randomUUID();
+
+    this.lastCommand = { type, payload, roomId, sequence, nonce };
 
     this.socket.emit("command", {
       roomId,
-      sequence,
-      type,
-      payload,
+      nonce,
+      clientSequence: sequence,
+      command: { type, payload },
     });
+    return nonce;
   }
 
   public upgradeSession(roomId: string, sequence: number, token: string) {
-    if (!this.socket || !this.socket.connected) return;
+    if (!this.socket || !this.socket.connected) return null;
 
     this.latestSessionToken = token;
+    const nonce = crypto.randomUUID();
     this.socket.emit("command", {
       roomId,
-      sequence,
-      type: "upgrade_session",
-      payload: { token },
+      nonce,
+      clientSequence: sequence,
+      command: { type: "upgrade_session", payload: { token } },
     });
+    return nonce;
   }
 
   private syncClock() {

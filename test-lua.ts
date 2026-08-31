@@ -29,33 +29,27 @@ async function runTest() {
   // Test playing
   const playRes = await executeFastMutation(
     roomId,
-    -1,
     "play",
     { position: 10, nonce: "123" },
     "user-1",
-    "Alice",
   );
   console.log("Play Result:", JSON.stringify(playRes, null, 2));
 
   // Test pausing
   const pauseRes = await executeFastMutation(
     roomId,
-    -1,
     "pause",
     { position: 15, nonce: "456" },
     "user-1",
-    "Alice",
   );
   console.log("Pause Result:", JSON.stringify(pauseRes, null, 2));
 
   // Test pausing again (should return NO_CHANGE)
   const pauseRes2 = await executeFastMutation(
     roomId,
-    -1,
     "pause",
     { position: 15, nonce: "789" },
     "user-1",
-    "Alice",
   );
   console.log("Pause Again Result:", JSON.stringify(pauseRes2, null, 2));
 }

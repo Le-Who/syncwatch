@@ -5,28 +5,33 @@ import { normalizeRoomState } from "./types";
 // Centralized Lua scripts for atomic fast-path mutations
 const LUA_FAST_MUTATION = `
   local room_key = KEYS[1]
-  local expected_version = tonumber(ARGV[1])
-  local mutation_type = ARGV[2]
-  local mutation_payload = cjson.decode(ARGV[3])
-  local participant_id = ARGV[4]
-  local participant_nickname = ARGV[5]
-  local now = tonumber(ARGV[6])
-  local authorized_leader_id = ARGV[7]
-  local authorized_role = ARGV[8]
+  local mutation_type = ARGV[1]
+  local mutation_payload = cjson.decode(ARGV[2])
+  local participant_id = ARGV[3]
+  local now = tonumber(ARGV[4])
+  local authorized_leader_id = ARGV[5]
+  local authorized_role = ARGV[6]
 
   local val = redis.call("get", room_key)
   if not val then return "ROOM_NOT_FOUND" end
   
   local room = cjson.decode(val)
   
-  -- If expected_version is passed explicitly, enforce OCC on the atomic level. 
-  -- Otherwise, if -1, we bypass strictly for 'last-writer-wins' player synchronization
-  if expected_version ~= -1 and room.sequence ~= expected_version then
-    return "VERSION_CONFLICT"
-  end
-
   local participant = room.participants[participant_id]
   if not participant then return "UNAUTHORIZED" end
+
+  if type(mutation_payload.nonce) == "string" then
+    if room.playback.lastActionNonce == mutation_payload.nonce then
+      return "DUPLICATE"
+    end
+    if type(room.processedCommandNonces) == "table" then
+      for _, processed_nonce in ipairs(room.processedCommandNonces) do
+        if processed_nonce == mutation_payload.nonce then
+          return "DUPLICATE"
+        end
+      end
+    end
+  end
 
   -- The shared TypeScript permission policy authorizes the mutation before
   -- this script runs. These snapshots make that authorization atomic without
@@ -58,7 +63,7 @@ const LUA_FAST_MUTATION = `
            end
            room.playback.basePosition = mutation_payload.position
            room.playback.baseTimestamp = now
-           room.playback.updatedBy = participant_nickname
+           room.playback.updatedBy = participant_id
            if mutation_payload.nonce then room.playback.lastActionNonce = mutation_payload.nonce end
            changed = true
         end
@@ -69,7 +74,7 @@ const LUA_FAST_MUTATION = `
            room.playback.status = "paused"
            room.playback.basePosition = mutation_payload.position
            room.playback.baseTimestamp = now
-           room.playback.updatedBy = participant_nickname
+           room.playback.updatedBy = participant_id
            if mutation_payload.nonce then room.playback.lastActionNonce = mutation_payload.nonce end
            changed = true
         end
@@ -83,7 +88,7 @@ const LUA_FAST_MUTATION = `
            room.playback.baseTimestamp = now
         end
         room.playback.rate = new_rate
-        room.playback.updatedBy = participant_nickname
+        room.playback.updatedBy = participant_id
         if mutation_payload.nonce then room.playback.lastActionNonce = mutation_payload.nonce end
         changed = true
      end
@@ -91,6 +96,7 @@ const LUA_FAST_MUTATION = `
      if type(mutation_payload.position) == "number" and mutation_payload.position >= 0 then
         room.playback.basePosition = mutation_payload.position
         room.playback.baseTimestamp = now
+        room.playback.updatedBy = participant_id
         -- Update the nonce but do not change the underlying playing/paused status
         if mutation_payload.nonce then room.playback.lastActionNonce = mutation_payload.nonce end
         changed = true
@@ -101,6 +107,15 @@ const LUA_FAST_MUTATION = `
      room.version = room.version + 1
      room.sequence = room.sequence + 1
      room.lastActivity = now
+     if type(mutation_payload.nonce) == "string" then
+       if type(room.processedCommandNonces) ~= "table" then
+         room.processedCommandNonces = {}
+       end
+       table.insert(room.processedCommandNonces, mutation_payload.nonce)
+       while #room.processedCommandNonces > 256 do
+         table.remove(room.processedCommandNonces, 1)
+       end
+     end
      
      local new_val = cjson.encode(room)
      redis.call("set", room_key, new_val)
@@ -114,11 +129,9 @@ const LUA_FAST_MUTATION = `
 
 export async function executeFastMutation(
   roomId: string,
-  expectedVersion: number,
   mutationType: string,
   payload: any,
   participantId: string,
-  participantNickname: string,
 ): Promise<{ success: boolean; state?: any; error?: string }> {
   const redisClient = getRedisClient();
   if (!redisClient) {
@@ -132,7 +145,10 @@ export async function executeFastMutation(
     const room = normalizeRoomState(JSON.parse(serializedRoom));
     const participant = room.participants[participantId];
     if (!participant) return { success: false, error: "UNAUTHORIZED" };
-    if (!permissions.getParticipantPermissions(room, participantId).canControlPlayback) {
+    if (
+      !permissions.getParticipantPermissions(room, participantId)
+        .canControlPlayback
+    ) {
       return { success: false, error: "UNAUTHORIZED" };
     }
 
@@ -140,11 +156,9 @@ export async function executeFastMutation(
       LUA_FAST_MUTATION,
       1,
       "room_state:" + roomId,
-      expectedVersion.toString(),
       mutationType,
       JSON.stringify(payload),
       participantId,
-      participantNickname,
       Date.now().toString(),
       room.leaderId ?? "",
       participant.role,

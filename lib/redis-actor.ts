@@ -15,6 +15,7 @@ import { LRUCache } from "./lru-cache";
 
 // LRU Cache for fallback when Redis is unavailable to prevent OOM
 const rawLocalRooms = new LRUCache<string, any>(500);
+const localRoomExpiryTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 const localRooms = {
   get: (key: string) => {
@@ -96,11 +97,36 @@ export async function getRedisRoom(roomId: string): Promise<any | null> {
 export async function setRedisRoom(roomId: string, state: any): Promise<void> {
   const redisClient = getRedisClient();
   if (!redisClient) {
+    const expiryTimer = localRoomExpiryTimers.get(roomId);
+    if (expiryTimer) {
+      clearTimeout(expiryTimer);
+      localRoomExpiryTimers.delete(roomId);
+    }
     localRooms.set(roomId, JSON.parse(JSON.stringify(state)));
     return;
   }
   await redisClient.set(`room_state:${roomId}`, JSON.stringify(state));
   await redisClient.expire(`room_state:${roomId}`, 86400); // 1 day
+}
+
+export async function expireRedisRoom(
+  roomId: string,
+  ttlSeconds: number,
+): Promise<void> {
+  const redisClient = getRedisClient();
+  if (redisClient) {
+    await redisClient.expire(`room_state:${roomId}`, ttlSeconds);
+    return;
+  }
+
+  const existingTimer = localRoomExpiryTimers.get(roomId);
+  if (existingTimer) clearTimeout(existingTimer);
+  const timer = setTimeout(() => {
+    localRooms.set(roomId, null);
+    localRoomExpiryTimers.delete(roomId);
+  }, ttlSeconds * 1_000);
+  timer.unref?.();
+  localRoomExpiryTimers.set(roomId, timer);
 }
 
 /**

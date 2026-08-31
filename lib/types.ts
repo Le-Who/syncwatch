@@ -83,6 +83,8 @@ export interface RoomState {
   version: number;
   sequence: number;
   lastActivity: number;
+  /** Server-only bounded idempotency window for acknowledged room commands. */
+  processedCommandNonces?: string[];
 }
 
 export type LegacyRoomStateInput = Omit<
@@ -245,6 +247,11 @@ export function normalizeRoomState(input: LegacyRoomStateInput): RoomState {
     sequence: typeof input.sequence === "number" ? input.sequence : 1,
     lastActivity:
       typeof input.lastActivity === "number" ? input.lastActivity : now,
+    processedCommandNonces: Array.isArray(input.processedCommandNonces)
+      ? input.processedCommandNonces.filter(
+          (nonce): nonce is string => typeof nonce === "string",
+        )
+      : [],
   };
 }
 

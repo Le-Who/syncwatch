@@ -139,7 +139,9 @@ describe("Redis Actor & Queue Integration Tests", () => {
         },
       },
       playlist: [],
+      chat: [],
       currentMediaId: null,
+      leaderId: null,
       playback: {
         status: "paused",
         basePosition: 0,
@@ -147,6 +149,7 @@ describe("Redis Actor & Queue Integration Tests", () => {
         rate: 1,
         updatedBy: participantId,
       },
+      flashbacks: {},
       version: 1,
       sequence: 1,
       lastActivity: Date.now(),

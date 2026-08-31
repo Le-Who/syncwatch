@@ -33,7 +33,6 @@ describe("Fast-Path OCC Logic", () => {
       redis = getRedisClient();
       usingMock = true;
     }
-
   });
 
   beforeEach(async () => {
@@ -109,11 +108,9 @@ describe("Fast-Path OCC Logic", () => {
     // Act: Send 'play' mutation
     const result = await executeFastMutation(
       roomId,
-      -1, // LWW bypassing explicit sequence checks for fast paths
       "play",
       { position: 50 },
       "u1",
-      "Owner",
     );
 
     // Assert: Mutation completed successfully inside Lua and matched return state
@@ -128,11 +125,9 @@ describe("Fast-Path OCC Logic", () => {
   it("TC-Fast-2: Should reject unauthorized participant", async () => {
     const result = await executeFastMutation(
       roomId,
-      -1,
       "play",
       { position: 100 },
       "unknown_user",
-      "Hacker",
     );
 
     expect(result.success).toBe(false);
@@ -142,17 +137,15 @@ describe("Fast-Path OCC Logic", () => {
   it("TC-Fast-2b: Should allow viewer playback control when there is no leader", async () => {
     const viewerResult = await executeFastMutation(
       roomId,
-      -1,
       "play",
       { position: 12 },
       "u2",
-      "Viewer",
     );
 
     expect(viewerResult.success).toBe(true);
     const viewerState = await getRedisRoom(roomId);
     expect(viewerState.playback.basePosition).toBe(12);
-    expect(viewerState.playback.updatedBy).toBe("Viewer");
+    expect(viewerState.playback.updatedBy).toBe("u2");
   });
 
   it("uses the shared permission policy before applying an atomic fast mutation", async () => {
@@ -171,11 +164,9 @@ describe("Fast-Path OCC Logic", () => {
 
     const result = await executeFastMutation(
       roomId,
-      -1,
       "play",
       { position: 12 },
       "u2",
-      "Viewer",
     );
 
     expect(result).toEqual({ success: false, error: "UNAUTHORIZED" });
@@ -220,11 +211,9 @@ describe("Fast-Path OCC Logic", () => {
 
     const otherViewerResult = await executeFastMutation(
       roomId,
-      -1,
       "play",
       { position: 12 },
       "u4",
-      "Other Viewer",
     );
 
     expect(otherViewerResult.success).toBe(false);
@@ -232,47 +221,34 @@ describe("Fast-Path OCC Logic", () => {
 
     const leaderResult = await executeFastMutation(
       roomId,
-      -1,
       "play",
       { position: 12 },
       "u2",
-      "Viewer",
     );
 
     expect(leaderResult.success).toBe(true);
 
     const moderatorResult = await executeFastMutation(
       roomId,
-      -1,
       "play",
       { position: 13, forceSeek: true },
       "u3",
-      "Mod",
     );
 
     expect(moderatorResult.success).toBe(true);
     const state = await getRedisRoom(roomId);
     expect(state.playback.basePosition).toBe(13);
-    expect(state.playback.updatedBy).toBe("Mod");
+    expect(state.playback.updatedBy).toBe("u3");
   });
 
   it("TC-Fast-3: Should handle pause mutation correctly", async () => {
-    await executeFastMutation(
-      roomId,
-      -1,
-      "play",
-      { position: 70 },
-      "u1",
-      "Owner",
-    );
+    await executeFastMutation(roomId, "play", { position: 70 }, "u1");
 
     const result = await executeFastMutation(
       roomId,
-      -1,
       "pause",
       { position: 75 },
       "u1",
-      "Owner",
     );
 
     expect(result.success).toBe(true);
@@ -283,16 +259,14 @@ describe("Fast-Path OCC Logic", () => {
 
   it("TC-Fast-4: Should handle sync_correction with nonce", async () => {
     // First set to playing
-    await executeFastMutation(roomId, -1, "play", { position: 0 }, "u1", "Owner");
+    await executeFastMutation(roomId, "play", { position: 0 }, "u1");
 
     const nonce = "test-nonce-123";
     const result = await executeFastMutation(
       roomId,
-      -1,
       "sync_correction",
       { position: 42, nonce },
       "u1",
-      "Owner",
     );
 
     expect(result.success).toBe(true);
@@ -301,20 +275,54 @@ describe("Fast-Path OCC Logic", () => {
     expect(state.playback.lastActionNonce).toBe(nonce);
   });
 
+  it("records the actor ID for sync correction ordering", async () => {
+    const result = await executeFastMutation(
+      roomId,
+      "sync_correction",
+      { position: 21, nonce: randomUUID() },
+      "u2",
+    );
+
+    expect(result.success).toBe(true);
+    expect((await getRedisRoom(roomId)).playback.updatedBy).toBe("u2");
+  });
+
   it("TC-Fast-5: Should return NO_CHANGE when pausing an already-paused room", async () => {
     // Ensure paused first
-    await executeFastMutation(roomId, -1, "pause", { position: 10 }, "u1", "Owner");
+    await executeFastMutation(roomId, "pause", { position: 10 }, "u1");
 
     const result = await executeFastMutation(
       roomId,
-      -1,
       "pause",
       { position: 20 },
       "u1",
-      "Owner",
     );
 
     expect(result.success).toBe(false);
     expect(result.error).toBe("NO_CHANGE");
+  });
+
+  it("deduplicates a playback nonce atomically and increments sequence once", async () => {
+    const nonce = randomUUID();
+
+    const first = await executeFastMutation(
+      roomId,
+      "seek",
+      { position: 17, nonce },
+      "u1",
+    );
+    const second = await executeFastMutation(
+      roomId,
+      "seek",
+      { position: 99, nonce },
+      "u1",
+    );
+
+    expect(first.success).toBe(true);
+    expect(second).toEqual({ success: false, error: "DUPLICATE" });
+    const state = await getRedisRoom(roomId);
+    expect(state.sequence).toBe(2);
+    expect(state.playback.basePosition).toBe(17);
+    expect(state.playback.updatedBy).toBe("u1");
   });
 });

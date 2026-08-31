@@ -8,6 +8,9 @@ import { handleCommandEvents } from "./socket/commands";
 import { RoomEventBus } from "./room-event-bus";
 import { emitRoomEventToSocketIo } from "./room-events";
 import { pubClient } from "./redis-actor";
+import { RoomCommandService } from "./room-command-service";
+import { roomRepository } from "./room-repository";
+import { persistRoomState } from "./db-sync";
 
 export function createEmptyRoom(id: string, name: string): RoomState {
   return normalizeRoomState({
@@ -43,6 +46,7 @@ export function sanitizeRoom(room: RoomState): RoomState {
     ...normalized,
     participants: { ...normalized.participants },
   };
+  delete sanitized.processedCommandNonces;
   for (const pid in sanitized.participants) {
     sanitized.participants[pid] = { ...sanitized.participants[pid] };
     delete (sanitized.participants[pid] as any).sessionToken;
@@ -70,5 +74,10 @@ export function registerRoomHandlers(
     );
 
   handleConnectionEvents(io, socket, supabase, context, eventBus);
-  handleCommandEvents(io, socket, supabase, context);
+  const commandService = new RoomCommandService({
+    repository: roomRepository,
+    eventBus,
+    schedulePersistence: (room) => persistRoomState(room, supabase),
+  });
+  handleCommandEvents(io, socket, supabase, context, commandService, eventBus);
 }

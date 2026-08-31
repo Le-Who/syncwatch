@@ -39,6 +39,8 @@ describe("room-logic: video_ended command", () => {
         },
       },
       leaderId: null,
+      chat: [],
+      flashbacks: {},
       playlist: [
         {
           id: "item-1",

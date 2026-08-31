@@ -242,11 +242,11 @@ describe("Room Handler Security & Auth Boundary", () => {
       connection: "connected",
       connectionIds: ["existing-target-socket", mockSocket.id],
     });
-    const stateUpdate = (redisActor.publishRoomEvent as any).mock.calls.find(
-      ([, event]: any[]) => event.type === "state_update",
-    )[1];
+    const stateUpdate = roomEmit.mock.calls.find(
+      ([event]) => event === "room_state",
+    )?.[1];
     expect(
-      stateUpdate.payload.participants[accountId].connectionIds,
+      stateUpdate.room.participants[accountId].connectionIds,
     ).toBeUndefined();
   });
 
@@ -680,7 +680,7 @@ describe("Room Handler Security & Auth Boundary", () => {
     });
 
     expect(mockSocket.emit).toHaveBeenCalledWith("error", {
-      message: "Unauthorized operation.",
+      message: "You do not have permission to perform this action.",
     });
     expect(storedRoom.playback.status).toBe("paused");
     expect(storedRoom.playback.basePosition).toBe(12);

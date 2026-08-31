@@ -125,6 +125,8 @@ describe("useStore", () => {
         sessionToken: null,
         nickname: "",
         commandSequence: 1,
+        lastCommandAcknowledgement: null,
+        commandError: null,
       });
     });
     vi.clearAllMocks();
@@ -239,6 +241,67 @@ describe("useStore", () => {
     socketDouble.serverEmit("participant_joined", participant("p1"));
 
     expect(onRoomEvent).toHaveBeenCalledOnce();
+  });
+
+  it("correlates client command envelopes with command acknowledgements", async () => {
+    const actual =
+      await vi.importActual<typeof import("../socket")>("../socket");
+    const service = new actual.RoomSocketService();
+    const onAcknowledgement = vi.fn();
+    service.on("command_ack", onAcknowledgement);
+    service.connect("room-a", "Friend", "p0", "token");
+    socketDouble.emit.mockClear();
+
+    const nonce = service.sendCommand("room-a", 7, "pause", {
+      position: 12,
+    });
+    const commandCall = socketDouble.emit.mock.calls.find(
+      ([event]) => event === "command",
+    );
+    expect(nonce).toEqual(expect.any(String));
+    expect(commandCall?.[1]).toEqual({
+      roomId: "room-a",
+      nonce,
+      clientSequence: 7,
+      command: { type: "pause", payload: { position: 12 } },
+    });
+
+    const ack = {
+      nonce,
+      status: "rejected",
+      code: "NOT_PERMITTED",
+      message: "You do not have permission to perform this action.",
+    };
+    socketDouble.serverEmit("command_ack", ack);
+    expect(onAcknowledgement).toHaveBeenCalledWith(ack);
+  });
+
+  it("stores rejected acknowledgements as visible command state", () => {
+    const { result } = renderHook(() => useStore());
+    act(() => {
+      result.current.init();
+    });
+    const onAck = vi
+      .mocked(roomSocketService.on)
+      .mock.calls.find(([event]) => event === "command_ack")?.[1];
+
+    expect(onAck).toEqual(expect.any(Function));
+    act(() => {
+      onAck?.({
+        nonce: "00000000-0000-4000-8000-000000000099",
+        status: "rejected",
+        code: "NOT_PERMITTED",
+        message: "You do not have permission to perform this action.",
+      });
+    });
+
+    expect(result.current.lastCommandAcknowledgement).toMatchObject({
+      status: "rejected",
+      code: "NOT_PERMITTED",
+    });
+    expect(result.current.commandError).toBe(
+      "You do not have permission to perform this action.",
+    );
   });
 
   it("should update nickname and omit emitting if not connected", () => {

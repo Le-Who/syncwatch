@@ -25,6 +25,11 @@ function clearAll() {
 }
 
 const mockRedis = {
+  flushall: async () => {
+    clearAll();
+    return "OK";
+  },
+
   get: async (key: string) => store.get(key) ?? null,
 
   set: async (key: string, value: string, ...args: any[]) => {
@@ -34,7 +39,10 @@ const mockRedis = {
     const pxIdx = args.indexOf("PX");
     if (pxIdx !== -1 && typeof args[pxIdx + 1] === "number") {
       if (expiries.has(key)) clearTimeout(expiries.get(key)!);
-      expiries.set(key, setTimeout(() => store.delete(key), args[pxIdx + 1]));
+      expiries.set(
+        key,
+        setTimeout(() => store.delete(key), args[pxIdx + 1]),
+      );
     }
     return "OK";
   },
@@ -43,7 +51,10 @@ const mockRedis = {
     let count = 0;
     for (const k of keys) {
       if (store.delete(k)) count++;
-      if (expiries.has(k)) { clearTimeout(expiries.get(k)!); expiries.delete(k); }
+      if (expiries.has(k)) {
+        clearTimeout(expiries.get(k)!);
+        expiries.delete(k);
+      }
     }
     return count;
   },
@@ -56,7 +67,10 @@ const mockRedis = {
   expire: async (key: string, seconds: number) => {
     if (!store.has(key)) return 0;
     if (expiries.has(key)) clearTimeout(expiries.get(key)!);
-    expiries.set(key, setTimeout(() => store.delete(key), seconds * 1000));
+    expiries.set(
+      key,
+      setTimeout(() => store.delete(key), seconds * 1000),
+    );
     return 1;
   },
 
@@ -70,7 +84,12 @@ const mockRedis = {
   zrem: async (key: string, member: string) => {
     return sortedSets.get(key)?.delete(member) ? 1 : 0;
   },
-  zrangebyscore: async (key: string, min: string, max: string, ...args: any[]) => {
+  zrangebyscore: async (
+    key: string,
+    min: string,
+    max: string,
+    ...args: any[]
+  ) => {
     const ss = sortedSets.get(key);
     if (!ss) return [];
     const minVal = min === "-inf" ? -Infinity : Number(min);
@@ -92,7 +111,10 @@ const mockRedis = {
     if (!ss) return 0;
     let count = 0;
     for (const [member, score] of ss.entries()) {
-      if (score >= min && score <= max) { ss.delete(member); count++; }
+      if (score >= min && score <= max) {
+        ss.delete(member);
+        count++;
+      }
     }
     return count;
   },
@@ -101,10 +123,22 @@ const mockRedis = {
   multi: () => {
     const queue: Array<() => Promise<any>> = [];
     const chain = {
-      zremrangebyscore: (key: string, min: number, max: number) => { queue.push(() => mockRedis.zremrangebyscore(key, min, max)); return chain; },
-      zcard: (key: string) => { queue.push(() => mockRedis.zcard(key)); return chain; },
-      zadd: (key: string, score: number, member: string) => { queue.push(() => mockRedis.zadd(key, score, member)); return chain; },
-      expire: (key: string, seconds: number) => { queue.push(() => mockRedis.expire(key, seconds)); return chain; },
+      zremrangebyscore: (key: string, min: number, max: number) => {
+        queue.push(() => mockRedis.zremrangebyscore(key, min, max));
+        return chain;
+      },
+      zcard: (key: string) => {
+        queue.push(() => mockRedis.zcard(key));
+        return chain;
+      },
+      zadd: (key: string, score: number, member: string) => {
+        queue.push(() => mockRedis.zadd(key, score, member));
+        return chain;
+      },
+      expire: (key: string, seconds: number) => {
+        queue.push(() => mockRedis.expire(key, seconds));
+        return chain;
+      },
       exec: async () => {
         const results: Array<[null, any]> = [];
         for (const fn of queue) {
@@ -128,7 +162,10 @@ const mockRedis = {
     const key = args[0] as string;
 
     // CAS script (setRedisRoomCAS)
-    if (script.includes("decoded.version") && script.includes("tonumber(ARGV[2])")) {
+    if (
+      script.includes("decoded.version") &&
+      script.includes("tonumber(ARGV[2])")
+    ) {
       const newState = args[1] as string;
       const expectedVersion = Number(args[2]);
       const existing = store.get(key);
@@ -145,7 +182,10 @@ const mockRedis = {
     }
 
     // Lock release script (withLock)
-    if (script.includes('redis.call("get"') && script.includes('redis.call("del"')) {
+    if (
+      script.includes('redis.call("get"') &&
+      script.includes('redis.call("del"')
+    ) {
       const lockVal = args[1] as string;
       if (store.get(key) === lockVal) {
         store.delete(key);
@@ -156,26 +196,28 @@ const mockRedis = {
 
     // Fast-path mutation script (executeFastMutation)
     if (script.includes("mutation_type") && script.includes("cjson.decode")) {
-      const expectedVersion = Number(args[1]);
-      const mutationType = args[2] as string;
-      const payload = JSON.parse(args[3] as string);
-      const participantId = args[4] as string;
-      const participantNickname = args[5] as string;
-      const now = Number(args[6]);
-      const authorizedLeaderId = args[7] as string;
-      const authorizedRole = args[8] as string;
+      const mutationType = args[1] as string;
+      const payload = JSON.parse(args[2] as string);
+      const participantId = args[3] as string;
+      const now = Number(args[4]);
+      const authorizedLeaderId = args[5] as string;
+      const authorizedRole = args[6] as string;
 
       const val = store.get(key);
       if (!val) return "ROOM_NOT_FOUND";
 
       const room = JSON.parse(val);
 
-      if (expectedVersion !== -1 && room.sequence !== expectedVersion) {
-        return "VERSION_CONFLICT";
-      }
-
       const participant = room.participants?.[participantId];
       if (!participant) return "UNAUTHORIZED";
+
+      if (
+        typeof payload.nonce === "string" &&
+        (room.playback.lastActionNonce === payload.nonce ||
+          room.processedCommandNonces?.includes(payload.nonce))
+      ) {
+        return "DUPLICATE";
+      }
 
       const activeLeaderId =
         typeof room.leaderId === "string" && room.participants?.[room.leaderId]
@@ -197,14 +239,19 @@ const mockRedis = {
 
       if (["play", "seek", "buffering"].includes(mutationType)) {
         if (typeof payload.position === "number" && payload.position >= 0) {
-          if (mutationType === "play" && room.playback.status === "playing" && !payload.forceSeek) {
+          if (
+            mutationType === "play" &&
+            room.playback.status === "playing" &&
+            !payload.forceSeek
+          ) {
             // strictly ignore
           } else {
             if (mutationType === "play") room.playback.status = "playing";
-            else if (mutationType === "buffering") room.playback.status = "buffering";
+            else if (mutationType === "buffering")
+              room.playback.status = "buffering";
             room.playback.basePosition = payload.position;
             room.playback.baseTimestamp = now;
-            room.playback.updatedBy = participantNickname;
+            room.playback.updatedBy = participantId;
             if (payload.nonce) room.playback.lastActionNonce = payload.nonce;
             changed = true;
           }
@@ -215,7 +262,7 @@ const mockRedis = {
             room.playback.status = "paused";
             room.playback.basePosition = payload.position;
             room.playback.baseTimestamp = now;
-            room.playback.updatedBy = participantNickname;
+            room.playback.updatedBy = participantId;
             if (payload.nonce) room.playback.lastActionNonce = payload.nonce;
             changed = true;
           }
@@ -229,7 +276,7 @@ const mockRedis = {
             room.playback.baseTimestamp = now;
           }
           room.playback.rate = newRate;
-          room.playback.updatedBy = participantNickname;
+          room.playback.updatedBy = participantId;
           if (payload.nonce) room.playback.lastActionNonce = payload.nonce;
           changed = true;
         }
@@ -237,6 +284,7 @@ const mockRedis = {
         if (typeof payload.position === "number" && payload.position >= 0) {
           room.playback.basePosition = payload.position;
           room.playback.baseTimestamp = now;
+          room.playback.updatedBy = participantId;
           if (payload.nonce) room.playback.lastActionNonce = payload.nonce;
           changed = true;
         }
@@ -246,6 +294,12 @@ const mockRedis = {
         room.version = (room.version || 0) + 1;
         room.sequence = (room.sequence || 0) + 1;
         room.lastActivity = now;
+        if (typeof payload.nonce === "string") {
+          room.processedCommandNonces = [
+            ...(room.processedCommandNonces ?? []),
+            payload.nonce,
+          ].slice(-256);
+        }
         const newVal = JSON.stringify(room);
         store.set(key, newVal);
         return newVal;
