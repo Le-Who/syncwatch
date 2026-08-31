@@ -344,6 +344,27 @@ describe("RoomCommandService", () => {
     expect((await repository.get("room-a"))?.playback.status).toBe("playing");
   });
 
+  it.each([
+    ["play", "playing"],
+    ["pause", "paused"],
+  ] as const)(
+    "ignores an unchanged %s command without showing an invalid-command error",
+    async (type, status) => {
+      const room = makeRoom();
+      room.playback.status = status;
+      const { repository, events, service } = harness(room);
+
+      const result = await service.execute(
+        contextFor("room-a", "p0"),
+        envelope("room-a", { type, payload: { position: 5 } }),
+      );
+
+      expect(result).toMatchObject({ status: "ignored", code: "NO_CHANGE" });
+      expect((await repository.get("room-a"))?.sequence).toBe(1);
+      expect(events).toEqual([]);
+    },
+  );
+
   it("acknowledges a committed mutation when remote publication is unavailable", async () => {
     const repository = new InMemoryRoomRepository([makeRoom()], () => 10_000);
     const localEvents: RoomEvent[] = [];
@@ -470,17 +491,24 @@ describe("RoomCommandService", () => {
     },
   );
 
-  it("serializes concurrent slow commands without dropping additions", async () => {
+  it("serializes 25 participants' concurrent slow commands without dropping additions", async () => {
     const room = makeRoom();
     room.playlist = [];
     room.currentMediaId = null;
+    for (let index = 2; index < 25; index++) {
+      room.participants[`p${index}`] = {
+        ...room.participants.p1,
+        id: `p${index}`,
+        nickname: `Friend ${index}`,
+        connectionIds: [`socket-p${index}`],
+      };
+    }
     const { repository, service } = harness(room);
-    const ctx = contextFor("room-a", "p1");
 
     const results = await Promise.all(
-      Array.from({ length: 10 }, (_, index) =>
+      Array.from({ length: 25 }, (_, index) =>
         service.execute(
-          ctx,
+          contextFor("room-a", `p${index}`),
           envelope("room-a", {
             type: "add_item",
             payload: { url: `https://example.com/${index}` },
@@ -490,7 +518,49 @@ describe("RoomCommandService", () => {
     );
 
     expect(results.every((result) => result.status === "applied")).toBe(true);
-    expect((await repository.get("room-a"))?.playlist).toHaveLength(10);
+    const stored = await repository.get("room-a");
+    expect(stored?.playlist).toHaveLength(25);
+    expect(new Set(stored?.playlist.map((item) => item.url)).size).toBe(25);
+  });
+
+  it("rechecks in-memory playback permission after a CAS conflict", async () => {
+    class PermissionChangingRepository extends InMemoryRoomRepository {
+      private shouldConflict = true;
+
+      override async compareAndSet(
+        roomId: string,
+        expectedVersion: number,
+        next: RoomState,
+      ) {
+        if (this.shouldConflict) {
+          this.shouldConflict = false;
+          const competing = await this.get(roomId);
+          if (!competing) return false;
+          competing.leaderId = "p0";
+          competing.version = expectedVersion + 1;
+          competing.sequence += 1;
+          await super.compareAndSet(roomId, expectedVersion, competing);
+          return false;
+        }
+        return super.compareAndSet(roomId, expectedVersion, next);
+      }
+    }
+    const repository = new PermissionChangingRepository(
+      [makeRoom()],
+      () => 10_000,
+    );
+    const service = new RoomCommandService({
+      repository,
+      eventBus: new RoomEventBus(() => {}),
+    });
+
+    const result = await service.execute(
+      contextFor("room-a", "p1"),
+      envelope("room-a", { type: "play", payload: { position: 12 } }),
+    );
+
+    expect(result).toMatchObject({ status: "rejected", code: "NOT_PERMITTED" });
+    expect((await repository.get("room-a"))?.playback.status).toBe("paused");
   });
 });
 

@@ -142,7 +142,10 @@ export async function setRedisRoomCAS(
   if (!redisClient) {
     // Local memory fallback CAS
     const existing = localRooms.get(roomId);
-    if (!existing || existing.version === expectedVersion) {
+    if (
+      (!existing && expectedVersion === 0) ||
+      (existing && existing.version === expectedVersion)
+    ) {
       localRooms.set(roomId, JSON.parse(JSON.stringify(state)));
       return true;
     }
@@ -152,6 +155,7 @@ export async function setRedisRoomCAS(
   const script = `
     local val = redis.call("get", KEYS[1])
     if not val then
+      if tonumber(ARGV[2]) ~= 0 then return 0 end
       redis.call("set", KEYS[1], ARGV[1])
       redis.call("expire", KEYS[1], 86400)
       return 1

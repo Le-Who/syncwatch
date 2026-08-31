@@ -25,6 +25,8 @@ export const COMMAND_REJECTION_MESSAGES: Record<CommandRejectionCode, string> =
     NOT_PERMITTED: "You do not have permission to perform this action.",
     STALE_MEDIA: "The room has already moved to another video.",
     DUPLICATE: "This action was already received.",
+    NO_CHANGE: "The room is already in that playback state.",
+    CONTENTION: "The room is busy. Please retry this action.",
     QUEUE_FULL: "The queue already contains 500 items.",
   };
 
@@ -39,7 +41,6 @@ type Dependencies = {
   ) => void;
 };
 
-const MAX_CAS_ATTEMPTS = 10;
 const MAX_PROCESSED_NONCES = 256;
 
 function acknowledgement(
@@ -277,79 +278,133 @@ export class RoomCommandService {
       );
     }
 
-    for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt++) {
-      const room = await this.repository.get(envelope.roomId);
-      if (!room) {
-        return acknowledgement(envelope.nonce, "rejected", "NOT_JOINED");
-      }
-      const currentActor = room.participants[actor.id];
-      if (!currentActor) {
-        return acknowledgement(envelope.nonce, "rejected", "NOT_PARTICIPANT");
-      }
-      if (room.processedCommandNonces?.includes(envelope.nonce)) {
-        return acknowledgement(envelope.nonce, "ignored", "DUPLICATE");
-      }
-      if (!commandAllowed(room, currentActor.id, envelope.command)) {
-        return acknowledgement(envelope.nonce, "rejected", "NOT_PERMITTED");
-      }
-      const validationCode = commandValidationCode(room, envelope.command);
-      if (validationCode) {
-        const status =
-          validationCode === "STALE_MEDIA" ? "ignored" : "rejected";
-        return acknowledgement(envelope.nonce, status, validationCode);
-      }
+    type SlowMutationValue =
+      | { kind: "acknowledgement"; ack: CommandAcknowledgement }
+      | { kind: "commit"; serverTime: number };
+    const mutation = await this.repository.mutateRoom<SlowMutationValue>(
+      envelope.roomId,
+      async (room) => {
+        if (!room) {
+          return {
+            status: "return" as const,
+            value: {
+              kind: "acknowledgement" as const,
+              ack: acknowledgement(envelope.nonce, "rejected", "NOT_JOINED"),
+            },
+          };
+        }
+        const currentActor = room.participants[context.currentParticipantId!];
+        if (!currentActor) {
+          return {
+            status: "return" as const,
+            value: {
+              kind: "acknowledgement" as const,
+              ack: acknowledgement(
+                envelope.nonce,
+                "rejected",
+                "NOT_PARTICIPANT",
+              ),
+            },
+          };
+        }
+        if (room.processedCommandNonces?.includes(envelope.nonce)) {
+          return {
+            status: "return" as const,
+            value: {
+              kind: "acknowledgement" as const,
+              ack: acknowledgement(envelope.nonce, "ignored", "DUPLICATE"),
+            },
+          };
+        }
+        if (!commandAllowed(room, currentActor.id, envelope.command)) {
+          return {
+            status: "return" as const,
+            value: {
+              kind: "acknowledgement" as const,
+              ack: acknowledgement(envelope.nonce, "rejected", "NOT_PERMITTED"),
+            },
+          };
+        }
+        const validationCode = commandValidationCode(room, envelope.command);
+        if (validationCode) {
+          const status =
+            validationCode === "STALE_MEDIA" ? "ignored" : "rejected";
+          return {
+            status: "return" as const,
+            value: {
+              kind: "acknowledgement" as const,
+              ack: acknowledgement(envelope.nonce, status, validationCode),
+            },
+          };
+        }
 
-      const next = structuredClone(room);
-      const serverTime = this.now();
-      const changed = applySlowCommand(
-        next,
-        envelope.command.type,
-        envelope.command.payload,
-        currentActor.id,
-        currentActor.nickname,
-        serverTime,
-      );
-      if (!changed) {
-        return acknowledgement(envelope.nonce, "rejected", "INVALID_COMMAND");
-      }
-      if (
-        next.currentMediaId !== room.currentMediaId ||
-        next.playback.status !== room.playback.status ||
-        next.playback.basePosition !== room.playback.basePosition ||
-        next.playback.baseTimestamp !== room.playback.baseTimestamp ||
-        next.playback.rate !== room.playback.rate
-      ) {
-        next.playback.updatedBy = currentActor.id;
-      }
-      next.version = room.version + 1;
-      next.sequence = room.sequence + 1;
-      next.lastActivity = serverTime;
-      rememberNonce(next, envelope.nonce);
-
-      if (
-        !(await this.repository.compareAndSet(
-          envelope.roomId,
-          room.version,
+        const next = structuredClone(room);
+        const serverTime = this.now();
+        const changed = applySlowCommand(
           next,
-        ))
-      ) {
-        continue;
-      }
+          envelope.command.type,
+          envelope.command.payload,
+          currentActor.id,
+          currentActor.nickname,
+          serverTime,
+        );
+        if (!changed) {
+          return {
+            status: "return" as const,
+            value: {
+              kind: "acknowledgement" as const,
+              ack: acknowledgement(
+                envelope.nonce,
+                "rejected",
+                "INVALID_COMMAND",
+              ),
+            },
+          };
+        }
+        if (
+          next.currentMediaId !== room.currentMediaId ||
+          next.playback.status !== room.playback.status ||
+          next.playback.basePosition !== room.playback.basePosition ||
+          next.playback.baseTimestamp !== room.playback.baseTimestamp ||
+          next.playback.rate !== room.playback.rate
+        ) {
+          next.playback.updatedBy = currentActor.id;
+        }
+        next.version = room.version + 1;
+        next.sequence = room.sequence + 1;
+        next.lastActivity = serverTime;
+        rememberNonce(next, envelope.nonce);
+        return {
+          status: "commit" as const,
+          next,
+          value: { kind: "commit" as const, serverTime },
+        };
+      },
+    );
 
-      await this.persistCommittedRoom(next);
-      await this.publishCommittedEvent(envelope.roomId, {
-        type: "room_state",
-        room: sanitizeRoom(next),
-        serverTime,
-      });
-      return acknowledgement(
-        envelope.nonce,
-        "applied",
-        undefined,
-        next.sequence,
-      );
+    if (mutation.status === "returned") {
+      return mutation.value.kind === "acknowledgement"
+        ? mutation.value.ack
+        : acknowledgement(envelope.nonce, "rejected", "INVALID_COMMAND");
+    }
+    if (mutation.status === "contended") {
+      return acknowledgement(envelope.nonce, "rejected", "CONTENTION");
     }
 
-    return acknowledgement(envelope.nonce, "rejected", "INVALID_COMMAND");
+    await this.persistCommittedRoom(mutation.room);
+    await this.publishCommittedEvent(envelope.roomId, {
+      type: "room_state",
+      room: sanitizeRoom(mutation.room),
+      serverTime:
+        mutation.value.kind === "commit"
+          ? mutation.value.serverTime
+          : mutation.room.lastActivity,
+    });
+    return acknowledgement(
+      envelope.nonce,
+      "applied",
+      undefined,
+      mutation.room.sequence,
+    );
   }
 }

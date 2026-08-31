@@ -170,6 +170,7 @@ const mockRedis = {
       const expectedVersion = Number(args[2]);
       const existing = store.get(key);
       if (!existing) {
+        if (expectedVersion !== 0) return 0;
         store.set(key, newState);
         return 1;
       }

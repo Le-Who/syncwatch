@@ -3,6 +3,11 @@ export type CanonicalPlaybackStatus = "playing" | "paused" | "ended";
 export type LegacyPlaybackStatus = CanonicalPlaybackStatus | "buffering";
 export type PlaybackStatus = CanonicalPlaybackStatus;
 
+const MAX_CONNECTION_IDS = 32;
+const MAX_CONNECTION_ID_LENGTH = 128;
+const MAX_PROCESSED_COMMAND_NONCES = 256;
+const MAX_COMMAND_NONCE_LENGTH = 128;
+
 export type ConnectionState = "connected" | "reconnecting" | "disconnected";
 export type PlaybackHealth = "idle" | "ready" | "buffering" | "error";
 
@@ -115,6 +120,31 @@ function isPlaybackHealth(value: unknown): value is PlaybackHealth {
   );
 }
 
+function normalizeBoundedStringHistory(
+  values: unknown,
+  maxItems: number,
+  maxLength: number,
+): string[] {
+  if (!Array.isArray(values)) return [];
+  const newestFirst: string[] = [];
+  const seen = new Set<string>();
+  for (let index = values.length - 1; index >= 0; index--) {
+    const value = values[index];
+    if (
+      typeof value !== "string" ||
+      value.length === 0 ||
+      value.length > maxLength ||
+      seen.has(value)
+    ) {
+      continue;
+    }
+    seen.add(value);
+    newestFirst.push(value);
+    if (newestFirst.length === maxItems) break;
+  }
+  return newestFirst.reverse();
+}
+
 function normalizeParticipant(
   id: string,
   participant: Partial<Participant>,
@@ -149,16 +179,11 @@ function normalizeParticipant(
       typeof participant.readyMediaId === "string"
         ? participant.readyMediaId
         : null,
-    connectionIds: Array.isArray(participant.connectionIds)
-      ? Array.from(
-          new Set(
-            participant.connectionIds.filter(
-              (connectionId): connectionId is string =>
-                typeof connectionId === "string",
-            ),
-          ),
-        )
-      : [],
+    connectionIds: normalizeBoundedStringHistory(
+      participant.connectionIds,
+      MAX_CONNECTION_IDS,
+      MAX_CONNECTION_ID_LENGTH,
+    ),
     ...(typeof participant.lastDriftSeconds === "number"
       ? { lastDriftSeconds: participant.lastDriftSeconds }
       : {}),
@@ -247,11 +272,11 @@ export function normalizeRoomState(input: LegacyRoomStateInput): RoomState {
     sequence: typeof input.sequence === "number" ? input.sequence : 1,
     lastActivity:
       typeof input.lastActivity === "number" ? input.lastActivity : now,
-    processedCommandNonces: Array.isArray(input.processedCommandNonces)
-      ? input.processedCommandNonces.filter(
-          (nonce): nonce is string => typeof nonce === "string",
-        )
-      : [],
+    processedCommandNonces: normalizeBoundedStringHistory(
+      input.processedCommandNonces,
+      MAX_PROCESSED_COMMAND_NONCES,
+      MAX_COMMAND_NONCE_LENGTH,
+    ),
   };
 }
 

@@ -17,6 +17,7 @@ import {
 } from "../lib/redis-actor";
 import { installRedisMock, uninstallRedisMock } from "./helpers/redis-mock";
 import { randomUUID } from "node:crypto";
+import { RedisRoomRepository } from "../lib/room-repository";
 
 const TEST_RUN_ID = randomUUID().slice(0, 8);
 
@@ -36,6 +37,7 @@ describe("Fast-Path OCC Logic", () => {
   });
 
   beforeEach(async () => {
+    vi.restoreAllMocks();
     // Arrange: Setup initial fast-path room for each test so leader/position
     // mutations cannot leak between cases.
     await setRedisRoom(roomId, {
@@ -241,6 +243,83 @@ describe("Fast-Path OCC Logic", () => {
     expect(state.playback.updatedBy).toBe("u3");
   });
 
+  it("reloads Redis authorization after a conflict and rejects a viewer who lost control", async () => {
+    const originalEval = (redis as any).eval.bind(redis);
+    const evalSpy = vi.spyOn(redis as any, "eval");
+    evalSpy.mockImplementationOnce((async (
+      _script: string,
+      _numKeys: number,
+      key: string,
+    ) => {
+      const competing = JSON.parse(await (redis as any).get(key));
+      competing.leaderId = "u1";
+      competing.version += 1;
+      competing.sequence += 1;
+      await (redis as any).set(key, JSON.stringify(competing));
+      return "VERSION_CONFLICT";
+    }) as any);
+    evalSpy.mockImplementation(originalEval);
+
+    const result = await executeFastMutation(
+      roomId,
+      "play",
+      { position: 12, nonce: randomUUID() },
+      "u2",
+    );
+
+    expect(result).toEqual({ success: false, error: "UNAUTHORIZED" });
+    expect((await getRedisRoom(roomId)).playback.status).toBe("paused");
+    evalSpy.mockRestore();
+  });
+
+  it("retries a Redis authorization snapshot conflict for a still-authorized moderator", async () => {
+    const originalEval = (redis as any).eval.bind(redis);
+    const evalSpy = vi.spyOn(redis as any, "eval");
+    evalSpy.mockImplementationOnce((async (
+      _script: string,
+      _numKeys: number,
+      key: string,
+    ) => {
+      const competing = JSON.parse(await (redis as any).get(key));
+      competing.participants.u2.nickname = "Unrelated rename";
+      competing.version += 1;
+      competing.sequence += 1;
+      await (redis as any).set(key, JSON.stringify(competing));
+      return "VERSION_CONFLICT";
+    }) as any);
+    evalSpy.mockImplementation(originalEval);
+
+    const result = await executeFastMutation(
+      roomId,
+      "play",
+      { position: 23, nonce: randomUUID() },
+      "u3",
+    );
+
+    expect(result.success).toBe(true);
+    expect((await getRedisRoom(roomId)).playback.basePosition).toBe(23);
+    evalSpy.mockRestore();
+  });
+
+  it("reports bounded Redis contention explicitly instead of invalid command", async () => {
+    const evalSpy = vi.spyOn(redis as any, "eval");
+    evalSpy.mockResolvedValue("VERSION_CONFLICT" as never);
+    const room = await getRedisRoom(roomId);
+
+    const result = await new RedisRoomRepository().mutatePlayback(
+      roomId,
+      {
+        type: "play",
+        payload: { position: 31, nonce: randomUUID() },
+      },
+      room.participants.u3,
+    );
+
+    expect(result).toEqual({ status: "rejected", code: "CONTENTION" });
+    expect(evalSpy.mock.calls.length).toBeGreaterThan(10);
+    evalSpy.mockRestore();
+  });
+
   it("TC-Fast-3: Should handle pause mutation correctly", async () => {
     await executeFastMutation(roomId, "play", { position: 70 }, "u1");
 
@@ -324,5 +403,66 @@ describe("Fast-Path OCC Logic", () => {
     expect(state.sequence).toBe(2);
     expect(state.playback.basePosition).toBe(17);
     expect(state.playback.updatedBy).toBe("u1");
+  });
+
+  it("does not create a missing Redis room from a non-create CAS version", async () => {
+    const missingRoomId = `${roomId}-missing-cas`;
+    await (redis as any).del(`room_state:${missingRoomId}`);
+
+    const created = await setRedisRoomCAS(
+      missingRoomId,
+      { ...(await getRedisRoom(roomId)), id: missingRoomId, version: 100 },
+      99,
+    );
+
+    expect(created).toBe(false);
+    expect(await getRedisRoom(missingRoomId)).toBeNull();
+  });
+
+  it("creates a missing Redis room only from the explicit create CAS version", async () => {
+    const missingRoomId = `${roomId}-explicit-create`;
+    await (redis as any).del(`room_state:${missingRoomId}`);
+    const candidate = {
+      ...(await getRedisRoom(roomId)),
+      id: missingRoomId,
+      version: 1,
+    };
+
+    expect(await setRedisRoomCAS(missingRoomId, candidate, 0)).toBe(true);
+    expect(await getRedisRoom(missingRoomId)).toMatchObject({
+      id: missingRoomId,
+      version: 1,
+    });
+  });
+
+  it("does not create a missing fallback room from a non-create CAS version", async () => {
+    const redisGlobal = globalThis as unknown as { redisClient: any };
+    const previousRedis = redisGlobal.redisClient;
+    redisGlobal.redisClient = null;
+    const missingRoomId = `${roomId}-missing-fallback-cas`;
+
+    try {
+      const created = await setRedisRoomCAS(
+        missingRoomId,
+        { ...(await getRedisRoom(roomId)), id: missingRoomId, version: 100 },
+        99,
+      );
+
+      expect(created).toBe(false);
+      expect(await getRedisRoom(missingRoomId)).toBeNull();
+      expect(
+        await setRedisRoomCAS(
+          missingRoomId,
+          { id: missingRoomId, version: 1 },
+          0,
+        ),
+      ).toBe(true);
+      expect(await getRedisRoom(missingRoomId)).toMatchObject({
+        id: missingRoomId,
+        version: 1,
+      });
+    } finally {
+      redisGlobal.redisClient = previousRedis;
+    }
   });
 });

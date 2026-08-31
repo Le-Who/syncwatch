@@ -2,6 +2,13 @@ import { getRedisClient } from "./redis-rate-limit";
 import * as permissions from "./permissions";
 import { normalizeRoomState } from "./types";
 
+const MAX_AUTH_SNAPSHOT_RETRIES = 32;
+
+function waitForAuthorizationRetry(attempt: number) {
+  const delayMs = Math.min(1 + Math.floor(attempt / 4), 20);
+  return new Promise((resolve) => setTimeout(resolve, delayMs));
+}
+
 // Centralized Lua scripts for atomic fast-path mutations
 const LUA_FAST_MUTATION = `
   local room_key = KEYS[1]
@@ -139,38 +146,45 @@ export async function executeFastMutation(
   }
 
   try {
-    const serializedRoom = await redisClient.get(`room_state:${roomId}`);
-    if (!serializedRoom) return { success: false, error: "ROOM_NOT_FOUND" };
+    for (let attempt = 0; attempt < MAX_AUTH_SNAPSHOT_RETRIES; attempt++) {
+      const serializedRoom = await redisClient.get(`room_state:${roomId}`);
+      if (!serializedRoom) return { success: false, error: "ROOM_NOT_FOUND" };
 
-    const room = normalizeRoomState(JSON.parse(serializedRoom));
-    const participant = room.participants[participantId];
-    if (!participant) return { success: false, error: "UNAUTHORIZED" };
-    if (
-      !permissions.getParticipantPermissions(room, participantId)
-        .canControlPlayback
-    ) {
-      return { success: false, error: "UNAUTHORIZED" };
-    }
-
-    const result = (await (redisClient as any).eval(
-      LUA_FAST_MUTATION,
-      1,
-      "room_state:" + roomId,
-      mutationType,
-      JSON.stringify(payload),
-      participantId,
-      Date.now().toString(),
-      room.leaderId ?? "",
-      participant.role,
-    )) as string;
-
-    if (typeof result === "string") {
-      if (result.startsWith("{")) {
-        return { success: true, state: JSON.parse(result) };
+      const room = normalizeRoomState(JSON.parse(serializedRoom));
+      const participant = room.participants[participantId];
+      if (!participant) return { success: false, error: "UNAUTHORIZED" };
+      if (
+        !permissions.getParticipantPermissions(room, participantId)
+          .canControlPlayback
+      ) {
+        return { success: false, error: "UNAUTHORIZED" };
       }
-      return { success: false, error: result };
+
+      const result = (await (redisClient as any).eval(
+        LUA_FAST_MUTATION,
+        1,
+        "room_state:" + roomId,
+        mutationType,
+        JSON.stringify(payload),
+        participantId,
+        Date.now().toString(),
+        room.leaderId ?? "",
+        participant.role,
+      )) as string;
+
+      if (typeof result === "string") {
+        if (result.startsWith("{")) {
+          return { success: true, state: JSON.parse(result) };
+        }
+        if (result === "VERSION_CONFLICT") {
+          await waitForAuthorizationRetry(attempt);
+          continue;
+        }
+        return { success: false, error: result };
+      }
+      return { success: false, error: "UNKNOWN_ERROR" };
     }
-    return { success: false, error: "UNKNOWN_ERROR" };
+    return { success: false, error: "VERSION_CONFLICT" };
   } catch (e: any) {
     console.error("Fast Mutation Lua Error:", e);
     return { success: false, error: "LUA_ERROR" };

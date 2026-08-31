@@ -2,10 +2,15 @@ import { renderHook, act } from "@testing-library/react";
 import { useStore, useSettingsStore } from "../store";
 import { roomSocketService } from "../socket";
 import { vi, describe, beforeEach, it, expect } from "vitest";
+import { randomUUID } from "node:crypto";
 import {
   participant,
   roomWithParticipants,
 } from "../../__tests__/helpers/room-fixtures";
+import { PlaybackIntentManager } from "../playback-intent-manager";
+import { InMemoryRoomRepository } from "../room-repository";
+import { RoomCommandService } from "../room-command-service";
+import { RoomEventBus } from "../room-event-bus";
 
 const socketDouble = vi.hoisted(() => {
   const handlers = new Map<string, Set<(payload?: any) => void>>();
@@ -274,6 +279,55 @@ describe("useStore", () => {
     };
     socketDouble.serverEmit("command_ack", ack);
     expect(onAcknowledgement).toHaveBeenCalledWith(ack);
+  });
+
+  it("round-trips the player's pending nonce through the command envelope and compact playback acknowledgement", async () => {
+    const actualSocket =
+      await vi.importActual<typeof import("../socket")>("../socket");
+    const client = new actualSocket.RoomSocketService();
+    const intentManager = new PlaybackIntentManager();
+    const room = roomWithParticipants(2);
+    const serverEvents: any[] = [];
+    const server = new RoomCommandService({
+      repository: new InMemoryRoomRepository([room], () => 10_000),
+      eventBus: new RoomEventBus((_roomId, event) => serverEvents.push(event)),
+      now: () => 10_000,
+    });
+    client.onRoomEvent((event) => {
+      if (event.type === "playback_updated") {
+        intentManager.acknowledgeServerNonce(event.playback.lastActionNonce);
+      }
+    });
+    client.connect(room.id, "p0", "p0", "token");
+    socketDouble.emit.mockClear();
+
+    const intentNonce = randomUUID();
+    intentManager.markCommandEmitted("playing", 12, intentNonce);
+    const returnedNonce = client.sendCommand(room.id, 2, "play", {
+      position: 12,
+      nonce: intentNonce,
+    });
+    const emittedEnvelope = socketDouble.emit.mock.calls.find(
+      ([event]) => event === "command",
+    )?.[1];
+
+    expect(returnedNonce).toBe(intentNonce);
+    expect(emittedEnvelope.nonce).toBe(intentNonce);
+    expect(intentManager.isAwaitingServerAck()).toBe(true);
+
+    const ack = await server.execute(
+      { currentRoomId: room.id, currentParticipantId: "p0" },
+      emittedEnvelope,
+    );
+    expect(ack).toMatchObject({ nonce: intentNonce, status: "applied" });
+    const playbackEvent = serverEvents[0];
+    expect(playbackEvent.playback.lastActionNonce).toBe(intentNonce);
+
+    socketDouble.serverEmit("playback_updated", {
+      playback: playbackEvent.playback,
+      serverTime: playbackEvent.serverTime,
+    });
+    expect(intentManager.isAwaitingServerAck()).toBe(false);
   });
 
   it("stores rejected acknowledgements as visible command state", () => {

@@ -62,6 +62,7 @@ export function handleConnectionEvents(
 
     while (occRetries > 0) {
       let room: RoomState | null = await getRedisRoom(roomId);
+      const roomWasCached = Boolean(room);
 
       if (!room) {
         room = await loadRoomFromDB(roomId, supabase);
@@ -92,7 +93,11 @@ export function handleConnectionEvents(
         now,
         socket.id,
       );
-      const success = await setRedisRoomCAS(roomId, nextRoom, room.version);
+      const success = await setRedisRoomCAS(
+        roomId,
+        nextRoom,
+        roomWasCached ? room.version : 0,
+      );
       if (success) {
         finalRoomState = nextRoom;
         const ownerIdsBefore = Object.values(room.participants)

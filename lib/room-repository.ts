@@ -24,8 +24,17 @@ export type PlaybackCommand = Extract<
 
 export type PlaybackMutationResult =
   | { status: "applied"; room: RoomState; playback: CanonicalPlayback }
-  | { status: "ignored"; code: "DUPLICATE" }
+  | { status: "ignored"; code: "DUPLICATE" | "NO_CHANGE" }
   | { status: "rejected"; code: CommandRejectionCode };
+
+export type RoomMutationDecision<T> =
+  | { status: "commit"; next: RoomState; value: T }
+  | { status: "return"; value: T };
+
+export type RoomMutationResult<T> =
+  | { status: "committed"; room: RoomState; value: T }
+  | { status: "returned"; value: T }
+  | { status: "contended" };
 
 export interface RoomRepository {
   get(roomId: string): Promise<RoomState | null>;
@@ -34,6 +43,12 @@ export interface RoomRepository {
     expectedVersion: number,
     next: RoomState,
   ): Promise<boolean>;
+  mutateRoom<T>(
+    roomId: string,
+    operation: (
+      room: RoomState | null,
+    ) => RoomMutationDecision<T> | Promise<RoomMutationDecision<T>>,
+  ): Promise<RoomMutationResult<T>>;
   mutatePlayback(
     roomId: string,
     command: PlaybackCommand,
@@ -45,7 +60,12 @@ export interface RoomRepository {
 type Clock = () => number;
 
 const MAX_PROCESSED_NONCES = 256;
-const MAX_PLAYBACK_CAS_ATTEMPTS = 10;
+const MAX_CAS_ATTEMPTS = 64;
+
+function waitForRetry(attempt: number) {
+  const delayMs = Math.min(1 + Math.floor(attempt / 4), 20);
+  return new Promise((resolve) => setTimeout(resolve, delayMs));
+}
 
 function cloneRoom(room: RoomState): RoomState {
   return structuredClone(room);
@@ -103,13 +123,40 @@ abstract class SerializedRoomRepository implements RoomRepository {
     return current;
   }
 
+  async mutateRoom<T>(
+    roomId: string,
+    operation: (
+      room: RoomState | null,
+    ) => RoomMutationDecision<T> | Promise<RoomMutationDecision<T>>,
+  ): Promise<RoomMutationResult<T>> {
+    return this.serialize(roomId, async () => {
+      for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt++) {
+        const room = await this.get(roomId);
+        const decision = await operation(room);
+        if (decision.status === "return") {
+          return { status: "returned", value: decision.value };
+        }
+        const expectedVersion = room?.version ?? 0;
+        if (await this.compareAndSet(roomId, expectedVersion, decision.next)) {
+          return {
+            status: "committed",
+            room: decision.next,
+            value: decision.value,
+          };
+        }
+        await waitForRetry(attempt);
+      }
+      return { status: "contended" };
+    });
+  }
+
   async mutatePlayback(
     roomId: string,
     command: PlaybackCommand,
     actor: Participant,
   ): Promise<PlaybackMutationResult> {
     return this.serialize(roomId, async () => {
-      for (let attempt = 0; attempt < MAX_PLAYBACK_CAS_ATTEMPTS; attempt++) {
+      for (let attempt = 0; attempt < MAX_CAS_ATTEMPTS; attempt++) {
         const room = await this.get(roomId);
         if (!room) return { status: "rejected", code: "NOT_JOINED" };
         const authoritativeActor = room.participants[actor.id];
@@ -135,7 +182,10 @@ abstract class SerializedRoomRepository implements RoomRepository {
         if (result === "unauthorized") {
           return { status: "rejected", code: "NOT_PERMITTED" };
         }
-        if (result === "invalid" || result === "unchanged") {
+        if (result === "unchanged") {
+          return { status: "ignored", code: "NO_CHANGE" };
+        }
+        if (result === "invalid") {
           return { status: "rejected", code: "INVALID_COMMAND" };
         }
 
@@ -144,6 +194,7 @@ abstract class SerializedRoomRepository implements RoomRepository {
         room.lastActivity = serverTime;
         rememberNonce(room, nonce);
         if (!(await this.compareAndSet(roomId, baseVersion, room))) {
+          await waitForRetry(attempt);
           continue;
         }
         return {
@@ -152,7 +203,7 @@ abstract class SerializedRoomRepository implements RoomRepository {
           playback: canonicalPlayback(room),
         };
       }
-      return { status: "rejected", code: "INVALID_COMMAND" };
+      return { status: "rejected", code: "CONTENTION" };
     });
   }
 }
@@ -230,8 +281,14 @@ export class RedisRoomRepository extends SerializedRoomRepository {
       if (result.error === "DUPLICATE") {
         return { status: "ignored", code: "DUPLICATE" };
       }
+      if (result.error === "NO_CHANGE") {
+        return { status: "ignored", code: "NO_CHANGE" };
+      }
       if (result.error === "UNAUTHORIZED") {
         return { status: "rejected", code: "NOT_PERMITTED" };
+      }
+      if (result.error === "VERSION_CONFLICT") {
+        return { status: "rejected", code: "CONTENTION" };
       }
       return { status: "rejected", code: "INVALID_COMMAND" };
     }

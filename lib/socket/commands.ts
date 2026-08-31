@@ -155,11 +155,15 @@ async function handleSessionUpgrade(
     const serverTime = Date.now();
     const sanitizedRoom = sanitizeRoom(next);
     if (eventBus) {
-      await eventBus.publish(envelope.roomId, {
-        type: "room_state",
-        room: sanitizedRoom,
-        serverTime,
-      });
+      try {
+        await eventBus.publish(envelope.roomId, {
+          type: "room_state",
+          room: sanitizedRoom,
+          serverTime,
+        });
+      } catch (error) {
+        console.error("Session upgrade publication failed after commit", error);
+      }
     } else {
       io.to(envelope.roomId).emit("room_state", {
         room: sanitizedRoom,
@@ -173,7 +177,7 @@ async function handleSessionUpgrade(
     };
   }
 
-  const ack = rejected(envelope.nonce, "INVALID_COMMAND");
+  const ack = rejected(envelope.nonce, "CONTENTION");
   ack.message = "System busy acquiring room lock. Try again.";
   return ack;
 }

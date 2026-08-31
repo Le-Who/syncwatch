@@ -22,6 +22,7 @@ import * as redisLua from "../lib/redis-lua";
 import { Server, Socket } from "socket.io";
 import { SignJWT } from "jose";
 import { PARTICIPANT_GRACE_MS } from "../lib/participant-lifecycle";
+import { RoomEventBus } from "../lib/room-event-bus";
 
 vi.mock("../lib/redis-rate-limit", () => ({
   checkRedisRateLimit: vi.fn(),
@@ -348,6 +349,86 @@ describe("Room Handler Security & Auth Boundary", () => {
     ).toHaveLength(1);
   });
 
+  it("keeps a committed session upgrade applied when remote publication fails", async () => {
+    const roomId = "upgrade-publication-failure-room";
+    const sourceId = "fallback-publication-source";
+    const targetId = "account-publication-target";
+    let storedRoom = createEmptyRoom(roomId, "Publication Failure Room");
+    storedRoom.participants[sourceId] = {
+      id: sourceId,
+      nickname: "Source",
+      role: "owner",
+      joinedAt: 1,
+      lastSeen: 1,
+      connection: "connected",
+      connectionIds: [mockSocket.id],
+      playbackHealth: "idle",
+      readyMediaId: null,
+    };
+    (redisActor.getRedisRoom as any).mockImplementation(async () =>
+      structuredClone(storedRoom),
+    );
+    (redisActor.setRedisRoomCAS as any).mockImplementation(
+      async (_roomId: string, nextRoom: any) => {
+        storedRoom = structuredClone(nextRoom);
+        return true;
+      },
+    );
+    const publish = vi.fn().mockRejectedValue(new Error("redis unavailable"));
+    const eventBus = new RoomEventBus(
+      (eventRoomId, event) => {
+        if (event.type === "room_state") {
+          mockIo.to?.(eventRoomId).emit("room_state", {
+            room: event.room,
+            serverTime: event.serverTime,
+          });
+        }
+      },
+      { publish },
+    );
+    socketEventHandlers = {};
+    registerRoomHandlers(
+      mockIo as Server,
+      mockSocket as Socket,
+      null,
+      eventBus,
+    );
+
+    mockSocket.data.participantId = sourceId;
+    await socketEventHandlers.join_room({ roomId, nickname: "Source" });
+    mockSocket.emit.mockClear();
+    roomEmit.mockClear();
+
+    await socketEventHandlers.command({
+      roomId,
+      type: "upgrade_session",
+      payload: { token: await upgradeToken(targetId, "Committed Target") },
+      sequence: 2,
+    });
+
+    expect(storedRoom.participants[sourceId]).toBeUndefined();
+    expect(storedRoom.participants[targetId].connectionIds).toContain(
+      mockSocket.id,
+    );
+    expect(mockSocket.data.participantId).toBe(targetId);
+    expect(
+      mockSocket.emit.mock.calls.filter(
+        ([event]: any[]) => event === "session_upgraded",
+      ),
+    ).toEqual([["session_upgraded", { participantId: targetId }]]);
+    const acknowledgements = mockSocket.emit.mock.calls
+      .filter(([event]: any[]) => event === "command_ack")
+      .map(([, acknowledgement]: any[]) => acknowledgement);
+    expect(acknowledgements).toHaveLength(1);
+    expect(acknowledgements[0]).toMatchObject({ status: "applied" });
+    expect(
+      roomEmit.mock.calls.filter(([event]: any[]) => event === "room_state"),
+    ).toHaveLength(1);
+    expect(
+      mockSocket.emit.mock.calls.filter(([event]: any[]) => event === "error"),
+    ).toEqual([]);
+  });
+
   it("keeps the source identity authoritative when every upgrade CAS attempt conflicts", async () => {
     const roomId = "upgrade-transaction-failure-room";
     const sourceId = "fallback-failed-source";
@@ -399,6 +480,15 @@ describe("Room Handler Security & Auth Boundary", () => {
         ([event]: any[]) => event === "session_upgraded",
       ),
     ).toHaveLength(0);
+    const acknowledgements = mockSocket.emit.mock.calls
+      .filter(([event]: any[]) => event === "command_ack")
+      .map(([, acknowledgement]: any[]) => acknowledgement);
+    expect(acknowledgements).toHaveLength(1);
+    expect(acknowledgements[0]).toMatchObject({
+      status: "rejected",
+      code: "CONTENTION",
+      message: "System busy acquiring room lock. Try again.",
+    });
     expect(mockSocket.emit).toHaveBeenCalledWith("error", {
       message: "System busy acquiring room lock. Try again.",
     });
@@ -748,5 +838,67 @@ describe("room state normalization", () => {
     expect(room.chat).toEqual([]);
     expect(room.leaderId).toBeNull();
     expect(room.flashbacks).toEqual({});
+  });
+
+  it("bounds server-only nonce and connection identity histories", () => {
+    const room = normalizeRoomState({
+      id: "bounded-runtime-state",
+      participants: {
+        viewer: {
+          id: "viewer",
+          connectionIds: [
+            "",
+            "x".repeat(129),
+            ...Array.from({ length: 40 }, (_, index) => `socket-${index}`),
+          ],
+        },
+      },
+      processedCommandNonces: Array.from(
+        { length: 300 },
+        (_, index) => `nonce-${index}`,
+      ),
+    });
+
+    expect(room.processedCommandNonces).toHaveLength(256);
+    expect(room.processedCommandNonces?.[0]).toBe("nonce-44");
+    expect(room.participants.viewer.connectionIds).toHaveLength(32);
+    expect(room.participants.viewer.connectionIds?.[0]).toBe("socket-8");
+    expect(
+      room.participants.viewer.connectionIds?.every(
+        (connectionId) => connectionId.length > 0 && connectionId.length <= 128,
+      ),
+    ).toBe(true);
+  });
+
+  it("keeps the newest occurrence when normalized server-only histories are deduplicated", () => {
+    const repeatedConnectionId = "newest-active-socket";
+    const repeatedNonce = "newest-command-nonce";
+    const room = normalizeRoomState({
+      id: "deduplicated-runtime-state",
+      participants: {
+        viewer: {
+          id: "viewer",
+          connectionIds: [
+            repeatedConnectionId,
+            ...Array.from({ length: 40 }, (_, index) => `socket-${index}`),
+            repeatedConnectionId,
+          ],
+        },
+      },
+      processedCommandNonces: [
+        repeatedNonce,
+        ...Array.from({ length: 300 }, (_, index) => `nonce-${index}`),
+        repeatedNonce,
+      ],
+    });
+
+    expect(room.participants.viewer.connectionIds).toHaveLength(32);
+    expect(room.participants.viewer.connectionIds?.at(-1)).toBe(
+      repeatedConnectionId,
+    );
+    expect(room.participants.viewer.connectionIds?.[0]).toBe("socket-9");
+    expect(room.processedCommandNonces).toHaveLength(256);
+    expect(room.processedCommandNonces?.at(-1)).toBe(repeatedNonce);
+    expect(room.processedCommandNonces?.[0]).toBe("nonce-45");
   });
 });

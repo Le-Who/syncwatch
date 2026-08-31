@@ -18,6 +18,8 @@ export type CommandRejectionCode =
   | "NOT_PERMITTED"
   | "STALE_MEDIA"
   | "DUPLICATE"
+  | "NO_CHANGE"
+  | "CONTENTION"
   | "QUEUE_FULL";
 
 export interface CommandAcknowledgement {
