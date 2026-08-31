@@ -59,6 +59,56 @@ describe("participant lifecycle", () => {
     expect(next.leaderId).toBe("p1");
   });
 
+  it("preserves owner identity at 14,999ms of reconnect grace", () => {
+    const room = roomWithParticipants(3, {
+      moderatorIds: ["p1"],
+      leaderId: "p0",
+    });
+    const disconnected = markParticipantDisconnected(room, "p0", 1_000);
+
+    const next = joinParticipant(
+      disconnected,
+      participant("p0", "viewer", 15_999),
+      15_999,
+      "replacement-socket",
+    );
+
+    expect(next.participants.p0).toMatchObject({
+      role: "owner",
+      joinedAt: 0,
+      connection: "connected",
+      connectionIds: ["replacement-socket"],
+    });
+    expect(next.leaderId).toBe("p0");
+  });
+
+  it("expires owner identity at 15,000ms before it rejoins as a viewer", () => {
+    const room = roomWithParticipants(3, {
+      moderatorIds: ["p1"],
+      leaderId: "p0",
+    });
+    const disconnected = markParticipantDisconnected(room, "p0", 1_000);
+
+    const next = joinParticipant(
+      disconnected,
+      participant("p0", "owner", 16_000),
+      16_000,
+      "replacement-socket",
+    );
+
+    expect(next.participants.p1.role).toBe("owner");
+    expect(next.participants.p0).toMatchObject({
+      role: "viewer",
+      joinedAt: 16_000,
+      connection: "connected",
+      connectionIds: ["replacement-socket"],
+    });
+    expect(next.leaderId).toBeNull();
+    expect(
+      Object.values(next.participants).filter((p) => p.role === "owner"),
+    ).toHaveLength(1);
+  });
+
   it("does not remove a reconnecting participant before grace expires", () => {
     const room = markParticipantDisconnected(
       roomWithParticipants(3),
@@ -81,6 +131,30 @@ describe("participant lifecycle", () => {
       Object.values(next.participants).filter((p) => p.role === "owner"),
     ).toHaveLength(1);
     expect(next.participants.p1.role).toBe("owner");
+  });
+
+  it("preserves a reconnecting owner when an unrelated viewer expires", () => {
+    const room = roomWithParticipants(3, {
+      moderatorIds: ["p1"],
+      leaderId: "p0",
+    });
+    const ownerInGrace = markParticipantDisconnected(room, "p0", 2_000);
+    const viewerInGrace = markParticipantDisconnected(
+      ownerInGrace,
+      "p2",
+      1_000,
+    );
+
+    const next = removeParticipantAfterGrace(viewerInGrace, "p2", 16_000);
+
+    expect(next.participants.p0).toMatchObject({
+      role: "owner",
+      connection: "reconnecting",
+    });
+    expect(next.participants.p1.role).toBe("moderator");
+    expect(
+      Object.values(next.participants).filter((p) => p.role === "owner"),
+    ).toHaveLength(1);
   });
 
   it("skips disconnected moderators and deterministically elects the oldest connected viewer", () => {

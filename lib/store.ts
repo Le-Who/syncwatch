@@ -183,7 +183,9 @@ function handleRoomEvent(event: RoomEvent) {
             id,
             id === event.ownerId
               ? { ...participant, role: "owner" as const }
-              : participant,
+              : event.ownerId && participant.role === "owner"
+                ? { ...participant, role: "viewer" as const }
+                : participant,
           ]),
       );
       useStore.setState({

@@ -19,11 +19,41 @@ export function joinParticipant(
   room: RoomState,
   requested: Participant,
   now: number,
+  connectionId?: string,
 ): RoomState {
   const existing = room.participants[requested.id];
+  if (
+    existing &&
+    existing.connection !== "connected" &&
+    now - existing.lastSeen >= PARTICIPANT_GRACE_MS
+  ) {
+    const roomAfterDeparture = removeParticipantAfterGrace(
+      room,
+      requested.id,
+      now,
+    );
+    return joinParticipant(
+      roomAfterDeparture,
+      {
+        ...requested,
+        role: "viewer",
+        joinedAt: now,
+        lastSeen: now,
+        connection: "connected",
+        connectionIds: [],
+      },
+      now,
+      connectionId,
+    );
+  }
   let nextParticipant: Participant;
 
   if (existing) {
+    const connectionIds = new Set([
+      ...(existing.connectionIds ?? []),
+      ...(requested.connectionIds ?? []),
+    ]);
+    if (connectionId) connectionIds.add(connectionId);
     nextParticipant = {
       ...existing,
       ...requested,
@@ -32,6 +62,7 @@ export function joinParticipant(
       role: existing.role,
       joinedAt: existing.joinedAt,
       connection: "connected",
+      connectionIds: [...connectionIds],
       lastSeen: now,
     };
   } else {
@@ -46,6 +77,9 @@ export function joinParticipant(
       joinedAt: now,
       lastSeen: now,
       connection: "connected",
+      connectionIds: connectionId
+        ? [connectionId]
+        : Array.from(new Set(requested.connectionIds ?? [])),
     };
   }
 
@@ -62,20 +96,31 @@ export function markParticipantDisconnected(
   room: RoomState,
   participantId: string,
   now: number,
+  connectionId?: string,
 ): RoomState {
   const participant = room.participants[participantId];
   if (!participant) return room;
+
+  const activeConnectionIds = participant.connectionIds ?? [];
+  if (connectionId && !activeConnectionIds.includes(connectionId)) return room;
+  const connectionIds = connectionId
+    ? activeConnectionIds.filter((activeId) => activeId !== connectionId)
+    : [];
+  const hasActiveConnection = connectionIds.length > 0;
+  const nextParticipant: Participant = {
+    ...participant,
+    connection: hasActiveConnection ? "connected" : "reconnecting",
+    connectionIds,
+    lastSeen: now,
+    ...(hasActiveConnection ? {} : { disconnected: true }),
+  };
+  if (hasActiveConnection) delete nextParticipant.disconnected;
 
   return withParticipantChange(
     room,
     {
       ...room.participants,
-      [participantId]: {
-        ...participant,
-        connection: "reconnecting",
-        disconnected: true,
-        lastSeen: now,
-      },
+      [participantId]: nextParticipant,
     },
     now,
   );
@@ -106,6 +151,26 @@ function electOwner(participants: Participant[]): Participant | null {
   );
 }
 
+function selectOwnerAfterDeparture(
+  participants: Participant[],
+  departing: Participant,
+  now: number,
+): Participant | null {
+  if (departing.role !== "owner") {
+    const validOwner = participants
+      .filter(
+        (participant) =>
+          participant.role === "owner" &&
+          (participant.connection === "connected" ||
+            now - participant.lastSeen < PARTICIPANT_GRACE_MS),
+      )
+      .sort(compareParticipantAge)[0];
+    if (validOwner) return validOwner;
+  }
+
+  return electOwner(participants);
+}
+
 export function removeParticipantAfterGrace(
   room: RoomState,
   participantId: string,
@@ -123,8 +188,10 @@ export function removeParticipantAfterGrace(
   const remainingEntries = Object.entries(room.participants).filter(
     ([id]) => id !== participantId,
   );
-  const electedOwner = electOwner(
+  const electedOwner = selectOwnerAfterDeparture(
     remainingEntries.map(([, participant]) => participant),
+    departing,
+    now,
   );
   const participants: Record<string, Participant> = Object.fromEntries(
     remainingEntries.map(([id, participant]) => {

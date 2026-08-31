@@ -57,6 +57,7 @@ export function handleConnectionEvents(
     let occRetries = 10;
     let finalRoomState: RoomState | null = null;
     let reconnected = false;
+    let expiredParticipant = false;
 
     while (occRetries > 0) {
       let room: RoomState | null = await getRedisRoom(roomId);
@@ -84,13 +85,23 @@ export function handleConnectionEvents(
         playbackHealth: "idle",
         readyMediaId: null,
       };
-      const nextRoom = joinParticipant(room, requestedParticipant, now);
+      const nextRoom = joinParticipant(
+        room,
+        requestedParticipant,
+        now,
+        socket.id,
+      );
       const success = await setRedisRoomCAS(roomId, nextRoom, room.version);
       if (success) {
         finalRoomState = nextRoom;
+        expiredParticipant =
+          Boolean(existingParticipant) &&
+          existingParticipant.connection !== "connected" &&
+          now - existingParticipant.lastSeen >= PARTICIPANT_GRACE_MS;
         reconnected =
           Boolean(existingParticipant) &&
-          existingParticipant.connection !== "connected";
+          existingParticipant.connection !== "connected" &&
+          !expiredParticipant;
         break;
       }
 
@@ -106,6 +117,21 @@ export function handleConnectionEvents(
     }
 
     const pId = socket.data.participantId;
+    if (expiredParticipant) {
+      const ownerId =
+        Object.values(finalRoomState.participants).find(
+          (participant) => participant.role === "owner",
+        )?.id ?? null;
+      await eventBus
+        .publish(roomId, {
+          type: "participant_left",
+          participantId: pId,
+          ownerId,
+        })
+        .catch((error) =>
+          console.error("Failed publishing expired departure", error),
+        );
+    }
     socket.join(roomId);
     context.currentRoomId = roomId;
     context.currentParticipantId = pId;
@@ -140,7 +166,7 @@ export function handleConnectionEvents(
 
     void (async () => {
       let retries = 5;
-      let marked = false;
+      let startGrace = false;
       while (retries > 0) {
         const room = await getRedisRoom(roomId);
         if (!room || !room.participants[participantId]) return;
@@ -148,9 +174,16 @@ export function handleConnectionEvents(
           room,
           participantId,
           Date.now(),
+          socket.id,
         );
+        if (nextRoom === room) return;
         if (await setRedisRoomCAS(roomId, nextRoom, room.version)) {
-          marked = true;
+          if (
+            nextRoom.participants[participantId]?.connection === "connected"
+          ) {
+            return;
+          }
+          startGrace = true;
           await eventBus
             .publish(roomId, {
               type: "participant_disconnected",
@@ -167,7 +200,7 @@ export function handleConnectionEvents(
         );
       }
 
-      if (!marked) return;
+      if (!startGrace) return;
       setTimeout(() => {
         void (async () => {
           let cleanupRetries = 5;

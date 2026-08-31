@@ -41,6 +41,8 @@ export interface Participant {
   connection: ConnectionState;
   playbackHealth: PlaybackHealth;
   readyMediaId: string | null;
+  /** Server-only Socket.IO connection IDs currently owning this identity. */
+  connectionIds?: string[];
   lastDriftSeconds?: number;
   sessionToken?: string;
   ready?: boolean;
@@ -145,6 +147,16 @@ function normalizeParticipant(
       typeof participant.readyMediaId === "string"
         ? participant.readyMediaId
         : null,
+    connectionIds: Array.isArray(participant.connectionIds)
+      ? Array.from(
+          new Set(
+            participant.connectionIds.filter(
+              (connectionId): connectionId is string =>
+                typeof connectionId === "string",
+            ),
+          ),
+        )
+      : [],
     ...(typeof participant.lastDriftSeconds === "number"
       ? { lastDriftSeconds: participant.lastDriftSeconds }
       : {}),

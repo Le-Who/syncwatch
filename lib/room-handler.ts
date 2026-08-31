@@ -46,6 +46,7 @@ export function sanitizeRoom(room: RoomState): RoomState {
   for (const pid in sanitized.participants) {
     sanitized.participants[pid] = { ...sanitized.participants[pid] };
     delete (sanitized.participants[pid] as any).sessionToken;
+    delete (sanitized.participants[pid] as any).connectionIds;
   }
   return sanitized;
 }

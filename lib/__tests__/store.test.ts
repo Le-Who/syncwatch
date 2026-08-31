@@ -197,6 +197,35 @@ describe("useStore", () => {
     });
   });
 
+  it("enforces exactly one owner when a leave event supplies ownerId", () => {
+    const { result } = renderHook(() => useStore());
+    act(() => {
+      useStore.setState({
+        room: roomWithParticipants(3, { moderatorIds: ["p1"] }),
+        participantId: "p1",
+      });
+      result.current.init();
+    });
+    const onRoomEvent = vi.mocked(roomSocketService.onRoomEvent).mock
+      .calls[0]?.[0];
+
+    act(() => {
+      onRoomEvent({
+        type: "participant_left",
+        participantId: "p2",
+        ownerId: "p1",
+      });
+    });
+
+    expect(result.current.room?.participants.p1.role).toBe("owner");
+    expect(result.current.room?.participants.p0.role).toBe("viewer");
+    expect(
+      Object.values(result.current.room?.participants ?? {}).filter(
+        (participant) => participant.role === "owner",
+      ),
+    ).toHaveLength(1);
+  });
+
   it("delivers one room event after connect, disconnect, and reconnect", async () => {
     const actual =
       await vi.importActual<typeof import("../socket")>("../socket");

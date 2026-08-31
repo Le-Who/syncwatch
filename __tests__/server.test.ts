@@ -6,6 +6,7 @@ import { Server as NetServer } from "http";
 import Client, { Socket as ClientSocket } from "socket.io-client";
 import { AddressInfo } from "net";
 import { SignJWT } from "jose";
+import { PARTICIPANT_GRACE_MS } from "../lib/participant-lifecycle";
 
 // 1. Mock Next.js to bypass heavy build compilation
 vi.mock("next", () => {
@@ -86,6 +87,9 @@ const waitForCondition = async (
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
 };
+
+const delay = (durationMs: number) =>
+  new Promise((resolve) => setTimeout(resolve, durationMs));
 
 describe("server.ts Real Socket.IO Integration", () => {
   let clientSocket: ClientSocket;
@@ -346,4 +350,71 @@ describe("server.ts Real Socket.IO Integration", () => {
     );
     expect(joinedEventCounts).toEqual([5, 4, 3, 2, 1]);
   });
+
+  it(
+    "TC-06: Secondary disconnect preserves a shared identity until the final socket starts grace once",
+    async () => {
+      const roomId = "test-room-shared-participant-connections";
+      const participantId = "shared-friend";
+      const connectAndJoin = async (id: string, nickname: string) => {
+        const socket = Client(ioServerPath, {
+          path: "/socket.io",
+          transports: ["websocket"],
+          forceNew: true,
+          auth: { participantId: id },
+        });
+        presenceSockets.push(socket);
+        await waitForSocketEvent(socket, "connect");
+        const roomState = waitForSocketEvent(socket, "room_state");
+        socket.emit("join_room", { roomId, nickname, participantId: id });
+        await roomState;
+        return socket;
+      };
+
+      const primary = await connectAndJoin(participantId, "Shared Friend");
+      const secondary = await connectAndJoin(participantId, "Shared Friend");
+      const observer = await connectAndJoin("shared-observer", "Observer");
+      let disconnectEvents = 0;
+      let leaveEvents = 0;
+      observer.on("participant_disconnected", ({ participantId: id }) => {
+        if (id === participantId) disconnectEvents++;
+      });
+      observer.on("participant_left", ({ participantId: id }) => {
+        if (id === participantId) leaveEvents++;
+      });
+
+      secondary.close();
+      await delay(100);
+
+      expect(disconnectEvents).toBe(0);
+      expect(leaveEvents).toBe(0);
+
+      await delay(PARTICIPANT_GRACE_MS + 100);
+      const snapshotPromise = waitForSocketEvent(observer, "room_state");
+      observer.emit("join_room", {
+        roomId,
+        nickname: "Observer",
+        participantId: "shared-observer",
+      });
+      const snapshot = await snapshotPromise;
+
+      expect(snapshot.room.participants[participantId]).toMatchObject({
+        connection: "connected",
+      });
+      expect(disconnectEvents).toBe(0);
+      expect(leaveEvents).toBe(0);
+
+      const finalDisconnect = waitForSocketEvent(
+        observer,
+        "participant_disconnected",
+      );
+      primary.close();
+      await finalDisconnect;
+      await delay(100);
+
+      expect(disconnectEvents).toBe(1);
+      expect(leaveEvents).toBe(0);
+    },
+    PARTICIPANT_GRACE_MS + 5_000,
+  );
 });
