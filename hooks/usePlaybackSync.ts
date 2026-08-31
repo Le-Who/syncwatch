@@ -4,9 +4,8 @@ import { calculateDrift } from "@/lib/utils";
 import { calculatePlaybackRate } from "@/lib/drift-math";
 import { PlaybackIntentManager } from "@/lib/playback-intent-manager";
 import { PlayerMethods } from "@/lib/types";
+import { setPlayerPlaybackRate } from "@/lib/player-adapters";
 import {
-  CONTROLLED_OWNER_CORRECTION,
-  CONTROLLED_FOLLOWER_SEEK,
   HARD_SEEK_HTML5,
   HARD_SEEK_IFRAME,
   HARD_SEEK_TWITCH,
@@ -17,7 +16,7 @@ import {
 export function usePlaybackSync(props: {
   realPlayerRef: React.RefObject<PlayerMethods | null>;
   playerRef: React.RefObject<PlayerMethods | null>;
-  getAccurateTime: () => void;
+  getAccurateTime: () => number;
   getPlaying: () => boolean;
   setPlaying: (p: boolean) => void;
   getIsReady: () => boolean;
@@ -25,11 +24,8 @@ export function usePlaybackSync(props: {
   getIsBuffering: () => boolean;
   intentManager: PlaybackIntentManager;
   performProgrammaticSeek: (pos: number) => void;
-  getControlMode: () => string | undefined;
-  getMyRole: () => string | undefined | null;
   getCurrentMedia: () => any | undefined;
   getDuration: () => number;
-  emitCommand: (type: string, payload: any) => void;
   joinedAt: number;
 }) {
   const driftRef = useRef(0);
@@ -75,7 +71,7 @@ export function usePlaybackSync(props: {
       }
 
       const currentServerTime = Date.now() + serverClockOffset;
-      const currentPosition = p.getAccurateTime() as unknown as number;
+      const currentPosition = p.getAccurateTime();
 
       if (playback.status === "playing") {
         const { expectedPosition, drift: currentDrift } = calculateDrift(
@@ -93,33 +89,6 @@ export function usePlaybackSync(props: {
           p.setPlaying(true);
         }
 
-        if (p.getControlMode() === "controlled") {
-          if (currentDrift > CONTROLLED_OWNER_CORRECTION && p.getMyRole() === "owner") {
-            // A4 Fix: tag sync_correction with nonce so the echo-back doesn't trigger OCC rollback flicker
-            const nonce = crypto.randomUUID();
-            p.intentManager.markCommandEmitted(
-              "playing",
-              currentPosition,
-              nonce,
-            );
-            p.emitCommand("sync_correction", {
-              position: currentPosition,
-              nonce,
-            });
-            return;
-          } else if (currentDrift > CONTROLLED_FOLLOWER_SEEK) {
-            // P3 Fix: Followers hard seek locally if drift exceeds 2.0s (lowered from 3.0s).
-            // The purpose is keeping all viewers in sync — followers must actively correct drift.
-            p.performProgrammaticSeek(expectedPosition);
-            // P2 Fix: Must return here to prevent falling through to the
-            // iframe-aware hard-seek block below, which would fire a SECOND
-            // seek for the same drift cycle.
-            syncTimerRef.current = setTimeout(syncPlayback, 250) as any;
-            return;
-          }
-          // Note: followers fall through to rate adjustment for 0.6 - 2.0s drift
-        }
-
         const currentMedia = p.getCurrentMedia();
         const isIframeProvider = ["youtube", "vimeo", "twitch"].includes(
           currentMedia?.provider?.toLowerCase() || "",
@@ -128,20 +97,9 @@ export function usePlaybackSync(props: {
         const duration = p.getDuration();
 
         const setPlaybackRateDirectly = (rate: number) => {
-          const rP = p.realPlayerRef.current;
-          if (rP?.getInternalPlayer) {
-            const internal = rP.getInternalPlayer();
-            if (internal?.setPlaybackRate) {
-              internal.setPlaybackRate(rate);
-              return;
-            }
-          }
-          if (
-            p.playerRef.current &&
-            p.playerRef.current.playbackRate !== undefined
-          ) {
-            p.playerRef.current.playbackRate = rate;
-          }
+          const provider = currentMedia?.provider?.toLowerCase();
+          if (setPlayerPlaybackRate(p.realPlayerRef.current, rate, provider)) return;
+          setPlayerPlaybackRate(p.playerRef.current, rate, provider);
         };
 
         // P4 Fix: During the first 3 seconds after joining, skip hard seeks

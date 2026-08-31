@@ -16,6 +16,7 @@ export const metadata: Metadata = {
 
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { ServiceWorkerCleanup } from "@/components/ServiceWorkerCleanup";
 export default function RootLayout({
   children,
 }: {
@@ -42,6 +43,7 @@ export default function RootLayout({
 
         <div className="theme-pattern"></div>
         <ThemeProvider>
+          <ServiceWorkerCleanup />
           {children}
           <ThemeToggle />
         </ThemeProvider>

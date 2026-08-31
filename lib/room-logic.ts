@@ -1,7 +1,7 @@
 /**
  * room-logic.ts — Pure, synchronous room state mutation functions.
  *
- * These functions encapsulate ALL business logic for "slow path" commands
+ * These functions encapsulate business logic for room commands
  * (playlist edits, video_ended, settings, etc.) that were previously
  * handled by the async redis-queue-worker.
  *
@@ -11,26 +11,26 @@
  */
 
 import { randomUUID } from "crypto";
-import { RoomState } from "./types";
+import { PlaylistItem, RoomState } from "./types";
+import { getParticipantPermissions } from "./permissions";
+
+export const FAST_COMMAND_TYPES = [
+  "play",
+  "pause",
+  "seek",
+  "update_rate",
+  "buffering",
+  "sync_correction",
+] as const;
+
+export type FastCommandType = (typeof FAST_COMMAND_TYPES)[number];
+export type FastCommandResult = "changed" | "unchanged" | "unauthorized" | "invalid";
+
+export function isFastCommand(type: string): type is FastCommandType {
+  return (FAST_COMMAND_TYPES as readonly string[]).includes(type);
+}
 
 // ─── Helpers ───────────────────────────────────────────────────────────
-
-function getParticipantPermissions(
-  room: RoomState,
-  participantId: string,
-): { canEditPlaylist: boolean; canControlPlayback: boolean; isOwnerOrMod: boolean } {
-  const participant = room.participants[participantId];
-  if (!participant) {
-    return { canEditPlaylist: false, canControlPlayback: false, isOwnerOrMod: false };
-  }
-  const isOwnerOrMod =
-    participant.role === "owner" || participant.role === "moderator";
-  const canEditPlaylist =
-    room.settings.controlMode === "open" || isOwnerOrMod;
-  const canControlPlayback =
-    room.settings.controlMode === "open" || isOwnerOrMod;
-  return { canEditPlaylist, canControlPlayback, isOwnerOrMod };
-}
 
 /** Clamp start position: if within 5s of end, reset to 0. */
 function clampStart(item: { lastPosition?: number; startPosition?: number; duration: number }): number {
@@ -55,6 +55,166 @@ function snapshotActiveItemPosition(room: RoomState): void {
   }
 }
 
+function currentPlaybackPosition(room: RoomState): number {
+  const elapsed =
+    room.playback.status === "playing"
+      ? (Date.now() - room.playback.baseTimestamp) / 1000
+      : 0;
+  return room.playback.basePosition + elapsed * room.playback.rate;
+}
+
+export function applyFastCommand(
+  room: RoomState,
+  type: string,
+  payload: any,
+  participantId: string,
+  participantNickname: string,
+  now = Date.now(),
+): FastCommandResult {
+  if (!isFastCommand(type)) return "invalid";
+
+  const participant = room.participants[participantId];
+  if (!participant) return "unauthorized";
+
+  const { canControlPlayback } = getParticipantPermissions(room, participantId);
+  if (!canControlPlayback) return "unauthorized";
+
+  if (type === "play" || type === "seek" || type === "buffering") {
+    if (typeof payload?.position !== "number" || payload.position < 0) {
+      return "invalid";
+    }
+
+    if (type === "play" && room.playback.status === "playing" && !payload.forceSeek) {
+      return "unchanged";
+    }
+
+    if (type === "play") {
+      room.playback.status = "playing";
+    } else if (type === "buffering") {
+      room.playback.status = "buffering";
+    }
+    room.playback.basePosition = payload.position;
+    room.playback.baseTimestamp = now;
+    room.playback.updatedBy = participantNickname;
+    if (payload.nonce) room.playback.lastActionNonce = payload.nonce;
+    return "changed";
+  }
+
+  if (type === "pause") {
+    if (typeof payload?.position !== "number" || payload.position < 0) {
+      return "invalid";
+    }
+    if (room.playback.status === "paused") return "unchanged";
+
+    room.playback.status = "paused";
+    room.playback.basePosition = payload.position;
+    room.playback.baseTimestamp = now;
+    room.playback.updatedBy = participantNickname;
+    if (payload.nonce) room.playback.lastActionNonce = payload.nonce;
+    return "changed";
+  }
+
+  if (type === "update_rate") {
+    const newRate = payload?.rate;
+    if (typeof newRate !== "number" || newRate < 0.25 || newRate > 4.0) {
+      return "invalid";
+    }
+
+    if (room.playback.status === "playing") {
+      const elapsedSeconds = (now - room.playback.baseTimestamp) / 1000;
+      room.playback.basePosition += elapsedSeconds * room.playback.rate;
+      room.playback.baseTimestamp = now;
+    }
+    room.playback.rate = newRate;
+    room.playback.updatedBy = participantNickname;
+    if (payload.nonce) room.playback.lastActionNonce = payload.nonce;
+    return "changed";
+  }
+
+  if (type === "sync_correction") {
+    if (typeof payload?.position !== "number" || payload.position < 0) {
+      return "invalid";
+    }
+
+    room.playback.basePosition = payload.position;
+    room.playback.baseTimestamp = now;
+    if (payload.nonce) room.playback.lastActionNonce = payload.nonce;
+    return "changed";
+  }
+
+  return "invalid";
+}
+
+function saveFlashback(room: RoomState): void {
+  if (!room.currentMediaId) return;
+  room.flashbacks ??= {};
+  room.flashbacks[room.currentMediaId] = {
+    position: currentPlaybackPosition(room),
+    savedAt: Date.now(),
+  };
+}
+
+function resetReadiness(room: RoomState): void {
+  for (const participant of Object.values(room.participants)) {
+    participant.ready = false;
+  }
+
+  const currentItem = room.playlist.find((i) => i.id === room.currentMediaId);
+  if (currentItem) currentItem.readyParticipants = {};
+}
+
+function createPlaylistItem(
+  payload: any,
+  participantId: string,
+  participantNickname: string,
+): PlaylistItem {
+  return {
+    id: randomUUID(),
+    url: payload.url,
+    provider: payload.provider || "unknown",
+    title: payload.title || "Unknown Video",
+    duration: payload.duration || 0,
+    addedBy: participantNickname,
+    requesterId: participantId,
+    author: payload.author,
+    startPosition: payload.startPosition || 0,
+    lastPosition: 0,
+    thumbnail: payload.thumbnail,
+    aspectRatio: payload.aspectRatio,
+    isTemporary: Boolean(payload.isTemporary),
+    readyParticipants: {},
+  };
+}
+
+function insertPlaylistItems(
+  room: RoomState,
+  items: PlaylistItem[],
+  insertMode?: string,
+): void {
+  const shouldInsertNext = insertMode === "next" && room.currentMediaId;
+  if (!shouldInsertNext) {
+    room.playlist.push(...items);
+    return;
+  }
+
+  const currentIndex = room.playlist.findIndex((i) => i.id === room.currentMediaId);
+  if (currentIndex === -1) {
+    room.playlist.push(...items);
+    return;
+  }
+  room.playlist.splice(currentIndex + 1, 0, ...items);
+}
+
+function setInitialMediaIfNeeded(room: RoomState, firstItem: PlaylistItem): void {
+  if (room.currentMediaId) return;
+  room.currentMediaId = firstItem.id;
+  room.playback.basePosition = firstItem.startPosition || 0;
+  room.playback.baseTimestamp = Date.now();
+  room.playback.status =
+    room.playback.status === "playing" ? "playing" : "paused";
+  resetReadiness(room);
+}
+
 // ─── Command Handlers ──────────────────────────────────────────────────
 
 export function applyAddItem(
@@ -63,28 +223,22 @@ export function applyAddItem(
   participantId: string,
   participantNickname: string,
 ): boolean {
-  const { canEditPlaylist } = getParticipantPermissions(room, participantId);
-  if (!canEditPlaylist || room.playlist.length >= 500) return false;
+  const { canAddPlaylist, canEditPlaylist } = getParticipantPermissions(
+    room,
+    participantId,
+  );
+  if (!canAddPlaylist || room.playlist.length >= 500) return false;
 
-  const newItem = {
-    id: randomUUID(),
-    url: payload.url,
-    provider: payload.provider || "unknown",
-    title: payload.title || "Unknown Video",
-    duration: payload.duration || 0,
-    addedBy: participantNickname,
-    startPosition: payload.startPosition || 0,
-    thumbnail: payload.thumbnail,
-  };
-  room.playlist.push(newItem);
+  if (room.playlist.some((item) => item.url === payload.url)) return false;
 
-  if (!room.currentMediaId) {
-    room.currentMediaId = newItem.id;
-    room.playback.basePosition = newItem.startPosition || 0;
-    room.playback.baseTimestamp = Date.now();
-    room.playback.status =
-      room.playback.status === "playing" ? "playing" : "paused";
-  }
+  const newItem = createPlaylistItem(payload, participantId, participantNickname);
+  insertPlaylistItems(
+    room,
+    [newItem],
+    canEditPlaylist ? payload.insertMode : "end",
+  );
+  setInitialMediaIfNeeded(room, newItem);
+
   return true;
 }
 
@@ -94,8 +248,11 @@ export function applyAddItems(
   participantId: string,
   participantNickname: string,
 ): boolean {
-  const { canEditPlaylist } = getParticipantPermissions(room, participantId);
-  if (!canEditPlaylist || !Array.isArray(payload.items)) return false;
+  const { canAddPlaylist, canEditPlaylist } = getParticipantPermissions(
+    room,
+    participantId,
+  );
+  if (!canAddPlaylist || !Array.isArray(payload.items)) return false;
 
   const availableSlots = 500 - room.playlist.length;
   if (availableSlots <= 0) return false;
@@ -117,27 +274,19 @@ export function applyAddItems(
   }
   if (dedupedItems.length === 0) return false;
 
-  for (const item of dedupedItems) {
-    const newBulkItem = {
-      id: randomUUID(),
-      url: item.url,
-      provider: item.provider || "youtube",
-      title: item.title || "Unknown Video",
-      duration: item.duration || 0,
-      addedBy: participantNickname,
-      startPosition: item.startPosition || 0,
-      lastPosition: 0,
-      thumbnail: item.thumbnail,
-    };
-    room.playlist.push(newBulkItem);
-    if (!room.currentMediaId) {
-      room.currentMediaId = newBulkItem.id;
-      room.playback.basePosition = newBulkItem.startPosition || 0;
-      room.playback.baseTimestamp = Date.now();
-      room.playback.status =
-        room.playback.status === "playing" ? "playing" : "paused";
-    }
-  }
+  const newItems = dedupedItems.map((item) =>
+    createPlaylistItem(
+      { ...item, provider: item.provider || "youtube" },
+      participantId,
+      participantNickname,
+    ),
+  );
+  insertPlaylistItems(
+    room,
+    newItems,
+    canEditPlaylist ? payload.insertMode : "end",
+  );
+  setInitialMediaIfNeeded(room, newItems[0]);
   return true;
 }
 
@@ -168,6 +317,7 @@ export function applyRemoveItem(
       : null;
     room.playback.basePosition = newHead ? clampStart(newHead) : 0;
     room.playback.baseTimestamp = Date.now();
+    resetReadiness(room);
   }
   return true;
 }
@@ -217,6 +367,7 @@ export function applySetMedia(
   room.playback.basePosition = targetItem ? clampStart(targetItem) : 0;
   room.playback.baseTimestamp = Date.now();
   room.playback.updatedBy = participantNickname;
+  resetReadiness(room);
   return true;
 }
 
@@ -243,6 +394,7 @@ export function applyNext(
     room.playback.basePosition = clampStart(nextItem);
     room.playback.baseTimestamp = Date.now();
     room.playback.updatedBy = participantNickname;
+    resetReadiness(room);
     return true;
   } else if (room.settings.looping && room.playlist.length > 0) {
     const loopItem = room.playlist[0];
@@ -251,6 +403,7 @@ export function applyNext(
     room.playback.basePosition = clampStart(loopItem);
     room.playback.baseTimestamp = Date.now();
     room.playback.updatedBy = participantNickname;
+    resetReadiness(room);
     return true;
   }
   return false;
@@ -265,9 +418,12 @@ export function applyClearPlaylist(
 
   room.playlist = [];
   room.currentMediaId = null;
+  room.leaderId = null;
+  room.flashbacks = {};
   room.playback.status = "paused";
   room.playback.basePosition = 0;
   room.playback.baseTimestamp = Date.now();
+  resetReadiness(room);
   return true;
 }
 
@@ -278,7 +434,18 @@ export function applyUpdateSettings(
 ): boolean {
   const { isOwnerOrMod } = getParticipantPermissions(room, participantId);
   if (!isOwnerOrMod) return false;
-  room.settings = { ...room.settings, ...payload.settings };
+  const {
+    controlMode: _legacyControlMode,
+    playlistMode: _legacyPlaylistMode,
+    requestLeaderOnPause: _legacyRequestLeaderOnPause,
+    unpauseWithoutLeader: _legacyUnpauseWithoutLeader,
+    ...nextSettings
+  } = payload.settings || {};
+  room.settings = { ...room.settings, ...nextSettings };
+  delete (room.settings as any).controlMode;
+  delete (room.settings as any).playlistMode;
+  delete (room.settings as any).requestLeaderOnPause;
+  delete (room.settings as any).unpauseWithoutLeader;
   return true;
 }
 
@@ -288,6 +455,8 @@ export function applyVideoEnded(
   participantId: string,
   participantNickname: string,
 ): boolean {
+  const { canControlPlayback } = getParticipantPermissions(room, participantId);
+  if (!canControlPlayback) return false;
   if (payload.currentMediaId !== room.currentMediaId) return false;
 
   snapshotActiveItemPosition(room);
@@ -304,6 +473,7 @@ export function applyVideoEnded(
       room.playback.basePosition = clampStart(nextItem);
       room.playback.baseTimestamp = Date.now();
       room.playback.updatedBy = participantNickname;
+      resetReadiness(room);
     } else {
       room.playback.status = "paused";
       room.playback.basePosition = activeItem?.duration || 0;
@@ -318,6 +488,7 @@ export function applyVideoEnded(
     room.playback.basePosition = clampStart(loopItem);
     room.playback.baseTimestamp = Date.now();
     room.playback.updatedBy = participantNickname;
+    resetReadiness(room);
     return true;
   } else {
     // End of playlist without looping
@@ -340,6 +511,191 @@ export function applyUpdateDuration(
     return true;
   }
   return false;
+}
+
+export function applySetNextItem(
+  room: RoomState,
+  payload: any,
+  participantId: string,
+): boolean {
+  const { canEditPlaylist } = getParticipantPermissions(room, participantId);
+  if (!canEditPlaylist || !room.currentMediaId) return false;
+
+  const currentIndex = room.playlist.findIndex((i) => i.id === room.currentMediaId);
+  const targetIndex = room.playlist.findIndex((i) => i.id === payload.itemId);
+  if (currentIndex === -1 || targetIndex === -1 || currentIndex === targetIndex) {
+    return false;
+  }
+
+  const [target] = room.playlist.splice(targetIndex, 1);
+  const newCurrentIndex = room.playlist.findIndex((i) => i.id === room.currentMediaId);
+  room.playlist.splice(newCurrentIndex + 1, 0, target);
+  return true;
+}
+
+export function applyToggleItemTemporary(
+  room: RoomState,
+  payload: any,
+  participantId: string,
+): boolean {
+  const { canEditPlaylist } = getParticipantPermissions(room, participantId);
+  if (!canEditPlaylist) return false;
+
+  const target = room.playlist.find((i) => i.id === payload.itemId);
+  if (!target) return false;
+  target.isTemporary = !target.isTemporary;
+  return true;
+}
+
+export function applyShufflePlaylist(
+  room: RoomState,
+  participantId: string,
+): boolean {
+  const { canEditPlaylist } = getParticipantPermissions(room, participantId);
+  if (!canEditPlaylist || room.playlist.length < 3 || !room.currentMediaId) {
+    return false;
+  }
+
+  const current = room.playlist.find((i) => i.id === room.currentMediaId);
+  const rest = room.playlist.filter((i) => i.id !== room.currentMediaId);
+  for (let i = rest.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [rest[i], rest[j]] = [rest[j], rest[i]];
+  }
+  room.playlist = current ? [current, ...rest] : rest;
+  return true;
+}
+
+export function applyRequestLeader(
+  room: RoomState,
+  participantId: string,
+): boolean {
+  const participant = room.participants[participantId];
+  if (!participant) return false;
+
+  if (room.leaderId === participantId) return false;
+  if (room.leaderId && room.participants[room.leaderId]) return false;
+
+  room.leaderId = participantId;
+  return true;
+}
+
+export function applyReleaseLeader(
+  room: RoomState,
+  participantId: string,
+): boolean {
+  if (!room.leaderId) return false;
+  const { isOwnerOrMod } = getParticipantPermissions(room, participantId);
+  if (room.leaderId !== participantId && !isOwnerOrMod) return false;
+
+  room.leaderId = null;
+  return true;
+}
+
+export function applyTransferOwner(
+  room: RoomState,
+  payload: any,
+  participantId: string,
+): boolean {
+  const owner = room.participants[participantId];
+  const target = room.participants[payload.targetParticipantId];
+  if (owner?.role !== "owner" || !target || target.id === owner.id) return false;
+
+  owner.role = "moderator";
+  target.role = "owner";
+  return true;
+}
+
+export function applyMediaReady(
+  room: RoomState,
+  payload: any,
+  participantId: string,
+): boolean {
+  const participant = room.participants[participantId];
+  if (!participant || payload.mediaId !== room.currentMediaId) return false;
+
+  const currentItem = room.playlist.find((i) => i.id === room.currentMediaId);
+  if (!currentItem) return false;
+
+  const ready = payload.ready !== false;
+  participant.ready = ready;
+  currentItem.readyParticipants ??= {};
+  currentItem.readyParticipants[participantId] = ready;
+  return true;
+}
+
+export function applyRewind(
+  room: RoomState,
+  payload: any,
+  participantId: string,
+  participantNickname: string,
+): boolean {
+  const { canControlPlayback } = getParticipantPermissions(room, participantId);
+  if (!canControlPlayback || !room.currentMediaId) return false;
+
+  saveFlashback(room);
+  const duration =
+    room.playlist.find((i) => i.id === room.currentMediaId)?.duration || 0;
+  const nextPosition = Math.max(
+    0,
+    duration > 0
+      ? Math.min(duration, currentPlaybackPosition(room) + payload.seconds)
+      : currentPlaybackPosition(room) + payload.seconds,
+  );
+
+  room.playback.basePosition = nextPosition;
+  room.playback.baseTimestamp = Date.now();
+  room.playback.updatedBy = participantNickname;
+  return true;
+}
+
+export function applyFlashback(
+  room: RoomState,
+  participantId: string,
+  participantNickname: string,
+): boolean {
+  const { canControlPlayback } = getParticipantPermissions(room, participantId);
+  if (!canControlPlayback || !room.currentMediaId) return false;
+
+  const flashback = room.flashbacks?.[room.currentMediaId];
+  if (!flashback) return false;
+
+  const currentPosition = currentPlaybackPosition(room);
+  room.flashbacks[room.currentMediaId] = {
+    position: currentPosition,
+    savedAt: Date.now(),
+  };
+  room.playback.basePosition = flashback.position;
+  room.playback.baseTimestamp = Date.now();
+  room.playback.updatedBy = participantNickname;
+  return true;
+}
+
+export function applySendChat(
+  room: RoomState,
+  payload: any,
+  participantId: string,
+  participantNickname: string,
+): boolean {
+  const participant = room.participants[participantId];
+  const message =
+    typeof payload.message === "string" ? payload.message.trim() : "";
+  if (!participant || !message) return false;
+
+  room.chat ??= [];
+  room.chat.push({
+    id: randomUUID(),
+    participantId,
+    nickname: participantNickname || participant.nickname,
+    message: message.slice(0, 500),
+    sentAt: Date.now(),
+  });
+
+  if (room.chat.length > 100) {
+    room.chat = room.chat.slice(-100);
+  }
+
+  return true;
 }
 
 export function applyUpdateRoomName(
@@ -418,6 +774,9 @@ export function applyKickParticipant(
   const kickTarget = room.participants[kickTargetId];
   if (kickTarget && kickTargetId !== participantId) {
     delete room.participants[kickTargetId];
+    if (room.leaderId === kickTargetId) {
+      room.leaderId = null;
+    }
     return true;
   }
   return false;
@@ -457,6 +816,26 @@ export function applySlowCommand(
       return applyVideoEnded(room, payload, participantId, participantNickname);
     case "update_duration":
       return applyUpdateDuration(room, payload);
+    case "set_next_item":
+      return applySetNextItem(room, payload, participantId);
+    case "toggle_item_temporary":
+      return applyToggleItemTemporary(room, payload, participantId);
+    case "shuffle_playlist":
+      return applyShufflePlaylist(room, participantId);
+    case "request_leader":
+      return applyRequestLeader(room, participantId);
+    case "release_leader":
+      return applyReleaseLeader(room, participantId);
+    case "transfer_owner":
+      return applyTransferOwner(room, payload, participantId);
+    case "media_ready":
+      return applyMediaReady(room, payload, participantId);
+    case "rewind":
+      return applyRewind(room, payload, participantId, participantNickname);
+    case "flashback":
+      return applyFlashback(room, participantId, participantNickname);
+    case "send_chat":
+      return applySendChat(room, payload, participantId, participantNickname);
     case "update_room_name":
       return applyUpdateRoomName(room, payload, participantId);
     case "update_nickname":

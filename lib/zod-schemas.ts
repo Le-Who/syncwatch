@@ -57,6 +57,10 @@ export const commandSchema = z.discriminatedUnion("type", [
         duration: z.number().min(0).optional().nullable(),
         startPosition: z.number().min(0).optional().nullable(),
         thumbnail: z.string().optional().nullable(),
+        author: z.string().optional().nullable(),
+        aspectRatio: z.number().min(0).optional().nullable(),
+        isTemporary: z.boolean().optional().nullable(),
+        insertMode: z.enum(["next", "end"]).optional(),
       })
       .passthrough(),
   }),
@@ -72,9 +76,13 @@ export const commandSchema = z.discriminatedUnion("type", [
             duration: z.number().min(0).optional().nullable(),
             startPosition: z.number().min(0).optional().nullable(),
             thumbnail: z.string().optional().nullable(),
+            author: z.string().optional().nullable(),
+            aspectRatio: z.number().min(0).optional().nullable(),
+            isTemporary: z.boolean().optional().nullable(),
           })
           .passthrough(),
       ),
+      insertMode: z.enum(["next", "end"]).optional(),
     }),
   }),
   z.object({
@@ -108,6 +116,10 @@ export const commandSchema = z.discriminatedUnion("type", [
         controlMode: z.enum(["open", "controlled", "hybrid"]).optional(),
         autoplayNext: z.boolean().optional(),
         looping: z.boolean().optional(),
+        shuffle: z.boolean().optional(),
+        playlistMode: z.enum(["editable", "append_only"]).optional(),
+        requestLeaderOnPause: z.boolean().optional(),
+        unpauseWithoutLeader: z.boolean().optional(),
       }),
     }),
   }),
@@ -122,6 +134,55 @@ export const commandSchema = z.discriminatedUnion("type", [
     payload: z.object({
       mediaId: z.string().uuid(),
       duration: z.number().min(0),
+    }),
+  }),
+  z.object({
+    type: z.literal("set_next_item"),
+    payload: z.object({ itemId: z.string().uuid() }),
+  }),
+  z.object({
+    type: z.literal("toggle_item_temporary"),
+    payload: z.object({ itemId: z.string().uuid() }),
+  }),
+  z.object({
+    type: z.literal("shuffle_playlist"),
+    payload: z.any().optional(),
+  }),
+  z.object({
+    type: z.literal("request_leader"),
+    payload: z.any().optional(),
+  }),
+  z.object({
+    type: z.literal("release_leader"),
+    payload: z.any().optional(),
+  }),
+  z.object({
+    type: z.literal("transfer_owner"),
+    payload: z.object({
+      targetParticipantId: z.string(),
+    }),
+  }),
+  z.object({
+    type: z.literal("media_ready"),
+    payload: z.object({
+      mediaId: z.string().uuid(),
+      ready: z.boolean(),
+    }),
+  }),
+  z.object({
+    type: z.literal("rewind"),
+    payload: z.object({
+      seconds: z.number().finite(),
+    }),
+  }),
+  z.object({
+    type: z.literal("flashback"),
+    payload: z.any().optional(),
+  }),
+  z.object({
+    type: z.literal("send_chat"),
+    payload: z.object({
+      message: z.string().min(1).max(500),
     }),
   }),
   z.object({

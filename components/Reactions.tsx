@@ -78,7 +78,7 @@ export default function Reactions() {
       </div>
 
       {/* Reaction Controls */}
-      <div className="absolute top-1/2 right-4 z-50 flex -translate-y-1/2 flex-col items-center">
+      <div className="absolute right-4 bottom-4 z-50 flex flex-col items-center md:top-1/2 md:bottom-auto md:-translate-y-1/2">
         {isOpen && (
           <div className="bg-theme-bg/80 border-theme-border/50 rounded-theme animate-in fade-in slide-in-from-bottom-2 mb-2 flex flex-col-reverse gap-2 border-2 p-2 shadow-lg backdrop-blur-xl">
             {EMOJIS.map((emoji) => (

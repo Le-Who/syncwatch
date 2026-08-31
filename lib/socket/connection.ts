@@ -155,6 +155,9 @@ export function handleConnectionEvents(
           if (participant) {
             if (Date.now() - participant.lastSeen > 10000) {
               delete r.participants[currentParticipantId];
+              if (r.leaderId === currentParticipantId) {
+                r.leaderId = null;
+              }
               r.version++;
 
               const remaining = Object.values(r.participants);

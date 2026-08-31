@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 import { executeFastMutation } from "../lib/redis-lua";
 import { getRedisClient } from "../lib/redis-rate-limit";
 import {
@@ -25,7 +25,11 @@ describe("Fast-Path OCC Logic", () => {
       usingMock = true;
     }
 
-    // Arrange: Setup initial fast-path room
+  });
+
+  beforeEach(async () => {
+    // Arrange: Setup initial fast-path room for each test so leader/position
+    // mutations cannot leak between cases.
     await setRedisRoom(roomId, {
       id: roomId,
       version: 1,
@@ -38,7 +42,26 @@ describe("Fast-Path OCC Logic", () => {
           nickname: "Owner",
           lastSeen: Date.now(),
         },
+        u2: {
+          id: "u2",
+          role: "viewer",
+          nickname: "Viewer",
+          lastSeen: Date.now(),
+        },
+        u3: {
+          id: "u3",
+          role: "moderator",
+          nickname: "Mod",
+          lastSeen: Date.now(),
+        },
+        u4: {
+          id: "u4",
+          role: "viewer",
+          nickname: "Other Viewer",
+          lastSeen: Date.now(),
+        },
       },
+      leaderId: null,
       settings: { controlMode: "open", autoplayNext: true, looping: false },
       playlist: [
         {
@@ -107,7 +130,75 @@ describe("Fast-Path OCC Logic", () => {
     expect(result.error).toBe("UNAUTHORIZED");
   });
 
+  it("TC-Fast-2b: Should allow viewer playback control when there is no leader", async () => {
+    const viewerResult = await executeFastMutation(
+      roomId,
+      -1,
+      "play",
+      { position: 12 },
+      "u2",
+      "Viewer",
+    );
+
+    expect(viewerResult.success).toBe(true);
+    const viewerState = await getRedisRoom(roomId);
+    expect(viewerState.playback.basePosition).toBe(12);
+    expect(viewerState.playback.updatedBy).toBe("Viewer");
+  });
+
+  it("TC-Fast-2c: Should reject non-leader playback control while allowing leader and moderator control", async () => {
+    const stateWithLeader = await getRedisRoom(roomId);
+    stateWithLeader.leaderId = "u2";
+    await setRedisRoom(roomId, stateWithLeader);
+
+    const otherViewerResult = await executeFastMutation(
+      roomId,
+      -1,
+      "play",
+      { position: 12 },
+      "u4",
+      "Other Viewer",
+    );
+
+    expect(otherViewerResult.success).toBe(false);
+    expect(otherViewerResult.error).toBe("UNAUTHORIZED");
+
+    const leaderResult = await executeFastMutation(
+      roomId,
+      -1,
+      "play",
+      { position: 12 },
+      "u2",
+      "Viewer",
+    );
+
+    expect(leaderResult.success).toBe(true);
+
+    const moderatorResult = await executeFastMutation(
+      roomId,
+      -1,
+      "play",
+      { position: 13, forceSeek: true },
+      "u3",
+      "Mod",
+    );
+
+    expect(moderatorResult.success).toBe(true);
+    const state = await getRedisRoom(roomId);
+    expect(state.playback.basePosition).toBe(13);
+    expect(state.playback.updatedBy).toBe("Mod");
+  });
+
   it("TC-Fast-3: Should handle pause mutation correctly", async () => {
+    await executeFastMutation(
+      roomId,
+      -1,
+      "play",
+      { position: 70 },
+      "u1",
+      "Owner",
+    );
+
     const result = await executeFastMutation(
       roomId,
       -1,

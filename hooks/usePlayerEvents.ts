@@ -4,6 +4,7 @@ import { useCallback } from "react";
 import { useStore } from "@/lib/store";
 import { PlaybackIntentManager } from "@/lib/playback-intent-manager";
 import type { PlayerMethods } from "@/lib/types";
+import { getPlayerDuration } from "@/lib/player-adapters";
 
 interface UsePlayerEventsOptions {
   intentManager: PlaybackIntentManager;
@@ -25,10 +26,9 @@ interface UsePlayerEventsOptions {
 }
 
 /**
- * Extracts shared player event handlers used by both TwitchPlayer and ReactPlayer.
+ * Extracts shared player event handlers used by ReactPlayer-backed providers.
  * 
- * This hook eliminates the duplicated onReady/onError/onEnded/onWaiting/onPlaying/onDurationChange
- * logic that was previously inlined separately for each player type.
+ * This hook keeps provider lifecycle events centralized.
  */
 export function usePlayerEvents({
   intentManager,
@@ -48,16 +48,27 @@ export function usePlayerEvents({
   handleNativePlay,
   handleNativePause,
 }: UsePlayerEventsOptions) {
-  /** Shared onReady logic for both player types */
+  /** Shared readiness logic after provider metadata is available. */
   const handleReady = useCallback(
-    (rPlayer: PlayerMethods, isTwitch: boolean) => {
-      realPlayerRef.current = isTwitch ? playerRef.current : rPlayer;
+    (rPlayer: PlayerMethods | null | undefined, isTwitch: boolean) => {
+      realPlayerRef.current = isTwitch ? playerRef.current : rPlayer || playerRef.current;
       setIsReady(true);
       setError(null);
+
+      const provider = useStore
+        .getState()
+        .room?.playlist.find((item) => item.id === currentMediaId)
+        ?.provider?.toLowerCase();
+      const duration = getPlayerDuration(realPlayerRef.current, provider);
+      if (duration > 0) setDuration(duration);
 
       // Clear state-based transition guard for this media
       if (currentMediaId) {
         intentManager.clearMediaTransition(currentMediaId);
+        useStore.getState().sendCommand("media_ready", {
+          mediaId: currentMediaId,
+          ready: true,
+        });
       }
 
       // Auto-resume if server is playing after media switch
@@ -66,7 +77,16 @@ export function usePlayerEvents({
         setPlaying(true);
       }
     },
-    [currentMediaId, intentManager, playerRef, realPlayerRef, setIsReady, setError, setPlaying],
+    [
+      currentMediaId,
+      intentManager,
+      playerRef,
+      realPlayerRef,
+      setDuration,
+      setIsReady,
+      setError,
+      setPlaying,
+    ],
   );
 
   /** Shared onError logic */
@@ -106,10 +126,14 @@ export function usePlayerEvents({
   /** Shared onDurationChange — handles both Twitch (direct number) and ReactPlayer (event) */
   const handleDurationChange = useCallback(
     (durOrEvent: number | any) => {
+      const provider = useStore
+        .getState()
+        .room?.playlist.find((item) => item.id === currentMediaId)
+        ?.provider?.toLowerCase();
       const dur =
         typeof durOrEvent === "number"
           ? durOrEvent
-          : realPlayerRef.current?.getDuration?.() ||
+          : getPlayerDuration(realPlayerRef.current, provider) ||
             durOrEvent?.target?.duration ||
             durOrEvent?.duration ||
             0;

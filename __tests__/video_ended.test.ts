@@ -13,7 +13,6 @@ describe("room-logic: video_ended command", () => {
       version: 1,
       sequence: 1,
       settings: {
-        controlMode: "open",
         looping: false,
         autoplayNext: true,
       },
@@ -31,6 +30,7 @@ describe("room-logic: video_ended command", () => {
           lastSeen: Date.now(),
         },
       },
+      leaderId: null,
       playlist: [
         {
           id: "item-1",
@@ -75,8 +75,8 @@ describe("room-logic: video_ended command", () => {
     const changed = applyVideoEnded(
       room,
       { currentMediaId: "item-1" },
-      "viewer-1",
-      "Viewer",
+      "user-1",
+      "Owner",
     );
 
     expect(changed).toBe(true);
@@ -93,8 +93,8 @@ describe("room-logic: video_ended command", () => {
     const changed = applyVideoEnded(
       room,
       { currentMediaId: "item-1" },
-      "viewer-1",
-      "Viewer",
+      "user-1",
+      "Owner",
     );
 
     expect(changed).toBe(true);
@@ -146,5 +146,31 @@ describe("room-logic: video_ended command", () => {
 
     expect(changed).toBe(false);
     expect(room.currentMediaId).toBe("item-2"); // Unchanged
+  });
+
+  it("allows viewer video_ended when no leader is active", () => {
+    const changed = applyVideoEnded(
+      room,
+      { currentMediaId: "item-1" },
+      "viewer-1",
+      "Viewer",
+    );
+
+    expect(changed).toBe(true);
+    expect(room.currentMediaId).toBe("item-2");
+  });
+
+  it("rejects viewer video_ended while another participant is the active leader", () => {
+    room.leaderId = "user-1";
+
+    const changed = applyVideoEnded(
+      room,
+      { currentMediaId: "item-1" },
+      "viewer-1",
+      "Viewer",
+    );
+
+    expect(changed).toBe(false);
+    expect(room.currentMediaId).toBe("item-1");
   });
 });

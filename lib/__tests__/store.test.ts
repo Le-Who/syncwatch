@@ -27,8 +27,8 @@ describe("useSettingsStore", () => {
 
   it("should initialize with default settings", () => {
     const { result } = renderHook(() => useSettingsStore());
-    expect(result.current.volume).toBe(0.8);
-    expect(result.current.muted).toBe(false);
+    expect(result.current.volume).toBe(0.5);
+    expect(result.current.muted).toBe(true);
     expect(result.current.theaterMode).toBe(false);
   });
 
@@ -38,6 +38,19 @@ describe("useSettingsStore", () => {
       result.current.setVolume(0.5);
     });
     expect(result.current.volume).toBe(0.5);
+  });
+
+  it("should clamp volume to the safe 0..1 media range", () => {
+    const { result } = renderHook(() => useSettingsStore());
+    act(() => {
+      result.current.setVolume(2);
+    });
+    expect(result.current.volume).toBe(1);
+
+    act(() => {
+      result.current.setVolume(-1);
+    });
+    expect(result.current.volume).toBe(0);
   });
 
   it("should toggle theater mode", () => {

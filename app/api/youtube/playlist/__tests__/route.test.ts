@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { GET } from "../route";
 import yts from "yt-search";
+import { checkRedisRateLimit } from "@/lib/redis-rate-limit";
 
 vi.mock("yt-search");
 
@@ -11,6 +12,8 @@ vi.mock("@/lib/redis-rate-limit", () => ({
 describe("GET /api/youtube/playlist", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.unstubAllGlobals();
+    vi.mocked(checkRedisRateLimit).mockResolvedValue(true);
   });
 
   const createRequest = (url: string) => {
@@ -52,6 +55,7 @@ describe("GET /api/youtube/playlist", () => {
     const response = await GET(req);
 
     expect(response.status).toBe(200);
+    expect(checkRedisRateLimit).toHaveBeenCalledWith("unknown", 10, 60000);
     const data = await response.json();
 
     expect(data.title).toBe("My Awesome Playlist");
@@ -91,17 +95,108 @@ describe("GET /api/youtube/playlist", () => {
     expect(data.title).toBe("Unknown Playlist");
   });
 
-  it("should return 500 if yt-search throws an error", async () => {
+  it("should fall back to parsing YouTube playlist HTML if yt-search throws an error", async () => {
     // @ts-ignore
     vi.mocked(yts).mockRejectedValue(new Error("yts crashed"));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          `<html><head><title>Fallback</title></head><body><script>
+          var ytInitialData = {
+            "metadata": {
+              "playlistMetadataRenderer": { "title": "Fallback Playlist" }
+            },
+            "contents": {
+              "twoColumnBrowseResultsRenderer": {
+                "tabs": [{
+                  "tabRenderer": {
+                    "content": {
+                      "sectionListRenderer": {
+                        "contents": [{
+                          "itemSectionRenderer": {
+                            "contents": [{
+                              "lockupViewModel": {
+                                "contentId": "fallback123",
+                                "contentType": "LOCKUP_CONTENT_TYPE_VIDEO",
+                                "contentImage": {
+                                  "thumbnailViewModel": {
+                                    "image": {
+                                      "sources": [{
+                                        "url": "https://img.youtube.com/vi/fallback123/hqdefault.jpg",
+                                        "width": 480,
+                                        "height": 360
+                                      }]
+                                    },
+                                    "overlays": [{
+                                      "thumbnailBottomOverlayViewModel": {
+                                        "badges": [{
+                                          "thumbnailBadgeViewModel": { "text": "1:23" }
+                                        }]
+                                      }
+                                    }]
+                                  }
+                                },
+                                "metadata": {
+                                  "lockupMetadataViewModel": {
+                                    "title": { "content": "Fallback Video" },
+                                    "metadata": {
+                                      "contentMetadataViewModel": {
+                                        "metadataRows": [{
+                                          "metadataParts": [{
+                                            "text": { "content": "Fallback Channel" }
+                                          }]
+                                        }]
+                                      }
+                                    }
+                                  }
+                                },
+                                "rendererContext": {
+                                  "commandContext": {
+                                    "onTap": {
+                                      "innertubeCommand": {
+                                        "watchEndpoint": {
+                                          "videoId": "fallback123",
+                                          "playlistId": "PL12345",
+                                          "index": 0
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }]
+                          }
+                        }]
+                      }
+                    }
+                  }
+                }]
+              }
+            }
+          };
+          </script></body></html>`,
+          { status: 200, headers: { "content-type": "text/html" } },
+        ),
+      ),
+    );
 
     const req = createRequest(
       "http://localhost:3000/api/youtube/playlist?listId=PL12345",
     );
     const response = await GET(req);
 
-    expect(response.status).toBe(500);
+    expect(response.status).toBe(200);
     const data = await response.json();
-    expect(data.error).toBe("Playlist fetch failed");
+    expect(data.title).toBe("Fallback Playlist");
+    expect(data.videos).toEqual([
+      {
+        title: "Fallback Video",
+        url: "https://www.youtube.com/watch?v=fallback123",
+        duration: 83,
+        thumbnail: "https://img.youtube.com/vi/fallback123/hqdefault.jpg",
+        author: "Fallback Channel",
+      },
+    ]);
   });
 });

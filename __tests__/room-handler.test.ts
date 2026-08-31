@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { registerRoomHandlers, createEmptyRoom } from "../lib/room-handler";
 import * as redisRateLimit from "../lib/redis-rate-limit";
 import * as redisActor from "../lib/redis-actor";
+import * as redisLua from "../lib/redis-lua";
 import { Server, Socket } from "socket.io";
 
 vi.mock("../lib/redis-rate-limit", () => ({
@@ -23,12 +24,18 @@ vi.mock("../lib/db-sync", () => ({
   markRoomForSync: vi.fn(),
 }));
 
-vi.mock("../lib/room-logic", () => ({
-  applySlowCommand: vi.fn().mockReturnValue(true),
-}));
+vi.mock("../lib/room-logic", async () => {
+  const actual = await vi.importActual<typeof import("../lib/room-logic")>(
+    "../lib/room-logic",
+  );
+  return actual;
+});
 
 vi.mock("../lib/redis-lua", () => ({
-  executeFastMutation: vi.fn().mockResolvedValue({ success: true, room: {} }),
+  executeFastMutation: vi.fn().mockResolvedValue({
+    success: false,
+    error: "REDIS_REQUIRED",
+  }),
 }));
 
 describe("Room Handler Security & Auth Boundary", () => {
@@ -114,5 +121,108 @@ describe("Room Handler Security & Auth Boundary", () => {
       "error",
       expect.anything(),
     );
+  });
+
+  it("does not reject playback commands through the global websocket command rate limit", async () => {
+    const roomId = "test-room-playback-rate-limit";
+    const participantId = "mod-123";
+
+    const mockRoom = createEmptyRoom(roomId, "Playback Room");
+    mockRoom.participants[participantId] = {
+      id: participantId,
+      nickname: "Mod",
+      role: "moderator",
+      lastSeen: Date.now(),
+    };
+    mockRoom.currentMediaId = "media-1";
+    mockRoom.playlist = [
+      {
+        id: "media-1",
+        url: "https://example.com/video.mp4",
+        provider: "direct",
+        title: "Video",
+        duration: 120,
+        addedBy: "Mod",
+      },
+    ];
+
+    (redisActor.getRedisRoom as any).mockResolvedValue(mockRoom);
+    (redisActor.setRedisRoomCAS as any).mockResolvedValue(true);
+    (redisRateLimit.checkRedisRateLimit as any).mockResolvedValue(true);
+
+    mockSocket.data.participantId = participantId;
+    await socketEventHandlers["join_room"]({ roomId, nickname: "Mod" });
+    mockSocket.emit.mockClear();
+
+    await socketEventHandlers["command"]({
+      roomId,
+      type: "pause",
+      payload: { position: 10 },
+      sequence: 2,
+    });
+
+    expect(mockSocket.emit).not.toHaveBeenCalledWith("error", {
+      message: "Rate limit exceeded",
+    });
+    expect(redisRateLimit.checkRedisRateLimit).not.toHaveBeenCalledWith(
+      expect.stringContaining("ws:command:"),
+      expect.any(Number),
+      expect.any(Number),
+    );
+  });
+
+  it("rejects non-leader fast playback commands in the websocket Redis fallback", async () => {
+    const roomId = "test-room-leader-fast-fallback";
+    const leaderId = "leader-123";
+    const viewerId = "viewer-123";
+
+    let storedRoom = createEmptyRoom(roomId, "Leader Room");
+    storedRoom.participants[leaderId] = {
+      id: leaderId,
+      nickname: "Leader",
+      role: "viewer",
+      lastSeen: Date.now(),
+    };
+    storedRoom.participants[viewerId] = {
+      id: viewerId,
+      nickname: "Viewer",
+      role: "viewer",
+      lastSeen: Date.now(),
+    };
+    storedRoom.leaderId = leaderId;
+    storedRoom.playback.status = "paused";
+    storedRoom.playback.basePosition = 12;
+
+    (redisActor.getRedisRoom as any).mockImplementation(async () =>
+      JSON.parse(JSON.stringify(storedRoom)),
+    );
+    (redisActor.setRedisRoomCAS as any).mockImplementation(
+      async (_roomId: string, nextRoom: any) => {
+        storedRoom = JSON.parse(JSON.stringify(nextRoom));
+        return true;
+      },
+    );
+    (redisLua.executeFastMutation as any).mockResolvedValue({
+      success: false,
+      error: "REDIS_REQUIRED",
+    });
+
+    mockSocket.data.participantId = viewerId;
+    await socketEventHandlers["join_room"]({ roomId, nickname: "Viewer" });
+    expect(mockSocket.join).toHaveBeenCalledWith(roomId);
+    mockSocket.emit.mockClear();
+
+    await socketEventHandlers["command"]({
+      roomId,
+      type: "play",
+      payload: { position: 44, forceSeek: true },
+      sequence: 2,
+    });
+
+    expect(mockSocket.emit).toHaveBeenCalledWith("error", {
+      message: "Unauthorized operation.",
+    });
+    expect(storedRoom.playback.status).toBe("paused");
+    expect(storedRoom.playback.basePosition).toBe(12);
   });
 });
