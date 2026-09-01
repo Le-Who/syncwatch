@@ -2,6 +2,7 @@ import { io, Socket } from "socket.io-client";
 import type { RoomEvent } from "./room-events";
 import type { CommandAcknowledgement } from "./room-command-contract";
 import { commandNonceSchema } from "./command-nonce";
+import type { PlaybackHealth } from "./types";
 
 type RoomSocketEvent =
   | "connected"
@@ -244,6 +245,12 @@ export class RoomSocketService {
       command: { type, payload: commandPayload },
     });
     return nonce;
+  }
+
+  public sendParticipantHealth(health: PlaybackHealth) {
+    if (!this.socket?.connected) return false;
+    this.socket.emit("participant_health", { health });
+    return true;
   }
 
   public upgradeSession(roomId: string, sequence: number, token: string) {

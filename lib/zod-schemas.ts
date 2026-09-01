@@ -6,7 +6,7 @@ export const canonicalPlaybackStatusSchema = z.enum([
   "ended",
 ]);
 
-/** Accepts legacy persisted and wire state until buffering mutations are removed. */
+/** Accepts persisted legacy state and no-op wire commands for compatibility. */
 export const legacyPlaybackStatusSchema = z.enum([
   "playing",
   "paused",

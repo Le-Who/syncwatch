@@ -25,6 +25,7 @@ export class PlaybackIntentManager {
   private _allowUserActionsDuringIgnore: boolean = false;
   private _userIsDraggingScrubber: boolean = false;
   private pauseDebounce: NodeJS.Timeout | null = null;
+  private providerEventEpoch = 0;
 
   // State-based media transition guard (replaces blunt timer)
   private _mediaTransitionId: string | null = null;
@@ -44,6 +45,15 @@ export class PlaybackIntentManager {
 
   public setUserDraggingScrubber(isDragging: boolean) {
     this._userIsDraggingScrubber = isDragging;
+  }
+
+  public advanceProviderEventEpoch(): number {
+    this.providerEventEpoch += 1;
+    return this.providerEventEpoch;
+  }
+
+  public isProviderEventEpochCurrent(epoch: number): boolean {
+    return epoch === this.providerEventEpoch;
   }
 
   public isUserDraggingScrubber(): boolean {
@@ -248,6 +258,26 @@ export class PlaybackIntentManager {
   public setPauseDebounce(fn: () => void, ms: number) {
     this.clearPauseDebounce();
     this.pauseDebounce = setTimeout(fn, ms);
+  }
+
+  /** Release every timer/guard owned by this Player instance. */
+  public dispose() {
+    if (this.mediaTransitionTimeout) {
+      clearTimeout(this.mediaTransitionTimeout);
+      this.mediaTransitionTimeout = null;
+    }
+    this.clearPauseDebounce();
+    this._mediaTransitionId = null;
+    this._mediaTransitionTimestamp = 0;
+    this.ignoreNativeEventsUntil = 0;
+    this._allowUserActionsDuringIgnore = false;
+    this._userIsDraggingScrubber = false;
+    this._pendingNonce = null;
+    this._pendingNonceTimestamp = 0;
+    this._pendingCompletion = "playback_update";
+    this.lastCommandEmitTime = Number.NEGATIVE_INFINITY;
+    this.lastStateEmitted = null;
+    this.providerEventEpoch += 1;
   }
 
   public getExpectedStatus(

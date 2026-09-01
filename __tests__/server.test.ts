@@ -7,6 +7,7 @@ import Client, { Socket as ClientSocket } from "socket.io-client";
 import { AddressInfo } from "net";
 import { SignJWT } from "jose";
 import { PARTICIPANT_GRACE_MS } from "../lib/participant-lifecycle";
+import { getRedisRoom } from "../lib/redis-actor";
 
 // 1. Mock Next.js to bypass heavy build compilation
 vi.mock("next", () => {
@@ -302,6 +303,55 @@ describe("server.ts Real Socket.IO Integration", () => {
     expect(participant).toBeDefined();
     expect(participant.role).toBe("owner"); // Should remain owner
     expect(participant.nickname).toBe("OwnerUserRecovered"); // Should update nickname
+  });
+
+  it("publishes participant-local health without changing room playback", async () => {
+    const sender = Client(ioServerPath, {
+      path: "/socket.io",
+      transports: ["websocket"],
+      forceNew: true,
+      auth: { participantId: "health-sender" },
+    });
+    const observer = Client(ioServerPath, {
+      path: "/socket.io",
+      transports: ["websocket"],
+      forceNew: true,
+      auth: { participantId: "health-observer" },
+    });
+    presenceSockets.push(sender, observer);
+    await Promise.all([
+      waitForSocketEvent(sender, "connect"),
+      waitForSocketEvent(observer, "connect"),
+    ]);
+    const senderRoom = waitForSocketEvent(sender, "room_state");
+    sender.emit("join_room", {
+      roomId: "participant-health-room",
+      nickname: "Sender",
+    });
+    await senderRoom;
+    const observerRoom = waitForSocketEvent(observer, "room_state");
+    observer.emit("join_room", {
+      roomId: "participant-health-room",
+      nickname: "Observer",
+    });
+    await observerRoom;
+
+    const observed = waitForSocketEvent(observer, "participant_health");
+    sender.emit("participant_health", { health: "buffering" });
+
+    await expect(observed).resolves.toEqual({
+      participantId: "health-sender",
+      health: "buffering",
+    });
+    await expect(
+      getRedisRoom("participant-health-room"),
+    ).resolves.toMatchObject({
+      sequence: 1,
+      playback: { status: "paused", basePosition: 0 },
+      participants: {
+        "health-sender": { playbackHealth: "buffering" },
+      },
+    });
   });
 
   it("TC-05: Five clients observe every later join and converge without Redis", async () => {

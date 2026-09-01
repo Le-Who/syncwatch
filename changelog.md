@@ -7,21 +7,25 @@ All notable changes to this project will be documented in this file.
 ### Sync UX Refinement (2026-03-27)
 
 #### Bug Fixes
+
 - **Double-seek in controlled mode** — Missing `return` after follower hard-seek caused fall-through to iframe seek block in `usePlaybackSync.ts`.
-- **Sync starvation on buffer** — Sync loop applied rate corrections during buffering. Added early-exit guard and hysteresis reset.
+- **Participant-local buffering** — Provider stalls no longer emit a room playback command. Friends keep watching while the affected client reports local health and catches up to the monotonic canonical timeline after recovery.
 - **Cold-start ghost seek** — Single-sample clock offset caused hard-seeks on join. Added 3s grace period.
 - **Pause debounce** — YouTube iframe 60–100ms second-wave events missed by 50ms debounce. Increased to 150ms.
 - **Badge false flash** — Stale `driftRef` during pause→play caused false "Sync Lost". Added 2s grace period.
 
 #### UX Improvements
+
 - **Scrubber smoothing** — CSS `transition: width 100ms linear` + `formatTime` throttled to 1/s. Auto-disabled during scrubbing.
 - **Disconnected participant dimming** — Immediate `participant_disconnected` event. Avatar dims with red dot and "Reconnecting…" text.
 
 #### Architecture
+
 - **Centralized sync thresholds** — 17 constants in `lib/sync-config.ts`. All consumers import named constants.
 - **Table-driven rate adjustment** — `drift-math.ts` uses `RATE_ADJUSTMENT_TIERS` array.
 
 #### Testing
+
 - **Zero-dependency Redis mock** — `__tests__/helpers/redis-mock.ts` for CI without `REDIS_URL`.
 - **4 new fast-path tests** — Unauthorized, pause, sync_correction+nonce, NO_CHANGE dedup. (167 → 171 tests)
 
@@ -48,7 +52,6 @@ All notable changes to this project will be documented in this file.
 - **ReconnectingOverlay**: New component shown when WebSocket disconnects, featuring auto-retry countdown, attempt counter, and manual retry button.
 - **Toast Notifications**: Participant join/leave events now show toast notifications via sonner (👋 joined / 🚪 left).
 - **Drift Hysteresis Tests**: Three new unit tests (TC-09, TC-10, TC-11) validating the hysteresis boundary behavior.
-
 
 ### Changed
 
@@ -87,7 +90,7 @@ All notable changes to this project will be documented in this file.
 - **Continuous Clock Sync**: Implemented dynamic `setInterval` daemon utilizing exponential backoff (1s→30s) and trimmed mean RTT offset calculations for ultra-stable clock parity.
 - **Adaptive Polling Intervals**: Client UI polling now dynamically shifts from 250ms to 2000ms based on measured drift magnitude.
 - **PID-Style Correction**: Drift mathematical heuristics now gradually shift player framerates (±5%/±10%/±15% steps) between 0.5x and 2.0x depending on severity.
-- **Network Buffering Propagation**: Plumbed the video player's raw `onWaiting` trigger out to the global DB room sequence to emit real-time buffering statuses to connected peers.
+- **Legacy note — superseded**: Raw `onWaiting` propagation once wrote a global buffering state. Current clients publish coalesced participant-health telemetry instead, and legacy buffering commands are canonical no-ops.
 - **Centralized Rate Limiting**: Moved all endpoints (`/api/metadata`, `/api/youtube/*`) to an enterprise leaky-bucket `ioredis` rate limiter.
 - **Architecture Refactoring (Intent Management)**: Extracted all timeout and boolean "intent masking" state variables from the `Player.tsx` god-component into a dedicated `PlaybackIntentManager` class, standardizing programmatic vs. native event precedence.
 - **UI Modularization**: Extracted raw UI elements (`AwaitingSignal`, `UpNextOverlay`) from `Player.tsx` into standalone functional components.

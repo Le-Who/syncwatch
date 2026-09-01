@@ -344,6 +344,31 @@ describe("RoomCommandService", () => {
     expect((await repository.get("room-a"))?.playback.status).toBe("playing");
   });
 
+  it("ignores a legacy buffering command without mutating canonical playback", async () => {
+    const room = makeRoom();
+    room.playback.status = "playing";
+    room.playback.basePosition = 8;
+    room.playback.baseTimestamp = 5_000;
+    const { repository, events, schedulePersistence, service } = harness(room);
+
+    const result = await service.execute(
+      contextFor("room-a", "p0"),
+      envelope("room-a", { type: "buffering", payload: { position: 12 } }),
+    );
+
+    expect(result).toMatchObject({ status: "ignored", code: "NO_CHANGE" });
+    expect(await repository.get("room-a")).toMatchObject({
+      sequence: 1,
+      playback: {
+        status: "playing",
+        basePosition: 8,
+        baseTimestamp: 5_000,
+      },
+    });
+    expect(events).toEqual([]);
+    expect(schedulePersistence).not.toHaveBeenCalled();
+  });
+
   it.each([
     ["play", "playing"],
     ["pause", "paused"],

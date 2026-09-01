@@ -318,6 +318,21 @@ describe("PlaybackIntentManager", () => {
       expect(callback1).not.toHaveBeenCalled();
       expect(callback2).toHaveBeenCalledTimes(1);
     });
+
+    it("cancels every owned timer and guard when disposed", () => {
+      const callback = vi.fn();
+      manager.setPauseDebounce(callback, 1000);
+      manager.setMediaTransition("media-a");
+      manager.ignoreEventsFor(1000);
+
+      manager.dispose();
+      vi.advanceTimersByTime(10_000);
+
+      expect(callback).not.toHaveBeenCalled();
+      expect(manager.isInMediaTransition()).toBe(false);
+      expect(manager.isIgnoringNativeEvents()).toBe(false);
+      expect(manager.shouldBlockNativeEvent()).toBe(false);
+    });
   });
 
   describe("Nonces", () => {

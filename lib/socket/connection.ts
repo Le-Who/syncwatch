@@ -21,6 +21,49 @@ export function handleConnectionEvents(
   context: SocketContext,
   eventBus: RoomEventBus,
 ) {
+  socket.on("participant_health", async (payload: unknown) => {
+    if (!context.currentRoomId || !context.currentParticipantId) return;
+    if (!payload || typeof payload !== "object") return;
+    const health = (payload as { health?: unknown }).health;
+    if (
+      health !== "idle" &&
+      health !== "ready" &&
+      health !== "buffering" &&
+      health !== "error"
+    ) {
+      return;
+    }
+
+    const roomId = context.currentRoomId;
+    const participantId = context.currentParticipantId;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const room = await getRedisRoom(roomId);
+      const participant = room?.participants[participantId];
+      if (!room || !participant) return;
+      const next = structuredClone(room);
+      next.participants[participantId] = {
+        ...next.participants[participantId],
+        playbackHealth: health,
+        lastSeen: Date.now(),
+      };
+      next.version = room.version + 1;
+      if (!(await setRedisRoomCAS(roomId, next, room.version))) {
+        await new Promise((resolve) => setTimeout(resolve, 10 + attempt * 5));
+        continue;
+      }
+      await eventBus
+        .publish(roomId, {
+          type: "participant_health",
+          participantId,
+          health,
+        })
+        .catch((error) =>
+          console.error("Failed publishing participant health", error),
+        );
+      return;
+    }
+  });
+
   socket.on(
     "ping_time",
     async (

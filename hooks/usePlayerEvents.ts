@@ -1,25 +1,26 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useStore } from "@/lib/store";
 import { PlaybackIntentManager } from "@/lib/playback-intent-manager";
 import type { PlayerMethods } from "@/lib/types";
 import { getPlayerDuration } from "@/lib/player-adapters";
+import { PlaybackHealthController } from "@/lib/playback-health";
 
-interface UsePlayerEventsOptions {
+export interface UsePlayerEventsOptions {
   intentManager: PlaybackIntentManager;
+  healthController: PlaybackHealthController;
   realPlayerRef: React.MutableRefObject<PlayerMethods | null>;
   playerRef: React.MutableRefObject<PlayerMethods | null>;
   currentMediaId: string | null | undefined;
+  canonicalSequence: number;
+  providerEventEpoch?: number;
   canControl: boolean;
   playing: boolean;
-  isBuffering: boolean;
   setIsReady: (ready: boolean) => void;
   setError: (err: string | null) => void;
-  setIsBuffering: (buffering: boolean) => void;
   setPlaying: (playing: boolean) => void;
   setDuration: (dur: number) => void;
-  getAccurateTime: () => number;
   emitCommand: (type: string, payload?: any) => void;
   handleNativePlay: () => void;
   handleNativePause: () => void;
@@ -27,33 +28,56 @@ interface UsePlayerEventsOptions {
 
 /**
  * Extracts shared player event handlers used by ReactPlayer-backed providers.
- * 
+ *
  * This hook keeps provider lifecycle events centralized.
  */
 export function usePlayerEvents({
   intentManager,
+  healthController,
   realPlayerRef,
   playerRef,
   currentMediaId,
+  canonicalSequence,
+  providerEventEpoch = 0,
   canControl,
   playing,
-  isBuffering,
   setIsReady,
   setError,
-  setIsBuffering,
   setPlaying,
   setDuration,
-  getAccurateTime,
   emitCommand,
   handleNativePlay,
   handleNativePause,
 }: UsePlayerEventsOptions) {
+  const ownedTimers = useRef(new Set<ReturnType<typeof setTimeout>>());
+  const isCurrentProviderEpoch = useCallback(() => {
+    const room = useStore.getState().room;
+    if (!room) return false;
+    return (
+      room.currentMediaId === currentMediaId &&
+      (room.sequence ?? -1) === canonicalSequence &&
+      intentManager.isProviderEventEpochCurrent(providerEventEpoch)
+    );
+  }, [canonicalSequence, currentMediaId, intentManager, providerEventEpoch]);
+
+  useEffect(
+    () => () => {
+      for (const timer of ownedTimers.current) clearTimeout(timer);
+      ownedTimers.current.clear();
+    },
+    [],
+  );
+
   /** Shared readiness logic after provider metadata is available. */
   const handleReady = useCallback(
     (rPlayer: PlayerMethods | null | undefined, isTwitch: boolean) => {
-      realPlayerRef.current = isTwitch ? playerRef.current : rPlayer || playerRef.current;
+      if (!isCurrentProviderEpoch()) return;
+      realPlayerRef.current = isTwitch
+        ? playerRef.current
+        : rPlayer || playerRef.current;
       setIsReady(true);
       setError(null);
+      healthController.set("ready");
 
       const provider = useStore
         .getState()
@@ -79,7 +103,9 @@ export function usePlayerEvents({
     },
     [
       currentMediaId,
+      healthController,
       intentManager,
+      isCurrentProviderEpoch,
       playerRef,
       realPlayerRef,
       setDuration,
@@ -92,16 +118,18 @@ export function usePlayerEvents({
   /** Shared onError logic */
   const handleError = useCallback(
     (e: unknown) => {
+      if (!isCurrentProviderEpoch()) return;
       console.error("Player error:", e);
       setError("SYSTEM FAILURE. SIGNAL LOST.");
-      setIsBuffering(false);
+      healthController.set("error");
     },
-    [setError, setIsBuffering],
+    [healthController, isCurrentProviderEpoch, setError],
   );
 
   /** Shared onSeek logic — filters programmatic seeks */
   const handleSeek = useCallback(
     (seconds: number, isTwitch: boolean) => {
+      if (!isCurrentProviderEpoch()) return;
       if (intentManager.isRecentProgrammaticSeek(1500)) return;
       if (intentManager.isRecentCommand(1500)) return;
 
@@ -112,20 +140,30 @@ export function usePlayerEvents({
         // If we were playing before the scrub, auto-resume after a short delay.
         if (isTwitch && playing) {
           intentManager.ignoreEventsFor(2000);
-          setTimeout(() => {
-            if (realPlayerRef.current?.play) {
+          const timer = setTimeout(() => {
+            ownedTimers.current.delete(timer);
+            if (isCurrentProviderEpoch() && realPlayerRef.current?.play) {
               realPlayerRef.current.play();
             }
           }, 200);
+          ownedTimers.current.add(timer);
         }
       }
     },
-    [canControl, playing, intentManager, emitCommand, realPlayerRef],
+    [
+      canControl,
+      playing,
+      intentManager,
+      emitCommand,
+      isCurrentProviderEpoch,
+      realPlayerRef,
+    ],
   );
 
   /** Shared onDurationChange — handles both Twitch (direct number) and ReactPlayer (event) */
   const handleDurationChange = useCallback(
     (durOrEvent: number | any) => {
+      if (!isCurrentProviderEpoch()) return;
       const provider = useStore
         .getState()
         .room?.playlist.find((item) => item.id === currentMediaId)
@@ -145,36 +183,51 @@ export function usePlayerEvents({
         });
       }
     },
-    [canControl, currentMediaId, emitCommand, realPlayerRef, setDuration],
+    [
+      canControl,
+      currentMediaId,
+      emitCommand,
+      isCurrentProviderEpoch,
+      realPlayerRef,
+      setDuration,
+    ],
   );
 
   /** Shared onEnded handler */
   const handleEnded = useCallback(() => {
+    if (!isCurrentProviderEpoch()) return;
     if (canControl) {
       emitCommand("video_ended", { currentMediaId });
     }
-  }, [canControl, currentMediaId, emitCommand]);
+  }, [canControl, currentMediaId, emitCommand, isCurrentProviderEpoch]);
 
   /** Shared onWaiting/buffering handler */
   const handleWaiting = useCallback(() => {
-    setIsBuffering(true);
-    if (canControl) {
-      emitCommand("buffering", {
-        position: getAccurateTime(),
-        fromNative: true,
-      });
-    }
-  }, [canControl, emitCommand, getAccurateTime, setIsBuffering]);
+    if (!isCurrentProviderEpoch()) return;
+    healthController.set("buffering");
+  }, [healthController, isCurrentProviderEpoch]);
 
   /** Shared onPlaying handler (buffer recovery) */
   const handlePlaying = useCallback(() => {
-    setIsBuffering(false);
-  }, [setIsBuffering]);
+    if (!isCurrentProviderEpoch()) return;
+    healthController.set("ready");
+  }, [healthController, isCurrentProviderEpoch]);
 
   /** Shared onSeeked handler (ReactPlayer only, but harmless for Twitch) */
   const handleSeeked = useCallback(() => {
-    if (isBuffering) setIsBuffering(false);
-  }, [isBuffering, setIsBuffering]);
+    if (!isCurrentProviderEpoch()) return;
+    if (healthController.current() === "buffering") {
+      healthController.set("ready");
+    }
+  }, [healthController, isCurrentProviderEpoch]);
+
+  const guardedNativePlay = useCallback(() => {
+    if (isCurrentProviderEpoch()) handleNativePlay();
+  }, [handleNativePlay, isCurrentProviderEpoch]);
+
+  const guardedNativePause = useCallback(() => {
+    if (isCurrentProviderEpoch()) handleNativePause();
+  }, [handleNativePause, isCurrentProviderEpoch]);
 
   return {
     handleReady,
@@ -185,7 +238,7 @@ export function usePlayerEvents({
     handleWaiting,
     handlePlaying,
     handleSeeked,
-    handleNativePlay,
-    handleNativePause,
+    handleNativePlay: guardedNativePlay,
+    handleNativePause: guardedNativePause,
   };
 }

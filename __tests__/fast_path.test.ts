@@ -124,6 +124,21 @@ describe("Fast-Path OCC Logic", () => {
     expect(latestState.playback.basePosition).toBe(50);
   });
 
+  it("treats legacy Redis buffering commands as canonical no-ops", async () => {
+    const result = await executeFastMutation(
+      roomId,
+      "buffering",
+      { position: 99, nonce: randomUUID() },
+      "u1",
+    );
+
+    expect(result).toEqual({ success: false, error: "NO_CHANGE" });
+    expect(await getRedisRoom(roomId)).toMatchObject({
+      sequence: 1,
+      playback: { status: "paused", basePosition: 0 },
+    });
+  });
+
   it("TC-Fast-2: Should reject unauthorized participant", async () => {
     const result = await executeFastMutation(
       roomId,

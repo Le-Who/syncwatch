@@ -21,7 +21,10 @@ function getPlayerCandidates(player: PlayerLike, provider?: string): any[] {
   return internal && internal !== player ? [player, internal] : [player];
 }
 
-export function getPlayerCurrentTime(player: PlayerLike, provider?: string): number {
+export function getPlayerCurrentTime(
+  player: PlayerLike,
+  provider?: string,
+): number {
   for (const candidate of getPlayerCandidates(player, provider)) {
     if (!candidate) continue;
     if (typeof candidate.getCurrentTime === "function") {
@@ -33,7 +36,10 @@ export function getPlayerCurrentTime(player: PlayerLike, provider?: string): num
   return 0;
 }
 
-export function getPlayerDuration(player: PlayerLike, provider?: string): number {
+export function getPlayerDuration(
+  player: PlayerLike,
+  provider?: string,
+): number {
   for (const candidate of getPlayerCandidates(player, provider)) {
     if (!candidate) continue;
     if (typeof candidate.getDuration === "function") {
@@ -95,6 +101,7 @@ export function applyTwitchEventProxy(
   handleNativePlay: () => void,
   handleNativePause: () => void,
 ) {
+  const noCleanup = () => {};
   try {
     // Note: react-player v3's getInternalPlayer() may not return the iframe wrapper,
     // instead the ref itself might point to the <twitch-video> web component.
@@ -103,24 +110,33 @@ export function applyTwitchEventProxy(
         ? realPlayerRef.current.getInternalPlayer("twitch")
         : null) || playerRef.current;
 
-    if (twitchEl && !twitchEl.dataset.proxyAttached) {
-      twitchEl.dataset.proxyAttached = "true";
+    if (!twitchEl || twitchEl.dataset.proxyAttached) return noCleanup;
+    twitchEl.dataset.proxyAttached = "true";
 
-      // Using Twitch standard DOM events
-      twitchEl.addEventListener("play", () => {
-        console.log("[TWITCH PROXY] play event fired");
-        handleNativePlay();
-      });
-      twitchEl.addEventListener("playing", () => {
-        console.log("[TWITCH PROXY] playing event fired");
-        handleNativePlay();
-      });
-      twitchEl.addEventListener("pause", () => {
-        console.log("[TWITCH PROXY] pause event fired");
-        handleNativePause();
-      });
-    }
+    const onPlay = () => {
+      console.log("[TWITCH PROXY] play event fired");
+      handleNativePlay();
+    };
+    const onPlaying = () => {
+      console.log("[TWITCH PROXY] playing event fired");
+      handleNativePlay();
+    };
+    const onPause = () => {
+      console.log("[TWITCH PROXY] pause event fired");
+      handleNativePause();
+    };
+    twitchEl.addEventListener("play", onPlay);
+    twitchEl.addEventListener("playing", onPlaying);
+    twitchEl.addEventListener("pause", onPause);
+
+    return () => {
+      twitchEl.removeEventListener("play", onPlay);
+      twitchEl.removeEventListener("playing", onPlaying);
+      twitchEl.removeEventListener("pause", onPause);
+      delete twitchEl.dataset.proxyAttached;
+    };
   } catch (e) {
     console.error("Failed to proxy twitch events", e);
+    return noCleanup;
   }
 }

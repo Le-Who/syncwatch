@@ -132,6 +132,42 @@ describe("applyTwitchEventProxy", () => {
     expect(addEventListenerSpy).not.toHaveBeenCalled();
   });
 
+  it("removes the exact proxy listeners so a remount receives one callback", () => {
+    playerRef.current = mockTwitchEl as unknown as PlayerMethods;
+    const removeEventListenerSpy = vi.spyOn(
+      mockTwitchEl,
+      "removeEventListener",
+    );
+
+    const cleanup = applyTwitchEventProxy(
+      playerRef,
+      realPlayerRef,
+      handleNativePlay,
+      handleNativePause,
+    );
+    cleanup();
+    mockTwitchEl.dispatchEvent(new Event("play"));
+    mockTwitchEl.dispatchEvent(new Event("pause"));
+
+    expect(removeEventListenerSpy).toHaveBeenCalledTimes(3);
+    expect(handleNativePlay).not.toHaveBeenCalled();
+    expect(handleNativePause).not.toHaveBeenCalled();
+    expect(mockTwitchEl.dataset.proxyAttached).toBeUndefined();
+
+    const remountedPlay = vi.fn();
+    const remountedPause = vi.fn();
+    applyTwitchEventProxy(
+      playerRef,
+      realPlayerRef,
+      remountedPlay,
+      remountedPause,
+    );
+    mockTwitchEl.dispatchEvent(new Event("playing"));
+
+    expect(remountedPlay).toHaveBeenCalledOnce();
+    expect(handleNativePlay).not.toHaveBeenCalled();
+  });
+
   it("should catch and log errors during proxying", () => {
     const error = new Error("Test error");
     realPlayerRef.current = {

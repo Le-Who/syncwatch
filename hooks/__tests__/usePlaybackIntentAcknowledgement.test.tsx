@@ -227,9 +227,9 @@ describe("usePlaybackIntentAcknowledgement", () => {
 
   it("consumes playback_updated before a later ACK even when sync gates would block polling", () => {
     renderHook(() => usePlaybackIntentAcknowledgement(manager));
-    manager.markCommandEmitted("buffering", 12, FAST_NONCE, "playback_update");
+    manager.markCommandEmitted("playing", 12, FAST_NONCE, "playback_update");
 
-    deliverPlaybackUpdate(FAST_NONCE, "buffering");
+    deliverPlaybackUpdate(FAST_NONCE, "playing");
     expect(manager.isAwaitingServerAck()).toBe(false);
 
     deliverAcknowledgement({ nonce: FAST_NONCE, status: "applied" });

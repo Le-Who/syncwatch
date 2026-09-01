@@ -1,171 +1,101 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import { useStore } from "@/lib/store";
-import {
-  BADGE_SYNCED,
-  BADGE_SYNCING,
-  BADGE_DRIFT,
-  BADGE_GRACE_PERIOD_MS,
-} from "@/lib/sync-config";
+import type { PlaybackHealth } from "@/lib/types";
+import { BADGE_SYNCED } from "@/lib/sync-config";
 
 interface SyncStatusBadgeProps {
   driftRef: React.MutableRefObject<number>;
+  playbackHealth: PlaybackHealth;
 }
 
-type SyncState = "synced" | "syncing" | "drift" | "lost" | "offline";
+type SyncPresentation =
+  | "synced"
+  | "catching-up"
+  | "local-buffering"
+  | "reconnecting";
 
-/**
- * Universal sync drift indicator with smooth state transitions.
- * Three-state coloring: green (In Sync), amber (Syncing), red (Drift/Lost).
- * Shows a brief "In Sync ✓" pulse when drift drops below 100ms, then auto-hides.
- */
-export function SyncStatusBadge({ driftRef }: SyncStatusBadgeProps) {
-  const isConnected = useStore((s) => s.isConnected);
-  const playbackStatus = useStore((s) => s.room?.playback?.status);
+function presentationFor(
+  isConnected: boolean,
+  health: PlaybackHealth,
+  drift: number,
+): SyncPresentation {
+  if (!isConnected) return "reconnecting";
+  if (health === "buffering") return "local-buffering";
+  if (Math.abs(drift) >= BADGE_SYNCED) return "catching-up";
+  return "synced";
+}
+
+export function SyncStatusBadge({
+  driftRef,
+  playbackHealth,
+}: SyncStatusBadgeProps) {
+  const isConnected = useStore((state) => state.isConnected);
+  const playbackStatus = useStore((state) => state.room?.playback?.status);
   const [displayDrift, setDisplayDrift] = useState(0);
-  const [syncState, setSyncState] = useState<SyncState>("synced");
-  const [showSyncedPulse, setShowSyncedPulse] = useState(false);
-  const syncedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const stableSyncCountRef = useRef(0);
-  const prevStateRef = useRef<SyncState>("synced");
-  // P6 Fix: Track playback status transitions to suppress false badge flashes
-  const prevPlaybackStatusRef = useRef(playbackStatus);
-  const lastStatusChangeRef = useRef(0);
-
-  useEffect(() => {
-    // P6 Fix: Detect playback status edge transitions (paused → playing)
-    if (playbackStatus !== prevPlaybackStatusRef.current) {
-      prevPlaybackStatusRef.current = playbackStatus;
-      lastStatusChangeRef.current = Date.now();
-    }
-  }, [playbackStatus]);
 
   useEffect(() => {
     const interval = setInterval(() => {
-      const absDrift = Math.abs(driftRef.current);
-
-      let newState: SyncState;
-      if (!isConnected) {
-        newState = "offline";
-      } else if (absDrift < BADGE_SYNCED) {
-        newState = "synced";
-      } else if (absDrift < BADGE_SYNCING) {
-        newState = "syncing";
-      } else if (absDrift < BADGE_DRIFT) {
-        newState = "drift";
-      } else {
-        newState = "lost";
-      }
-
-      // P6 Fix: During the first 2 seconds after a status transition (e.g.
-      // paused → playing), suppress non-synced states. The driftRef is stale
-      // during transitions and would cause a false "Sync Lost" badge flash.
-      const isInTransitionGrace = Date.now() - lastStatusChangeRef.current < BADGE_GRACE_PERIOD_MS;
-      if (isInTransitionGrace && newState !== "offline") {
-        newState = "synced";
-      }
-
-      setDisplayDrift(absDrift);
-
-      // Track how long we've been in "synced" state for the pulse
-      if (newState === "synced") {
-        stableSyncCountRef.current++;
-      } else {
-        stableSyncCountRef.current = 0;
-      }
-
-      // B2: Show "In Sync" pulse when transitioning from non-synced to synced
-      // after being stable for 4 ticks (~2 seconds at 500ms interval)
-      if (
-        newState === "synced" &&
-        prevStateRef.current !== "synced" &&
-        stableSyncCountRef.current >= 1
-      ) {
-        setShowSyncedPulse(true);
-        if (syncedTimerRef.current) clearTimeout(syncedTimerRef.current);
-        syncedTimerRef.current = setTimeout(() => {
-          setShowSyncedPulse(false);
-        }, 3000);
-      }
-
-      prevStateRef.current = newState;
-      setSyncState(newState);
+      setDisplayDrift(Math.abs(driftRef.current));
     }, 500);
+    return () => clearInterval(interval);
+  }, [driftRef]);
 
-    return () => {
-      clearInterval(interval);
-      if (syncedTimerRef.current) clearTimeout(syncedTimerRef.current);
-    };
-  }, [driftRef, isConnected]);
+  const presentation = presentationFor(
+    isConnected,
+    playbackHealth,
+    displayDrift,
+  );
+  if (
+    playbackStatus !== "playing" &&
+    presentation !== "local-buffering" &&
+    presentation !== "reconnecting"
+  ) {
+    return null;
+  }
 
-  // Don't show during pause — drift is meaningless when paused
-  if (playbackStatus !== "playing") return null;
-
-  // Show badge when: disconnected, drifting, syncing, or showing the synced pulse
-  if (syncState === "synced" && !showSyncedPulse) return null;
-
-  const config: Record<
-    SyncState,
-    {
-      label: string;
-      text: string;
-      dot: string;
-      textColor: string;
-    }
-  > = {
+  const config = {
     synced: {
-      label: "In Sync ✓",
-      text: "",
+      label: "Synced",
+      detail: "",
       dot: "bg-emerald-400 shadow-[0_0_8px_rgb(52,211,153)]",
-      textColor: "text-emerald-400",
+      text: "text-emerald-400",
     },
-    syncing: {
-      label: "Syncing",
-      text:
+    "catching-up": {
+      label: "Catching up",
+      detail:
         displayDrift < 1
-          ? `${(displayDrift * 1000).toFixed(0)}ms`
+          ? `${Math.round(displayDrift * 1_000)}ms`
           : `${displayDrift.toFixed(1)}s`,
       dot: "bg-amber-400 shadow-[0_0_6px_rgb(251,191,36)]",
-      textColor: "text-amber-400",
+      text: "text-amber-400",
     },
-    drift: {
-      label: "Drift",
-      text: `${displayDrift.toFixed(1)}s`,
-      dot: "bg-orange-500 shadow-[0_0_8px_rgb(249,115,22)]",
-      textColor: "text-orange-400",
+    "local-buffering": {
+      label: "Local buffering",
+      detail: "Friends continue",
+      dot: "animate-pulse bg-amber-400 shadow-[0_0_6px_rgb(251,191,36)]",
+      text: "text-amber-400",
     },
-    lost: {
-      label: "Sync Lost",
-      text: `${displayDrift.toFixed(1)}s`,
-      dot: "bg-red-500 shadow-[0_0_8px_rgb(239,68,68)]",
-      textColor: "text-red-400",
+    reconnecting: {
+      label: "Reconnecting",
+      detail: "",
+      dot: "animate-pulse bg-red-500 shadow-[0_0_8px_rgb(239,68,68)]",
+      text: "text-red-400",
     },
-    offline: {
-      label: "Reconnecting...",
-      text: "",
-      dot: "bg-red-500 animate-pulse shadow-[0_0_8px_rgb(239,68,68)]",
-      textColor: "text-red-400",
-    },
-  };
-
-  const { label, text, dot, textColor } = config[syncState];
+  }[presentation];
 
   return (
     <div
-      className={`pointer-events-none absolute top-3 right-3 z-30 flex items-center space-x-2 rounded-full border border-white/10 bg-black/60 px-3 py-1.5 text-[10px] font-bold tracking-wider uppercase shadow-lg backdrop-blur-md transition-all duration-500 ${
-        showSyncedPulse && syncState === "synced"
-          ? "animate-in fade-in scale-in-95"
-          : ""
-      }`}
+      className="pointer-events-none absolute top-3 right-3 z-30 flex items-center space-x-2 rounded-full border border-white/10 bg-black/60 px-3 py-1.5 text-[10px] font-bold tracking-wider uppercase shadow-lg backdrop-blur-md"
+      role="status"
+      aria-live="polite"
     >
-      <div
-        className={`h-2 w-2 rounded-full transition-all duration-500 ${dot}`}
-      />
-      <span className={`transition-colors duration-300 ${textColor}`}>
-        {label}
-        {text ? `: ${text}` : ""}
-      </span>
+      <div className={`h-2 w-2 rounded-full ${config.dot}`} />
+      <span className={config.text}>{config.label}</span>
+      {config.detail && (
+        <span className="text-white/65 normal-case">{config.detail}</span>
+      )}
     </div>
   );
 }

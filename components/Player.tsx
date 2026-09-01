@@ -24,7 +24,7 @@ function useEventCallback<Args extends unknown[], Return>(
 }
 import fscreen from "fscreen";
 import { calculateDrift } from "@/lib/utils";
-import { LegacyPlaybackStatus, PlayerMethods } from "@/lib/types";
+import { PlayerMethods } from "@/lib/types";
 import { usePlayerShortcuts } from "@/hooks/usePlayerShortcuts";
 import { useFlashback } from "@/hooks/useFlashback";
 import { usePlaybackSync } from "@/hooks/usePlaybackSync";
@@ -42,6 +42,8 @@ import { UpNextOverlay } from "./UpNextOverlay";
 import { SyncStatusBadge } from "./SyncStatusBadge";
 import { PlayerControlBar } from "./PlayerControlBar";
 import { PlaybackIntentManager } from "@/lib/playback-intent-manager";
+import { PlaybackHealthController } from "@/lib/playback-health";
+import { roomSocketService } from "@/lib/socket";
 import {
   SleepOverlay,
   BufferingOverlay,
@@ -58,7 +60,6 @@ const COMMANDS_WITH_COMPACT_PLAYBACK_UPDATE = new Set([
   "play",
   "pause",
   "seek",
-  "buffering",
   "update_rate",
   "sync_correction",
 ]);
@@ -68,6 +69,7 @@ export default function Player() {
   const sendCommand = useStore((s) => s.sendCommand);
   const room = useStore((s) => s.room);
   const serverClockOffset = useStore((s) => s.serverClockOffset);
+  const isConnected = useStore((s) => s.isConnected);
   const currentMediaId = useStore((s) => s.room?.currentMediaId);
   const occRollbackTick = useStore((s) => s.occRollbackTick);
   const autoplayNext = useStore((s) => s.room?.settings.autoplayNext);
@@ -100,7 +102,10 @@ export default function Player() {
   const [duration, setDuration] = useState(0);
   const [seeking, setSeeking] = useState(false);
   const [isReady, setIsReady] = useState(false);
-  const [isBuffering, setIsBuffering] = useState(false);
+  const [playbackHealth, setPlaybackHealth] = useState<
+    "idle" | "ready" | "buffering" | "error"
+  >("idle");
+  const isBuffering = playbackHealth === "buffering";
   const [error, setError] = useState<string | null>(null);
   const [hostName, setHostName] = useState<string>("localhost");
   const [mounted, setMounted] = useState(false);
@@ -163,7 +168,36 @@ export default function Player() {
   // Removed ResizeObserver dimensions
 
   const [intentManager] = useState(() => new PlaybackIntentManager());
+  const [providerEventEpoch, setProviderEventEpoch] = useState(0);
+  const [healthController] = useState(
+    () =>
+      new PlaybackHealthController({
+        onHealthChange: (health) => {
+          setPlaybackHealth(health);
+          useStore.getState().setLocalPlaybackHealth?.(health);
+        },
+        emitTelemetry: (health) => {
+          roomSocketService.sendParticipantHealth(health);
+        },
+      }),
+  );
   usePlaybackIntentAcknowledgement(intentManager);
+
+  useEffect(
+    () => () => {
+      healthController.dispose();
+      intentManager.dispose();
+    },
+    [healthController, intentManager],
+  );
+
+  const previousConnectionRef = useRef(isConnected);
+  useEffect(() => {
+    if (previousConnectionRef.current === isConnected) return;
+    previousConnectionRef.current = isConnected;
+    if (!isConnected) healthController.markReconnecting();
+    setProviderEventEpoch(intentManager.advanceProviderEventEpoch());
+  }, [healthController, intentManager, isConnected]);
 
   const isDocumentVisibleRef = useRef(true);
   useEffect(() => {
@@ -223,10 +257,10 @@ export default function Player() {
     }
   }, [providerName]);
 
-  const performProgrammaticSeek = (position: number) => {
+  const performProgrammaticSeek = (position: number, force = false) => {
     // Soft Mode Guarantee: If we are in "echo protection" (last action was ours),
     // never perform hard seeks during this interval, only drift math updates.
-    if (intentManager.isIgnoringNativeEvents()) return;
+    if (!force && intentManager.isIgnoringNativeEvents()) return;
 
     intentManager.markProgrammaticSeek();
     const provider = currentMedia?.provider?.toLowerCase();
@@ -240,9 +274,10 @@ export default function Player() {
   >(null);
 
   useEffect(() => {
+    setProviderEventEpoch(intentManager.advanceProviderEventEpoch());
     setError(null);
     setIsReady(false);
-    setIsBuffering(false);
+    healthController.beginMedia(currentMediaId ?? null);
     setUpNextDismissedForMedia(null);
 
     // STATE-BASED MEDIA TRANSITION GUARD: Block native play/pause events until
@@ -254,7 +289,7 @@ export default function Player() {
     }
     // Safety net: 1.5s ignoreEventsFor as fallback in case onReady never fires
     intentManager.ignoreEventsFor(1500);
-  }, [currentMediaId, intentManager, sendCommand]);
+  }, [currentMediaId, healthController, intentManager, sendCommand]);
 
   // Handle Server-Side OCC Rejections (Race Condition Flashback)
   useEffect(() => {
@@ -304,7 +339,7 @@ export default function Player() {
       if (
         !isDocumentVisibleRef.current &&
         payload?.fromNative &&
-        ["play", "pause", "seek", "buffering"].includes(type)
+        ["play", "pause", "seek"].includes(type)
       ) {
         return;
       }
@@ -319,7 +354,6 @@ export default function Player() {
         play: "playing",
         pause: "paused",
         seek: "playing",
-        buffering: "buffering",
         sync_correction: "playing",
       };
       intentManager.markCommandEmitted(
@@ -335,9 +369,6 @@ export default function Player() {
     [intentManager, sendCommand],
   );
 
-  // P4 Fix: Capture join time for clock sync grace period
-  const [joinedAt] = useState(() => Date.now());
-
   const { driftRef } = usePlaybackSync({
     realPlayerRef,
     playerRef,
@@ -346,12 +377,12 @@ export default function Player() {
     setPlaying,
     getIsReady: () => isReady,
     getSeeking: () => seeking,
-    getIsBuffering: () => isBuffering,
+    getIsConnected: () => isConnected,
     intentManager,
+    healthController,
     performProgrammaticSeek,
     getCurrentMedia: () => currentMedia,
     getDuration: () => duration,
-    joinedAt,
   });
 
   const handlePlay = () => {
@@ -376,7 +407,7 @@ export default function Player() {
 
   const handleNativePlay = useEventCallback(() => {
     intentManager.clearPauseDebounce();
-    setIsBuffering(false);
+    healthController.set("ready");
     setPlaying(true);
 
     if (
@@ -403,7 +434,6 @@ export default function Player() {
   });
 
   const handleNativePause = useEventCallback(() => {
-    setIsBuffering(false);
     intentManager.clearPauseDebounce();
 
     // Hard guards still block known synthetic pauses. YouTube native controls
@@ -450,18 +480,18 @@ export default function Player() {
 
   const playerEvents = usePlayerEvents({
     intentManager,
+    healthController,
     realPlayerRef,
     playerRef,
     currentMediaId,
+    canonicalSequence: room?.sequence ?? -1,
+    providerEventEpoch,
     canControl,
     playing,
-    isBuffering,
     setIsReady,
     setError,
-    setIsBuffering,
     setPlaying,
     setDuration,
-    getAccurateTime,
     emitCommand,
     handleNativePlay,
     handleNativePause,
@@ -469,19 +499,19 @@ export default function Player() {
 
   useEffect(() => {
     if (!isReady || providerName !== "twitch") return;
-    applyTwitchEventProxy(
+    return applyTwitchEventProxy(
       playerRef,
       realPlayerRef,
-      handleNativePlay,
-      handleNativePause,
+      playerEvents.handleNativePlay,
+      playerEvents.handleNativePause,
     );
   }, [
     isReady,
     providerName,
     playerRef,
     realPlayerRef,
-    handleNativePlay,
-    handleNativePause,
+    playerEvents.handleNativePlay,
+    playerEvents.handleNativePause,
   ]);
 
   // C1: Keyboard seek handler
@@ -671,6 +701,7 @@ export default function Player() {
         >
           {mounted && (
             <ReactPlayer
+              key={currentMediaId}
               ref={playerRef}
               src={currentMedia.url}
               width="100%"
@@ -738,7 +769,7 @@ export default function Player() {
         )}
 
         {/* Universal Sync Status Badge — visible for ALL providers */}
-        <SyncStatusBadge driftRef={driftRef} />
+        <SyncStatusBadge driftRef={driftRef} playbackHealth={playbackHealth} />
 
         {/* Thematic Scanline Overlay */}
         {currentMedia.provider?.toLowerCase() !== "youtube" && (
@@ -763,17 +794,7 @@ export default function Player() {
 
         {error && <ErrorOverlay message={error} />}
 
-        {/* Buffering Overlay - Yield to explicit Pause state */}
-        {(isBuffering ||
-          (playback?.status as LegacyPlaybackStatus | undefined) ===
-            "buffering") &&
-          playing &&
-          !error && (
-            <BufferingOverlay
-              playback={playback}
-              isLocalBuffering={isBuffering}
-            />
-          )}
+        {isBuffering && playing && !error && <BufferingOverlay />}
 
         {/* PAUSED Overlay */}
         {!playing && !isBuffering && isReady && !error && userJoined && (

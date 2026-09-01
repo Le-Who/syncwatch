@@ -1,45 +1,21 @@
 "use client";
 
-import { useStore } from "@/lib/store";
-import { LegacyPlaybackStatus, PlaybackState, Participant } from "@/lib/types";
-
-interface BufferingOverlayProps {
-  playback: PlaybackState | undefined;
-  isLocalBuffering: boolean;
-}
-
-/**
- * Shows a buffering spinner when either this client or another participant is buffering.
- * Resolves the buffering participant's nickname reactively via Zustand selector (P8 fix).
- */
-export function BufferingOverlay({
-  playback,
-  isLocalBuffering,
-}: BufferingOverlayProps) {
-  // P8 Fix: Use a proper Zustand selector instead of getState() in render
-  const bufferingNickname = useStore((s) => {
-    if (
-      playback &&
-      (playback.status as LegacyPlaybackStatus) === "buffering" &&
-      !isLocalBuffering &&
-      playback.updatedBy
-    ) {
-      // updatedBy is a nickname string, not a participant ID — display directly
-      return playback.updatedBy;
-    }
-    return null;
-  });
-
-  const label = bufferingNickname
-    ? `Waiting for ${bufferingNickname}...`
-    : "Buffering...";
-
+/** Describes a provider stall on this browser only. Room playback continues. */
+export function BufferingOverlay() {
   return (
-    <div className="bg-theme-bg/80 absolute inset-0 z-20 flex flex-col items-center justify-center backdrop-blur-sm">
+    <div
+      className="bg-theme-bg/80 absolute inset-0 z-20 flex flex-col items-center justify-center px-6 text-center backdrop-blur-sm"
+      role="status"
+      aria-live="polite"
+      aria-label="Your video is buffering. Friends are still watching. You will catch up automatically."
+    >
       <div className="border-theme-accent border-b-theme-danger mb-6 h-16 w-16 animate-spin rounded-full border-4 border-t-transparent" />
       <div className="bg-theme-accent text-theme-bg shadow-theme rounded-full px-4 py-1 text-xs font-bold tracking-[0.2em] uppercase">
-        {label}
+        Your video is buffering
       </div>
+      <p className="mt-3 max-w-sm text-sm text-white/80">
+        Friends are still watching. You&apos;ll catch up automatically.
+      </p>
     </div>
   );
 }

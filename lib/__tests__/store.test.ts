@@ -204,6 +204,105 @@ describe("useStore", () => {
     });
   });
 
+  it("applies compact playback monotonically within the current media epoch", () => {
+    const { result } = renderHook(() => useStore());
+    const room = roomWithParticipants(3);
+    room.currentMediaId = "media-a";
+    room.sequence = 10;
+    room.playback = {
+      status: "playing",
+      basePosition: 10,
+      baseTimestamp: 1_000,
+      rate: 1,
+      updatedBy: "p0",
+    };
+    act(() => {
+      useStore.setState({ room, participantId: "p2" });
+      result.current.init();
+    });
+    const onRoomEvent = vi.mocked(roomSocketService.onRoomEvent).mock
+      .calls[0]?.[0];
+
+    act(() => {
+      onRoomEvent({
+        type: "playback_updated",
+        playback: {
+          mediaItemId: "media-a",
+          status: "playing",
+          basePosition: 20,
+          baseTimestamp: 2_000,
+          rate: 1,
+          sequence: 12,
+          updatedBy: "p1",
+        },
+        serverTime: 2_000,
+      });
+      onRoomEvent({
+        type: "playback_updated",
+        playback: {
+          mediaItemId: "media-a",
+          status: "paused",
+          basePosition: 5,
+          baseTimestamp: 1_500,
+          rate: 1,
+          sequence: 11,
+          updatedBy: "p0",
+        },
+        serverTime: 2_100,
+      });
+      onRoomEvent({
+        type: "playback_updated",
+        playback: {
+          mediaItemId: "media-a",
+          status: "paused",
+          basePosition: 99,
+          baseTimestamp: 3_000,
+          rate: 1,
+          sequence: 12,
+          updatedBy: "p0",
+        },
+        serverTime: 3_000,
+      });
+      onRoomEvent({
+        type: "playback_updated",
+        playback: {
+          mediaItemId: "media-old",
+          status: "paused",
+          basePosition: 1,
+          baseTimestamp: 4_000,
+          rate: 1,
+          sequence: 13,
+          updatedBy: "p0",
+        },
+        serverTime: 4_000,
+      });
+      onRoomEvent({
+        type: "room_state",
+        room: {
+          ...room,
+          sequence: 11,
+          playback: {
+            ...room.playback,
+            status: "paused",
+            basePosition: 3,
+          },
+        },
+        serverTime: 4_100,
+      });
+    });
+
+    expect(result.current.room).toMatchObject({
+      currentMediaId: "media-a",
+      sequence: 12,
+      playback: {
+        status: "playing",
+        basePosition: 20,
+        baseTimestamp: 2_000,
+        updatedBy: "p1",
+      },
+    });
+  });
+
   it("enforces exactly one owner when a leave event supplies ownerId", () => {
     const { result } = renderHook(() => useStore());
     act(() => {
@@ -279,6 +378,24 @@ describe("useStore", () => {
     };
     socketDouble.serverEmit("command_ack", ack);
     expect(onAcknowledgement).toHaveBeenCalledWith(ack);
+  });
+
+  it("sends participant health outside the canonical command channel", async () => {
+    const actual =
+      await vi.importActual<typeof import("../socket")>("../socket");
+    const service = new actual.RoomSocketService();
+    service.connect("room-a", "Friend", "p0", "token");
+    socketDouble.emit.mockClear();
+
+    service.sendParticipantHealth("buffering");
+
+    expect(socketDouble.emit).toHaveBeenCalledOnce();
+    expect(socketDouble.emit).toHaveBeenCalledWith("participant_health", {
+      health: "buffering",
+    });
+    expect(
+      socketDouble.emit.mock.calls.some(([event]) => event === "command"),
+    ).toBe(false);
   });
 
   it("round-trips the player's pending nonce through the command envelope and compact playback acknowledgement", async () => {

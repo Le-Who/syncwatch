@@ -238,7 +238,10 @@ const mockRedis = {
 
       let changed = false;
 
-      if (["play", "seek", "buffering"].includes(mutationType)) {
+      if (mutationType === "buffering") {
+        // Legacy compatibility command: participant-local buffering never
+        // changes canonical room playback.
+      } else if (["play", "seek"].includes(mutationType)) {
         if (typeof payload.position === "number" && payload.position >= 0) {
           if (
             mutationType === "play" &&
@@ -248,8 +251,6 @@ const mockRedis = {
             // strictly ignore
           } else {
             if (mutationType === "play") room.playback.status = "playing";
-            else if (mutationType === "buffering")
-              room.playback.status = "buffering";
             room.playback.basePosition = payload.position;
             room.playback.baseTimestamp = now;
             room.playback.updatedBy = participantId;

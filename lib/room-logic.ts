@@ -11,7 +11,7 @@
  */
 
 import { randomUUID } from "crypto";
-import { LegacyPlaybackStatus, PlaylistItem, RoomState } from "./types";
+import { PlaylistItem, RoomState } from "./types";
 import { getParticipantPermissions } from "./permissions";
 
 export const FAST_COMMAND_TYPES = [
@@ -87,7 +87,11 @@ export function applyFastCommand(
   const { canControlPlayback } = getParticipantPermissions(room, participantId);
   if (!canControlPlayback) return "unauthorized";
 
-  if (type === "play" || type === "seek" || type === "buffering") {
+  // Legacy clients may still send this wire command. Buffering is strictly a
+  // participant-local condition, so authorized compatibility input is a no-op.
+  if (type === "buffering") return "unchanged";
+
+  if (type === "play" || type === "seek") {
     if (typeof payload?.position !== "number" || payload.position < 0) {
       return "invalid";
     }
@@ -100,12 +104,7 @@ export function applyFastCommand(
       return "unchanged";
     }
 
-    if (type === "play") {
-      room.playback.status = "playing";
-    } else if (type === "buffering") {
-      // Legacy wire mutation retained until the playback-health migration.
-      (room.playback as { status: LegacyPlaybackStatus }).status = "buffering";
-    }
+    if (type === "play") room.playback.status = "playing";
     room.playback.basePosition = payload.position;
     room.playback.baseTimestamp = now;
     room.playback.updatedBy = participantNickname;

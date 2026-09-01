@@ -3,7 +3,7 @@ import { persist } from "zustand/middleware";
 import { roomSocketService } from "./socket";
 import { toast } from "sonner";
 import type { RoomEvent } from "./room-events";
-import type { RoomState } from "./types";
+import type { PlaybackHealth, RoomState } from "./types";
 import type { CommandAcknowledgement } from "./room-command-contract";
 
 interface LocalSettingsState {
@@ -46,6 +46,7 @@ interface AppState {
   commandError: string | null;
   resyncSession: () => Promise<void>;
   setNickname: (name: string) => void;
+  setLocalPlaybackHealth: (health: PlaybackHealth) => void;
   connect: (roomId: string, nickname: string) => Promise<void>;
   disconnect: () => void;
   sendCommand: (type: string, payload?: any) => void;
@@ -105,6 +106,12 @@ function handleRoomEvent(event: RoomEvent) {
 
   switch (event.type) {
     case "room_state": {
+      if (
+        state.room?.id === event.room.id &&
+        event.room.sequence < state.room.sequence
+      ) {
+        return;
+      }
       let newOffset = state.serverClockOffset;
       if (!state.clockSyncReady) {
         newOffset = event.serverTime - Date.now();
@@ -120,10 +127,15 @@ function handleRoomEvent(event: RoomEvent) {
     case "playback_updated": {
       if (!state.room) return;
       const playback = event.playback;
+      if (
+        playback.mediaItemId !== state.room.currentMediaId ||
+        playback.sequence <= state.room.sequence
+      ) {
+        return;
+      }
       useStore.setState({
         room: {
           ...state.room,
-          currentMediaId: playback.mediaItemId,
           sequence: playback.sequence,
           playback: {
             status: playback.status,
@@ -363,6 +375,21 @@ export const useStore = create<AppState>((set, get) => ({
     if (isConnected && room) {
       get().sendCommand("update_nickname", { nickname: name });
     }
+  },
+  setLocalPlaybackHealth: (health: PlaybackHealth) => {
+    const state = get();
+    if (!state.room || !state.participantId) return;
+    const participant = state.room.participants[state.participantId];
+    if (!participant || participant.playbackHealth === health) return;
+    set({
+      room: {
+        ...state.room,
+        participants: {
+          ...state.room.participants,
+          [state.participantId]: { ...participant, playbackHealth: health },
+        },
+      },
+    });
   },
   connect: async (roomId: string, nickname: string) => {
     let pId = get().participantId;
