@@ -19,6 +19,7 @@ import {
 import * as redisRateLimit from "../lib/redis-rate-limit";
 import * as redisActor from "../lib/redis-actor";
 import * as redisLua from "../lib/redis-lua";
+import * as dbSync from "../lib/db-sync";
 import { Server, Socket } from "socket.io";
 import { SignJWT } from "jose";
 import { PARTICIPANT_GRACE_MS } from "../lib/participant-lifecycle";
@@ -710,6 +711,144 @@ describe("Room Handler Security & Auth Boundary", () => {
       expect.any(Number),
     );
   });
+
+  it.each([
+    ["v7", "01890f3e-4c4d-7cc2-8d8c-123456789301"],
+    ["v8", "01890f3e-4c4d-8cc2-8d8c-123456789301"],
+    ["nil", "00000000-0000-0000-0000-000000000000"],
+  ])(
+    "preserves an accepted %s nonce during degraded rejection",
+    async (_kind, nonce) => {
+      (dbSync.isSystemDegraded as any).mockResolvedValueOnce(true);
+      mockSocket.emit.mockClear();
+
+      await socketEventHandlers.command({
+        roomId: "degraded-room",
+        nonce,
+        clientSequence: 1,
+        command: { type: "pause", payload: { position: 10 } },
+      });
+
+      expect(mockSocket.emit).toHaveBeenCalledWith(
+        "command_ack",
+        expect.objectContaining({
+          nonce,
+          status: "rejected",
+          message: "System is degraded, try again later.",
+        }),
+      );
+    },
+  );
+
+  it.each([
+    ["v7", "01890f3e-4c4d-7cc2-8d8c-123456789302"],
+    ["v8", "01890f3e-4c4d-8cc2-8d8c-123456789302"],
+    ["nil", "00000000-0000-0000-0000-000000000000"],
+  ])(
+    "preserves an accepted %s nonce during oversized rejection",
+    async (_kind, nonce) => {
+      mockSocket.emit.mockClear();
+
+      await socketEventHandlers.command({
+        roomId: "oversized-room",
+        nonce,
+        clientSequence: 1,
+        command: {
+          type: "send_chat",
+          payload: { message: "x".repeat(50_001) },
+        },
+      });
+
+      expect(mockSocket.emit).toHaveBeenCalledWith(
+        "command_ack",
+        expect.objectContaining({
+          nonce,
+          status: "rejected",
+          message: "Payload too large. Request rejected.",
+        }),
+      );
+    },
+  );
+
+  it.each([
+    ["v7", "01890f3e-4c4d-7cc2-8d8c-123456789303"],
+    ["v8", "01890f3e-4c4d-8cc2-8d8c-123456789303"],
+    ["nil", "00000000-0000-0000-0000-000000000000"],
+  ])(
+    "preserves an accepted %s nonce when command serialization throws",
+    async (_kind, nonce) => {
+      const command: Record<string, unknown> = {
+        roomId: "circular-room",
+        nonce,
+        clientSequence: 1,
+        command: { type: "pause", payload: { position: 10 } },
+      };
+      command.circular = command;
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      mockSocket.emit.mockClear();
+
+      await socketEventHandlers.command(command);
+
+      const acknowledgements = mockSocket.emit.mock.calls.filter(
+        ([event]: any[]) => event === "command_ack",
+      );
+      expect(acknowledgements).toHaveLength(1);
+      expect(acknowledgements[0]?.[1]).toMatchObject({
+        nonce,
+        status: "rejected",
+      });
+      errorSpy.mockRestore();
+    },
+  );
+
+  it("preserves a valid nonce when a custom serializer throws", async () => {
+    const nonce = "01890f3e-4c4d-7cc2-8d8c-123456789304";
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    mockSocket.emit.mockClear();
+
+    await socketEventHandlers.command({
+      roomId: "throwing-room",
+      nonce,
+      clientSequence: 1,
+      command: { type: "pause", payload: { position: 10 } },
+      toJSON() {
+        throw new Error("serializer-failed");
+      },
+    });
+
+    const acknowledgements = mockSocket.emit.mock.calls.filter(
+      ([event]: any[]) => event === "command_ack",
+    );
+    expect(acknowledgements).toHaveLength(1);
+    expect(acknowledgements[0]?.[1]).toMatchObject({
+      nonce,
+      status: "rejected",
+    });
+    errorSpy.mockRestore();
+  });
+
+  it.each([
+    ["missing", undefined],
+    ["invalid", "not-a-uuid"],
+  ])(
+    "uses invalid for a %s nonce on an early degraded rejection",
+    async (_label, nonce) => {
+      (dbSync.isSystemDegraded as any).mockResolvedValueOnce(true);
+      mockSocket.emit.mockClear();
+
+      await socketEventHandlers.command({
+        roomId: "degraded-room",
+        ...(nonce === undefined ? {} : { nonce }),
+        clientSequence: 1,
+        command: { type: "pause", payload: { position: 10 } },
+      });
+
+      expect(mockSocket.emit).toHaveBeenCalledWith(
+        "command_ack",
+        expect.objectContaining({ nonce: "invalid", status: "rejected" }),
+      );
+    },
+  );
 
   it("rejects non-leader fast playback commands in the websocket Redis fallback", async () => {
     const roomId = "test-room-leader-fast-fallback";

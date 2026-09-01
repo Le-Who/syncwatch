@@ -7,12 +7,16 @@
  * expires. This replaces fragile wall-clock heuristics with deterministic
  * server acknowledgment.
  */
+import type { CommandAcknowledgement } from "./room-command-contract";
+
+export type PlaybackIntentCompletion = "playback_update" | "command_ack";
+
 export class PlaybackIntentManager {
   private mediaTransitionTimeout: ReturnType<typeof setTimeout> | null = null;
   private lastCommandEmitTime: number = 0;
   private lastStateEmitted: {
     status: string;
-    position: number;
+    position: number | undefined;
     time: number;
     nonce?: string;
   } | null = null;
@@ -31,6 +35,9 @@ export class PlaybackIntentManager {
   private _pendingNonce: string | null = null;
   /** Timestamp when the pending nonce was set. Used for safety-net timeout. */
   private _pendingNonceTimestamp: number = 0;
+  /** Applied fast commands require canonical playback state; slow commands
+   *  can finish from their correlated acknowledgement alone. */
+  private _pendingCompletion: PlaybackIntentCompletion = "playback_update";
   /** Safety-net timeout (ms): if no ACK arrives within this window, unblock.
    *  This covers lost packets and socket reconnections. */
   private static readonly NONCE_ACK_TIMEOUT_MS = 3000;
@@ -43,10 +50,16 @@ export class PlaybackIntentManager {
     return this._userIsDraggingScrubber;
   }
 
-  public markCommandEmitted(status: string, position: number, nonce: string) {
+  public markCommandEmitted(
+    status: string,
+    position: number | undefined,
+    nonce: string,
+    completion: PlaybackIntentCompletion = "playback_update",
+  ) {
     this.lastCommandEmitTime = Date.now();
     this._pendingNonce = nonce;
     this._pendingNonceTimestamp = Date.now();
+    this._pendingCompletion = completion;
     this.lastStateEmitted = {
       status,
       position,
@@ -138,13 +151,14 @@ export class PlaybackIntentManager {
       PlaybackIntentManager.NONCE_ACK_TIMEOUT_MS
     ) {
       this._pendingNonce = null;
+      this._pendingCompletion = "playback_update";
       return false;
     }
     return true;
   }
 
   /**
-   * Called when a room_state arrives from the server. If the server's
+   * Called when canonical playback arrives from the server. If the server's
    * lastActionNonce matches our pending nonce, the command is ACKed
    * and we clear the block. We also set a brief ignore window to
    * absorb any trailing native events from the seek/play.
@@ -152,9 +166,30 @@ export class PlaybackIntentManager {
   public acknowledgeServerNonce(serverNonce?: string): void {
     if (serverNonce && this._pendingNonce === serverNonce) {
       this._pendingNonce = null;
+      this._pendingCompletion = "playback_update";
       // Brief post-ACK cooldown to absorb trailing native events
       this.ignoreEventsFor(500);
     }
+  }
+
+  /**
+   * Completes terminal command outcomes without waiting for a playback event
+   * that will never be published. Applied fast playback commands remain
+   * pending until their canonical `playback_updated` arrives.
+   */
+  public acknowledgeCommand(acknowledgement: CommandAcknowledgement): void {
+    if (this._pendingNonce !== acknowledgement.nonce) return;
+    if (
+      acknowledgement.status === "applied" &&
+      this._pendingCompletion === "playback_update"
+    ) {
+      return;
+    }
+    this._pendingNonce = null;
+    this._pendingCompletion = "playback_update";
+    this.lastCommandEmitTime = Number.NEGATIVE_INFINITY;
+    this.lastStateEmitted = null;
+    this.ignoreEventsFor(500);
   }
 
   /**
@@ -217,7 +252,11 @@ export class PlaybackIntentManager {
     fallbackStatus: string | undefined,
   ): string | undefined {
     // Use nonce-based check first (deterministic), then fallback to time-based
-    if (this._pendingNonce && this.isAwaitingServerAck() && this.lastStateEmitted) {
+    if (
+      this._pendingNonce &&
+      this.isAwaitingServerAck() &&
+      this.lastStateEmitted
+    ) {
       return this.lastStateEmitted.status;
     }
     if (this.isRecentCommand(2000) && this.lastStateEmitted !== null) {

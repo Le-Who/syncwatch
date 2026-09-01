@@ -13,7 +13,10 @@ import type {
   CommandRejectionCode,
   RoomCommandEnvelope,
 } from "../room-command-contract";
-import { roomCommandEnvelopeSchema } from "../room-command-contract";
+import {
+  commandNonceSchema,
+  roomCommandEnvelopeSchema,
+} from "../room-command-contract";
 import { upgradeParticipantIdentity } from "../participant-lifecycle";
 import { getRedisRoom, setRedisRoomCAS } from "../redis-actor";
 import { sanitizeRoom } from "../room-handler";
@@ -57,6 +60,13 @@ function rejected(
   };
 }
 
+function extractRequestNonce(raw: unknown): string {
+  if (!raw || typeof raw !== "object") return "invalid";
+  const nonce = (raw as { nonce?: unknown }).nonce;
+  const parsed = commandNonceSchema.safeParse(nonce);
+  return parsed.success ? parsed.data : "invalid";
+}
+
 /** Converts the pre-envelope Socket.IO API into the shared contract. */
 export function adaptLegacyCommandEnvelope(raw: unknown): unknown {
   if (!raw || typeof raw !== "object") return raw;
@@ -72,13 +82,9 @@ export function adaptLegacyCommandEnvelope(raw: unknown): unknown {
   if (typeof legacy.type !== "string") return raw;
   return {
     roomId: legacy.roomId,
-    nonce:
-      typeof legacy.nonce === "string" &&
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-        legacy.nonce,
-      )
-        ? legacy.nonce
-        : randomUUID(),
+    nonce: commandNonceSchema.safeParse(legacy.nonce).success
+      ? legacy.nonce
+      : randomUUID(),
     clientSequence:
       typeof legacy.sequence === "number" &&
       Number.isInteger(legacy.sequence) &&
@@ -195,6 +201,7 @@ export function handleCommandEvents(
     async (rawCommand: unknown, callback?: AcknowledgementCallback) => {
       let fallbackNonce = "invalid";
       try {
+        fallbackNonce = extractRequestNonce(rawCommand);
         if (await isSystemDegraded()) {
           const ack = rejected(fallbackNonce, "INVALID_COMMAND");
           ack.message = "System is degraded, try again later.";
@@ -211,7 +218,11 @@ export function handleCommandEvents(
           return;
         }
 
-        if (JSON.stringify(rawCommand).length > MAX_COMMAND_BYTES) {
+        const serializedCommand = JSON.stringify(rawCommand);
+        if (
+          typeof serializedCommand !== "string" ||
+          serializedCommand.length > MAX_COMMAND_BYTES
+        ) {
           const ack = rejected(fallbackNonce, "INVALID_COMMAND");
           ack.message = "Payload too large. Request rejected.";
           emitAcknowledgement(socket, ack, callback);
@@ -219,14 +230,7 @@ export function handleCommandEvents(
         }
 
         const adapted = adaptLegacyCommandEnvelope(rawCommand);
-        if (
-          adapted &&
-          typeof adapted === "object" &&
-          "nonce" in adapted &&
-          typeof adapted.nonce === "string"
-        ) {
-          fallbackNonce = adapted.nonce;
-        }
+        fallbackNonce = extractRequestNonce(adapted);
         const parsed = roomCommandEnvelopeSchema.safeParse(adapted);
         if (!parsed.success) {
           emitAcknowledgement(

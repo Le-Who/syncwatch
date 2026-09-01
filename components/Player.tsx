@@ -29,6 +29,7 @@ import { usePlayerShortcuts } from "@/hooks/usePlayerShortcuts";
 import { useFlashback } from "@/hooks/useFlashback";
 import { usePlaybackSync } from "@/hooks/usePlaybackSync";
 import { usePlayerEvents } from "@/hooks/usePlayerEvents";
+import { usePlaybackIntentAcknowledgement } from "@/hooks/usePlaybackIntentAcknowledgement";
 import {
   getPlayerCurrentTime,
   applyTwitchEventProxy,
@@ -52,6 +53,15 @@ import {
 const ReactPlayer = dynamic(() => import("react-player"), {
   ssr: false,
 }) as any;
+
+const COMMANDS_WITH_COMPACT_PLAYBACK_UPDATE = new Set([
+  "play",
+  "pause",
+  "seek",
+  "buffering",
+  "update_rate",
+  "sync_correction",
+]);
 
 export default function Player() {
   const participantId = useStore((s) => s.participantId);
@@ -153,6 +163,7 @@ export default function Player() {
   // Removed ResizeObserver dimensions
 
   const [intentManager] = useState(() => new PlaybackIntentManager());
+  usePlaybackIntentAcknowledgement(intentManager);
 
   const isDocumentVisibleRef = useRef(true);
   useEffect(() => {
@@ -315,6 +326,9 @@ export default function Player() {
         statusMap[type] || type,
         payload?.position,
         nonce,
+        COMMANDS_WITH_COMPACT_PLAYBACK_UPDATE.has(type)
+          ? "playback_update"
+          : "command_ack",
       );
       sendCommand(type, { ...payload, nonce });
     },

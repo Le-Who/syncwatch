@@ -114,12 +114,14 @@ abstract class SerializedRoomRepository implements RoomRepository {
   protected serialize<T>(roomId: string, operation: () => Promise<T>) {
     const prior = this.roomOperations.get(roomId) ?? Promise.resolve();
     const current = prior.then(operation, operation);
-    const settled = current.finally(() => {
-      if (this.roomOperations.get(roomId) === settled) {
+    let tail: Promise<void>;
+    const cleanup = () => {
+      if (this.roomOperations.get(roomId) === tail) {
         this.roomOperations.delete(roomId);
       }
-    });
-    this.roomOperations.set(roomId, settled);
+    };
+    tail = current.then(cleanup, cleanup);
+    this.roomOperations.set(roomId, tail);
     return current;
   }
 

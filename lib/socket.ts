@@ -1,6 +1,9 @@
 import { io, Socket } from "socket.io-client";
 import type { RoomEvent } from "./room-events";
-import type { CommandAcknowledgement } from "./room-command-contract";
+import {
+  commandNonceSchema,
+  type CommandAcknowledgement,
+} from "./room-command-contract";
 
 type RoomSocketEvent =
   | "connected"
@@ -220,13 +223,9 @@ export class RoomSocketService {
     if (!this.socket || !this.socket.connected) return null;
 
     const suppliedNonce = payload?.nonce;
-    const nonce =
-      typeof suppliedNonce === "string" &&
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-        suppliedNonce,
-      )
-        ? suppliedNonce
-        : crypto.randomUUID();
+    const nonce = commandNonceSchema.safeParse(suppliedNonce).success
+      ? suppliedNonce
+      : crypto.randomUUID();
     const commandPayload =
       payload && typeof payload === "object" && "nonce" in payload
         ? { ...payload, nonce }

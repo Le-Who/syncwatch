@@ -1,9 +1,12 @@
 import { z } from "zod";
 import { commandSchema } from "./zod-schemas";
 
+/** Authoritative scalar contract used even before the full envelope is parsed. */
+export const commandNonceSchema = z.string().uuid();
+
 export const roomCommandEnvelopeSchema = z.object({
   roomId: z.string().min(1).max(128),
-  nonce: z.string().uuid(),
+  nonce: commandNonceSchema,
   clientSequence: z.number().int().nonnegative(),
   command: commandSchema,
 });
