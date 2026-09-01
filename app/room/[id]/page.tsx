@@ -21,7 +21,6 @@ import RoomSettingsDialog from "@/components/RoomSettingsDialog";
 import Reactions from "@/components/Reactions";
 import { ReconnectingOverlay } from "@/components/ReconnectingOverlay";
 import { useSettingsStore } from "@/lib/store";
-import { MediaComposer } from "@/components/MediaComposer";
 import ChatPanel from "@/components/ChatPanel";
 
 export default function RoomPage() {
@@ -86,8 +85,6 @@ export default function RoomPage() {
   const participant = room?.participants[participantId!];
   const canEditRoom =
     participant?.role === "owner" || participant?.role === "moderator";
-  const canAddPlaylist = Boolean(room && participant);
-  const canManagePlaylist = Boolean(room && canEditRoom);
 
   const handleRoomNameSubmit = () => {
     if (editRoomName.trim() && editRoomName !== room?.name && canEditRoom) {
@@ -132,7 +129,10 @@ export default function RoomPage() {
                 type="text"
                 value={tempName}
                 onChange={(e) => setTempName(e.target.value)}
-                placeholder="ENTER_HANDLE"
+                name="nickname"
+                aria-label="Your name"
+                autoComplete="off"
+                placeholder="Your name…"
                 className="bg-theme-bg/50 border-theme-border/50 rounded-theme text-theme-text placeholder-theme-muted focus:border-theme-accent w-full border-2 px-5 py-4 font-bold tracking-widest uppercase backdrop-blur-sm transition-all focus:shadow-[0_0_15px_var(--color-theme-accent)] focus:outline-none"
                 autoFocus
                 maxLength={20}
@@ -144,7 +144,7 @@ export default function RoomPage() {
               disabled={!tempName.trim()}
               className="bg-theme-accent text-theme-bg rounded-theme ring-theme-accent shadow-theme hover:shadow-theme-hover w-full border-2 border-transparent px-4 py-4 font-bold tracking-[0.2em] uppercase transition-all hover:-translate-y-0.5 focus-visible:ring-4 active:translate-y-0.5 active:shadow-none disabled:opacity-50"
             >
-              Establish Link
+              Join room
             </button>
           </form>
         </motion.div>
@@ -192,7 +192,7 @@ export default function RoomPage() {
             <div className="bg-theme-border/30 hidden h-8 w-1 -skew-x-12 transform sm:block" />
             <div className="flex flex-col">
               <span className="text-theme-accent mb-0.5 text-[10px] font-bold tracking-widest uppercase">
-                Active Terminal
+                Watching together
               </span>
               {isEditingRoomName ? (
                 <input
@@ -224,18 +224,10 @@ export default function RoomPage() {
             </div>
           </div>
 
-          <div className="relative z-20 hidden min-w-[260px] max-w-3xl flex-1 md:block">
-            <MediaComposer
-              sendCommand={sendCommand}
-              canSubmit={canAddPlaylist}
-              allowAddNext={canManagePlaylist}
-              compact
-            />
-          </div>
-
           <div className="relative z-10 flex items-center space-x-4">
             <button
               onClick={copyInviteLink}
+              aria-label={copied ? "Invite link copied" : "Copy invite link"}
               className="bg-theme-bg/50 border-theme-accent hover:bg-theme-accent hover:text-theme-bg text-theme-accent rounded-theme ring-theme-text shadow-theme flex items-center space-x-2 border-2 px-4 py-2.5 text-xs font-bold tracking-wider uppercase transition-all outline-none focus-visible:ring-2 active:translate-y-0.5 active:shadow-none"
             >
               {copied ? (
@@ -250,6 +242,7 @@ export default function RoomPage() {
 
             <button
               onClick={() => setIsSettingsOpen(true)}
+              aria-label="Room settings"
               className="border-theme-border/50 hover:border-theme-accent text-theme-muted hover:text-theme-accent bg-theme-bg/50 rounded-theme ring-theme-text flex h-10 w-10 items-center justify-center border-2 shadow-sm backdrop-blur-md transition-all outline-none focus-visible:ring-2"
               title="SYSTEM_CONFIG"
             >
@@ -323,9 +316,7 @@ export default function RoomPage() {
                   }`}
                 >
                   <Users className="h-4 w-4" />
-                  <span>
-                    People ({Object.keys(room.participants).length})
-                  </span>
+                  <span>People ({Object.keys(room.participants).length})</span>
                 </button>
               </div>
 

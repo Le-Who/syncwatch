@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useStore } from "@/lib/store";
+import { getParticipantPermissions } from "@/lib/permissions";
 import {
   User,
   Crown,
@@ -30,14 +31,15 @@ export default function Participants() {
 
   if (!room) return null;
 
-  const currentUserRole =
-    room.participants[participantId || ""]?.role || "viewer";
-  const isOwner = currentUserRole === "owner";
-  const isOwnerOrMod = currentUserRole === "owner" || currentUserRole === "moderator";
-  const isLeader = room.leaderId === participantId;
+  const permissions = participantId
+    ? getParticipantPermissions(room, participantId)
+    : null;
+  const isOwner = permissions?.isOwner ?? false;
+  const isOwnerOrMod = permissions?.isOwnerOrMod ?? false;
+  const isLeader = permissions?.isLeader ?? false;
   const leader = room.leaderId ? room.participants[room.leaderId] : null;
   const canReleaseActiveLeader = Boolean(leader && (isLeader || isOwnerOrMod));
-  const canRequestLeader = !leader;
+  const canRequestLeader = Boolean(participantId && !leader && permissions);
   const leaderButtonDisabled = !canReleaseActiveLeader && !canRequestLeader;
   const leaderButtonLabel = canReleaseActiveLeader
     ? "Release"
@@ -53,7 +55,10 @@ export default function Participants() {
     return a.nickname.localeCompare(b.nickname);
   });
 
-  const handleRoleChange = (targetParticipantId: string, newRole: string) => {
+  const handleRoleChange = (
+    targetParticipantId: string,
+    newRole: "moderator" | "viewer",
+  ) => {
     sendCommand("update_role", {
       targetParticipantId,
       role: newRole,
@@ -103,7 +108,7 @@ export default function Participants() {
               ? "border-theme-danger text-theme-danger hover:bg-theme-danger/10"
               : leaderButtonDisabled
                 ? "border-theme-border text-theme-muted cursor-not-allowed opacity-60"
-              : "border-theme-accent text-theme-accent hover:bg-theme-accent/10"
+                : "border-theme-accent text-theme-accent hover:bg-theme-accent/10"
           }`}
         >
           <RadioTower className="h-4 w-4" />
@@ -115,7 +120,7 @@ export default function Participants() {
         {participants.map((p) => (
           <div
             key={p.id}
-            className={`rounded-theme participant-item relative flex items-center justify-between border-2 p-3.5 transition-all ${p.disconnected ? 'opacity-50' : ''} ${
+            className={`rounded-theme participant-item relative flex items-center justify-between border-2 p-3.5 transition-all ${p.disconnected ? "opacity-50" : ""} ${
               p.id === participantId
                 ? "bg-theme-accent/20 border-theme-accent shadow-theme"
                 : p.disconnected
@@ -160,6 +165,7 @@ export default function Participants() {
                     <input
                       value={p.nickname}
                       onChange={(e) => setNickname(e.target.value)}
+                      aria-label="Your nickname"
                       className="text-theme-text border-theme-accent/50 focus:border-theme-accent w-full max-w-[140px] truncate border-b-2 bg-transparent px-1 py-0.5 text-[15px] font-bold tracking-wide uppercase transition-all focus:outline-none"
                       title="Edit your nickname"
                     />

@@ -140,7 +140,10 @@ describe("Participants Component (Unit Tests)", () => {
   });
 
   it("TC-UI-15: Owner can transfer ownership through a dedicated command", () => {
-    vi.stubGlobal("confirm", vi.fn(() => true));
+    vi.stubGlobal(
+      "confirm",
+      vi.fn(() => true),
+    );
 
     render(<Participants />);
 

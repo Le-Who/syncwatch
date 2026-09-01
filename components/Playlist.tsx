@@ -79,7 +79,7 @@ export default function Playlist() {
                 type="button"
                 title="Shuffle playlist"
                 onClick={handleShuffle}
-                className="text-theme-muted hover:text-theme-accent hover:border-theme-accent rounded-theme border-theme-border/40 ring-theme-accent flex h-9 items-center gap-2 border px-3 text-[10px] font-bold tracking-widest uppercase outline-none transition-all focus-visible:ring-2"
+                className="text-theme-muted hover:text-theme-accent hover:border-theme-accent rounded-theme border-theme-border/40 ring-theme-accent flex h-9 items-center gap-2 border px-3 text-[10px] font-bold tracking-widest uppercase transition-all outline-none focus-visible:ring-2"
               >
                 <Shuffle className="h-4 w-4" />
                 <span>Shuffle</span>
@@ -88,7 +88,7 @@ export default function Playlist() {
                 type="button"
                 title="Clear playlist"
                 onClick={handleClear}
-                className="text-theme-muted hover:text-theme-danger hover:border-theme-danger rounded-theme border-theme-border/40 ring-theme-danger flex h-9 items-center gap-2 border px-3 text-[10px] font-bold tracking-widest uppercase outline-none transition-all focus-visible:ring-2"
+                className="text-theme-muted hover:text-theme-danger hover:border-theme-danger rounded-theme border-theme-border/40 ring-theme-danger flex h-9 items-center gap-2 border px-3 text-[10px] font-bold tracking-widest uppercase transition-all outline-none focus-visible:ring-2"
               >
                 <ListX className="h-4 w-4" />
                 <span>Clear</span>

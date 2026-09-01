@@ -172,6 +172,7 @@ export default function Player() {
 
   const [intentManager] = useState(() => new PlaybackIntentManager());
   const [providerEventEpoch, setProviderEventEpoch] = useState(0);
+  const [providerRetryKey, setProviderRetryKey] = useState(0);
   const mountsAwaitingFreshDelivery =
     connectionEpoch > 0 && canonicalDeliveryVersion <= connectionDeliveryFloor;
   const [isReconnecting, setIsReconnecting] = useState(
@@ -671,6 +672,21 @@ export default function Player() {
     emitCommand("next", { currentMediaId });
   };
 
+  const reinitializeProvider = useCallback(() => {
+    if (!currentMediaId) return;
+
+    setProviderEventEpoch(intentManager.advanceProviderEventEpoch());
+    healthController.beginMedia(currentMediaId);
+    setError(null);
+    setIsReady(false);
+    setDuration(0);
+    setProviderRetryKey((key) => key + 1);
+  }, [currentMediaId, healthController, intentManager]);
+
+  const canSkipUnavailable = Boolean(
+    currentMediaId && (permissions?.isLeader || permissions?.isOwnerOrMod),
+  );
+
   // formatTime is now imported from @/lib/utils
 
   const nextItem = useStore(
@@ -746,7 +762,7 @@ export default function Player() {
         >
           {mounted && (
             <ReactPlayer
-              key={currentMediaId}
+              key={`${currentMediaId}-${providerRetryKey}`}
               ref={playerRef}
               src={currentMedia.url}
               width="100%"
@@ -830,18 +846,28 @@ export default function Player() {
           currentMedia.provider?.toLowerCase() !== "twitch" && (
             <>
               {/* Main click capture layer */}
-              <div
+              <button
+                type="button"
+                aria-label={playing ? "Pause" : "Play"}
                 className={`absolute inset-0 z-10 ${canControl ? "cursor-pointer" : "cursor-default"}`}
                 onClick={() => {
                   if (canControl) {
                     playing ? handlePause() : handlePlay();
                   }
                 }}
+                disabled={!canControl}
               />
             </>
           )}
 
-        {error && <ErrorOverlay message={error} />}
+        {error && (
+          <ErrorOverlay
+            message={error}
+            onRetry={reinitializeProvider}
+            onReinitializeSync={reinitializeProvider}
+            onSkip={canSkipUnavailable ? handleNext : undefined}
+          />
+        )}
 
         {isBuffering && playing && !error && <BufferingOverlay />}
 

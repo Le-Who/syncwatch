@@ -15,6 +15,28 @@ describe("AwaitingSignal", () => {
     vi.clearAllMocks();
   });
 
+  it.each([
+    { hasMedia: false, viewport: "desktop" },
+    { hasMedia: true, viewport: "desktop" },
+    { hasMedia: false, viewport: "mobile" },
+    { hasMedia: true, viewport: "mobile" },
+  ])(
+    "renders one media composer for $viewport with media=$hasMedia",
+    ({ hasMedia }) => {
+      render(
+        <AwaitingSignal
+          canAddPlaylist
+          participantCount={hasMedia ? 2 : 1}
+          sendCommand={vi.fn()}
+        />,
+      );
+
+      expect(
+        screen.getAllByRole("textbox", { name: /youtube url or search/i }),
+      ).toHaveLength(1);
+    },
+  );
+
   it("uses the shared media composer to add the first media item", async () => {
     const sendCommand = vi.fn();
     (global.fetch as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
@@ -35,9 +57,7 @@ describe("AwaitingSignal", () => {
       />,
     );
 
-    const input = screen.getByPlaceholderText(
-      /Search YouTube or paste any media URL/i,
-    );
+    const input = screen.getByPlaceholderText(/YouTube URL or search/i);
     fireEvent.change(input, {
       target: { value: "https://example.com/first.mp4" },
     });

@@ -84,7 +84,7 @@ describe("Playlist Component (Unit Tests)", () => {
 
     // Owner should see the Add input
     expect(
-      screen.getByPlaceholderText(/Search YouTube or paste any media URL/i),
+      screen.getByPlaceholderText(/YouTube URL or search/i),
     ).toBeInTheDocument();
 
     // Owner should see the item in the list
@@ -126,9 +126,11 @@ describe("Playlist Component (Unit Tests)", () => {
 
     // Viewer can add media.
     expect(
-      screen.getByPlaceholderText(/Search YouTube or paste any media URL/i),
+      screen.getByPlaceholderText(/YouTube URL or search/i),
     ).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /add next/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /add next/i }),
+    ).not.toBeInTheDocument();
 
     // Viewer cannot manage queue items.
     expect(screen.queryByTitle("Remove")).not.toBeInTheDocument();
@@ -162,9 +164,7 @@ describe("Playlist Component (Unit Tests)", () => {
 
     render(<Playlist />);
 
-    const input = screen.getByPlaceholderText(
-      /Search YouTube or paste any media URL/i,
-    );
+    const input = screen.getByPlaceholderText(/YouTube URL or search/i);
     fireEvent.change(input, {
       target: { value: "https://example.com/video.mp4" },
     });
@@ -202,9 +202,7 @@ describe("Playlist Component (Unit Tests)", () => {
     render(<Playlist />);
 
     fireEvent.click(screen.getByRole("button", { name: /add next/i }));
-    const input = screen.getByPlaceholderText(
-      /Search YouTube or paste any media URL/i,
-    );
+    const input = screen.getByPlaceholderText(/YouTube URL or search/i);
     fireEvent.change(input, {
       target: { value: "https://example.com/next.mp4" },
     });
@@ -283,9 +281,7 @@ describe("Playlist Component (Unit Tests)", () => {
     (ReactPlayer.canPlay as any).mockReturnValueOnce(false);
 
     render(<Playlist />);
-    const input = screen.getByPlaceholderText(
-      /Search YouTube or paste any media URL/i,
-    );
+    const input = screen.getByPlaceholderText(/YouTube URL or search/i);
 
     fireEvent.change(input, {
       target: { value: "https://unsupported.com/bad" },

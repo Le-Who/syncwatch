@@ -147,8 +147,10 @@ export function MediaComposer({
         <div className="relative min-w-0 flex-1">
           <input
             type="text"
-            placeholder="Search YouTube or paste any media URL..."
-            aria-label="Search YouTube or paste any media URL"
+            placeholder="YouTube URL or search…"
+            aria-label="YouTube URL or search"
+            name="media"
+            autoComplete="off"
             value={value}
             onChange={(event) => {
               setValue(event.target.value);
@@ -175,7 +177,7 @@ export function MediaComposer({
               aria-pressed={insertMode === "next"}
               onClick={() => setInsertMode("next")}
               disabled={!canSubmit || isAdding}
-              className={`ring-theme-accent flex items-center gap-1 px-2.5 font-bold uppercase outline-none transition-all focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-50 ${
+              className={`ring-theme-accent flex items-center gap-1 px-2.5 font-bold uppercase transition-all outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-50 ${
                 insertMode === "next"
                   ? "bg-theme-accent text-theme-bg"
                   : "text-theme-muted hover:text-theme-accent hover:bg-theme-accent/10"
@@ -192,7 +194,7 @@ export function MediaComposer({
             aria-pressed={insertMode === "end"}
             onClick={() => setInsertMode("end")}
             disabled={!canSubmit || isAdding}
-            className={`ring-theme-accent flex items-center gap-1 px-2.5 font-bold uppercase outline-none transition-all focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-50 ${
+            className={`ring-theme-accent flex items-center gap-1 px-2.5 font-bold uppercase transition-all outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-50 ${
               insertMode === "end"
                 ? "bg-theme-accent text-theme-bg"
                 : "text-theme-muted hover:text-theme-accent hover:bg-theme-accent/10"

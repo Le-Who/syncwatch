@@ -53,7 +53,7 @@ export default function Home() {
             <div className="bg-theme-accent absolute top-0 left-1/2 h-full w-1/3 -translate-x-1/2" />
           </div>
           <p className="text-theme-text text-sm leading-relaxed font-medium tracking-widest uppercase opacity-80 drop-shadow-sm md:text-base">
-            Synchronized Media Uplink
+            Watch together in sync
             <br />
             YouTube / Twitch / Direct MP4
           </p>
@@ -70,7 +70,7 @@ export default function Home() {
                 href={`/room/${newRoomId}`}
                 className="bg-theme-accent text-theme-bg rounded-theme shadow-theme hover:shadow-theme-hover block w-full cursor-pointer border-2 border-transparent px-4 py-4 text-center text-sm font-bold tracking-widest uppercase transition-all sm:text-base"
               >
-                ++ Initialize New Room ++
+                Create a room
               </Link>
             </motion.div>
           )}
@@ -81,7 +81,7 @@ export default function Home() {
             </div>
             <div className="relative flex justify-center text-xs">
               <span className="bg-theme-card text-theme-muted border-theme-border/30 rounded-full border px-4 py-1 font-bold tracking-widest uppercase backdrop-blur-md">
-                OR ATTACH TO EXISTING
+                Or join a room
               </span>
             </div>
           </div>
@@ -93,7 +93,9 @@ export default function Home() {
               </span>
               <input
                 type="text"
-                placeholder="ROOM_ID_STRING"
+                name="roomId"
+                aria-label="Room ID"
+                placeholder="Enter room code…"
                 value={roomId}
                 onChange={(e) => setRoomId(e.target.value)}
                 className="bg-theme-bg/50 border-theme-border/50 rounded-theme text-theme-text placeholder-theme-muted focus:border-theme-accent w-full border-2 py-4 pr-4 pl-10 text-sm tracking-widest uppercase backdrop-blur-sm transition-all select-auto focus:shadow-[0_0_15px_var(--color-theme-accent)] focus:outline-none sm:text-base"
@@ -107,7 +109,7 @@ export default function Home() {
               disabled={!roomId.trim()}
               className="border-theme-accent text-theme-accent hover:bg-theme-accent hover:text-theme-bg rounded-theme disabled:hover:text-theme-accent w-full cursor-pointer border-2 bg-transparent px-4 py-4 text-sm font-bold tracking-widest uppercase transition-all disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent sm:text-base"
             >
-              EXECUTE_JOIN
+              Join room
             </button>
           </form>
         </div>

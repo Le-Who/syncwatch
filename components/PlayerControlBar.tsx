@@ -57,7 +57,7 @@ export function PlayerControlBar({
     useSettingsStore();
 
   return (
-    <div className="font-theme absolute right-0 bottom-0 left-0 z-50 p-4 opacity-0 transition-opacity duration-300 group-hover:opacity-100 focus-within:opacity-100">
+    <div className="font-theme absolute right-0 bottom-0 left-0 z-50 p-4 opacity-100 transition-opacity duration-300 md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100">
       <div className="bg-theme-bg/80 border-theme-border/50 rounded-theme border-2 p-3 shadow-lg backdrop-blur-md">
         {/* Timeline */}
         <div className="mb-3 flex items-center space-x-4">
@@ -218,8 +218,6 @@ export function PlayerControlBar({
               playerRef={playerRef}
               playback={playback}
             />
-
-
 
             {playback?.updatedBy && (
               <span className="text-theme-muted border-theme-border/30 hidden border-l pl-4 text-[10px] tracking-wider uppercase xl:inline-block">

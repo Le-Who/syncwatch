@@ -34,6 +34,7 @@ vi.mock("next/dynamic", () => ({
         onPlaying: props.onPlaying,
         onPlay: props.onPlay,
         onPause: props.onPause,
+        onError: props.onError,
         onSeeked: props.onSeeked,
         onEnded: props.onEnded,
         onLoadedMetadata: props.onLoadedMetadata,
@@ -194,6 +195,93 @@ describe("Player Component", () => {
     expect(player).toHaveAttribute("data-youtube-controls", "1");
     expect(player).toHaveAttribute("data-youtube-disablekb", "0");
   });
+
+  it("keeps a provider error local and exposes retry", () => {
+    mockStoreState({
+      room: {
+        currentMediaId: "1",
+        sequence: 1,
+        playlist: [
+          {
+            id: "1",
+            url: "https://example.com/video.mp4",
+            provider: "raw",
+            title: "Unavailable video",
+          },
+        ],
+        settings: { autoplayNext: true, looping: false },
+        playback: {
+          status: "playing",
+          basePosition: 0,
+          baseTimestamp: 0,
+          rate: 1,
+        },
+        participants: { user1: { id: "user1", role: "viewer" } },
+      },
+      participantId: "user1",
+      sendCommand: mockSendCommand,
+      setLocalPlaybackHealth: vi.fn(),
+      serverClockOffset: 0,
+      occRollbackTick: 0,
+      isConnected: true,
+    });
+
+    render(<Player />);
+    act(() =>
+      providerCallbacks
+        .get("https://example.com/video.mp4")
+        ?.onError?.(new Error("unavailable")),
+    );
+
+    expect(screen.getByRole("button", { name: /retry video/i })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: /retry video/i }));
+    expect(mockSendCommand).not.toHaveBeenCalledWith("next", expect.anything());
+  });
+
+  it.each(["owner", "moderator"] as const)(
+    "allows %s to skip an unavailable item",
+    (role) => {
+      mockStoreState({
+        room: {
+          currentMediaId: "1",
+          sequence: 1,
+          playlist: [
+            {
+              id: "1",
+              url: "https://example.com/video.mp4",
+              provider: "raw",
+              title: "Unavailable video",
+            },
+          ],
+          settings: { autoplayNext: true, looping: false },
+          playback: {
+            status: "playing",
+            basePosition: 0,
+            baseTimestamp: 0,
+            rate: 1,
+          },
+          participants: { user1: { id: "user1", role } },
+        },
+        participantId: "user1",
+        sendCommand: mockSendCommand,
+        setLocalPlaybackHealth: vi.fn(),
+        serverClockOffset: 0,
+        occRollbackTick: 0,
+        isConnected: true,
+      });
+
+      render(<Player />);
+      act(() =>
+        providerCallbacks
+          .get("https://example.com/video.mp4")
+          ?.onError?.(new Error("unavailable")),
+      );
+
+      expect(
+        screen.getByRole("button", { name: /skip unavailable video/i }),
+      ).toBeVisible();
+    },
+  );
 
   it("should turn a native YouTube pause from a viewer into a room pause when no leader is active", () => {
     vi.useFakeTimers();
