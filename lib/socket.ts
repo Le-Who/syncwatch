@@ -203,6 +203,12 @@ export class RoomSocketService {
     this.socket.emit("join_room", { roomId, nickname, participantId });
   }
 
+  /** Requests a read-only authoritative room snapshot for the active socket. */
+  public requestRoomState(roomId: string) {
+    if (!this.socket?.connected) return;
+    this.socket.emit("request_room_state", { roomId });
+  }
+
   public disconnect() {
     if (this.socket) {
       this.unbindEvents();

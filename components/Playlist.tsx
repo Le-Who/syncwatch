@@ -25,6 +25,9 @@ export default function Playlist() {
   const isOwnerOrMod = myRole === "owner" || myRole === "moderator";
   const canAdd = Boolean(myRole);
   const canEdit = isOwnerOrMod;
+  const hasCurrentMedia = room.playlist.some(
+    (item) => item.id === room.currentMediaId,
+  );
 
   const handleRemove = (itemId: string) => {
     if (!canEdit) return;
@@ -65,7 +68,7 @@ export default function Playlist() {
 
   return (
     <div className="flex h-full flex-col bg-transparent">
-      {canAdd && (
+      {canAdd && hasCurrentMedia && (
         <div className="border-theme-border/30 bg-theme-bg/50 shrink-0 space-y-3 border-b p-4 backdrop-blur-md">
           <MediaComposer
             sendCommand={sendCommand}

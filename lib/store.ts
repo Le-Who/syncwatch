@@ -32,6 +32,8 @@ export const useSettingsStore = create<LocalSettingsState>()(
   ),
 );
 
+let roomStateRefreshInFlight = false;
+
 interface AppState {
   room: RoomState | null;
   serverClockOffset: number;
@@ -92,6 +94,7 @@ function handleDisconnected() {
     connectionEpoch: state.connectionEpoch + 1,
     connectionDeliveryFloor: state.canonicalDeliveryVersion,
   });
+  roomStateRefreshInFlight = false;
 }
 
 function handleClockSync({ offset }: { offset: number }) {
@@ -112,6 +115,18 @@ function handleCommandAcknowledgement(acknowledgement: CommandAcknowledgement) {
     commandError: message,
   });
   if (message) toast.error(message);
+
+  const state = useStore.getState();
+  if (
+    acknowledgement.status === "rejected" &&
+    state.isConnected &&
+    state.room &&
+    state.participantId &&
+    !roomStateRefreshInFlight
+  ) {
+    roomStateRefreshInFlight = true;
+    roomSocketService.requestRoomState(state.room.id);
+  }
 }
 
 function handleRoomEvent(event: RoomEvent) {
@@ -119,6 +134,9 @@ function handleRoomEvent(event: RoomEvent) {
 
   switch (event.type) {
     case "room_state": {
+      if (state.room?.id === event.room.id) {
+        roomStateRefreshInFlight = false;
+      }
       if (
         state.room?.id === event.room.id &&
         event.room.sequence < state.room.sequence

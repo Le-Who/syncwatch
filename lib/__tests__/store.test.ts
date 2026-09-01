@@ -63,6 +63,7 @@ vi.mock("../socket", () => {
       sendCommand: vi.fn(),
       upgradeSession: vi.fn(),
       joinRoom: vi.fn(),
+      requestRoomState: vi.fn(),
       on: vi.fn(),
       off: vi.fn(),
       onRoomEvent: vi.fn(),
@@ -428,6 +429,21 @@ describe("useStore", () => {
     expect(onAcknowledgement).toHaveBeenCalledWith(ack);
   });
 
+  it("requests an authoritative room snapshot without joining or sending a command", async () => {
+    const actual =
+      await vi.importActual<typeof import("../socket")>("../socket");
+    const service = new actual.RoomSocketService();
+    service.connect("room-a", "Friend", "p0", "token");
+    socketDouble.emit.mockClear();
+
+    service.requestRoomState("room-a");
+
+    expect(socketDouble.emit).toHaveBeenCalledOnce();
+    expect(socketDouble.emit).toHaveBeenCalledWith("request_room_state", {
+      roomId: "room-a",
+    });
+  });
+
   it("sends participant health outside the canonical command channel", async () => {
     const actual =
       await vi.importActual<typeof import("../socket")>("../socket");
@@ -521,6 +537,91 @@ describe("useStore", () => {
     expect(result.current.commandError).toBe(
       "You do not have permission to perform this action.",
     );
+  });
+
+  it("coalesces rejected acknowledgements into one authoritative snapshot request", () => {
+    const { result } = renderHook(() => useStore());
+    const room = roomWithParticipants(2);
+    act(() => {
+      result.current.init();
+      useStore.setState({
+        room,
+        isConnected: true,
+        participantId: "p0",
+        nickname: "Owner",
+        connectionEpoch: 4,
+        connectionDeliveryFloor: 9,
+        canonicalDeliveryVersion: 12,
+      });
+    });
+    const onAck = vi
+      .mocked(roomSocketService.on)
+      .mock.calls.find(([event]) => event === "command_ack")?.[1];
+    const onRoomEvent = vi.mocked(roomSocketService.onRoomEvent).mock
+      .calls[0]?.[0];
+
+    act(() => {
+      onAck?.({
+        nonce: "00000000-0000-4000-8000-000000000100",
+        status: "rejected",
+        code: "NOT_PERMITTED",
+        message: "You no longer have permission to manage the queue.",
+      });
+      onAck?.({
+        nonce: "00000000-0000-4000-8000-000000000101",
+        status: "rejected",
+        code: "NOT_PERMITTED",
+        message: "You no longer have permission to manage the queue.",
+      });
+    });
+
+    expect(roomSocketService.requestRoomState).toHaveBeenCalledOnce();
+    expect(roomSocketService.requestRoomState).toHaveBeenCalledWith(room.id);
+    expect(roomSocketService.sendCommand).not.toHaveBeenCalled();
+    expect(roomSocketService.joinRoom).not.toHaveBeenCalled();
+    expect(result.current.participantId).toBe("p0");
+    expect(result.current.connectionEpoch).toBe(4);
+    expect(result.current.connectionDeliveryFloor).toBe(9);
+
+    act(() => {
+      onRoomEvent?.({
+        type: "room_state",
+        room: {
+          ...room,
+          sequence: room.sequence + 1,
+          participants: {
+            ...room.participants,
+            p0: { ...room.participants.p0, role: "viewer" },
+          },
+        },
+        serverTime: 10_000,
+      });
+    });
+
+    expect(result.current.room?.participants.p0.role).toBe("viewer");
+    expect(result.current.room?.sequence).toBe(room.sequence + 1);
+    expect(result.current.connectionEpoch).toBe(4);
+    expect(result.current.connectionDeliveryFloor).toBe(9);
+  });
+
+  it("does not request a snapshot for rejected acknowledgements without a live room", () => {
+    const { result } = renderHook(() => useStore());
+    act(() => {
+      result.current.init();
+    });
+    const onAck = vi
+      .mocked(roomSocketService.on)
+      .mock.calls.find(([event]) => event === "command_ack")?.[1];
+
+    act(() => {
+      onAck?.({
+        nonce: "00000000-0000-4000-8000-000000000102",
+        status: "rejected",
+        code: "NOT_JOINED",
+      });
+    });
+
+    expect(roomSocketService.requestRoomState).not.toHaveBeenCalled();
   });
 
   it("should update nickname and omit emitting if not connected", () => {

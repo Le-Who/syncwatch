@@ -84,6 +84,7 @@ vi.mock("motion/react", () => ({
 import { useStore, useSettingsStore } from "@/lib/store";
 
 let currentStoreState: any;
+let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
 
 function mockStoreState(state: any) {
   state.connectionEpoch ??= 0;
@@ -103,6 +104,7 @@ describe("Player Component", () => {
     vi.clearAllMocks();
     providerCallbacks.clear();
     vi.useRealTimers();
+    consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     // Default mock implementation
     (useSettingsStore as any).mockReturnValue({
@@ -124,6 +126,7 @@ describe("Player Component", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    consoleErrorSpy.mockRestore();
   });
 
   it("should render Awaiting Signal when no media is present", () => {
@@ -227,15 +230,36 @@ describe("Player Component", () => {
     });
 
     render(<Player />);
-    act(() =>
-      providerCallbacks
-        .get("https://example.com/video.mp4")
-        ?.onError?.(new Error("unavailable")),
+    const staleCallbacks = providerCallbacks.get(
+      "https://example.com/video.mp4",
     );
+    act(() => staleCallbacks?.onError?.(new Error("unavailable")));
 
     expect(screen.getByRole("button", { name: /retry video/i })).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: /retry video/i }));
+    const retriedCallbacks = providerCallbacks.get(
+      "https://example.com/video.mp4",
+    );
+    expect(retriedCallbacks).not.toBe(staleCallbacks);
+
+    mockSendCommand.mockClear();
+    const setLocalPlaybackHealth = currentStoreState.setLocalPlaybackHealth;
+    setLocalPlaybackHealth.mockClear();
+    act(() => {
+      staleCallbacks?.onWaiting?.();
+      staleCallbacks?.onPause?.();
+      staleCallbacks?.onError?.(new Error("stale unavailable"));
+    });
+
+    expect(mockSendCommand).not.toHaveBeenCalled();
+    expect(setLocalPlaybackHealth).not.toHaveBeenCalled();
     expect(mockSendCommand).not.toHaveBeenCalledWith("next", expect.anything());
+
+    act(() => retriedCallbacks?.onError?.(new Error("unavailable again")));
+    fireEvent.click(screen.getByRole("button", { name: /reinitialize sync/i }));
+    expect(providerCallbacks.get("https://example.com/video.mp4")).not.toBe(
+      retriedCallbacks,
+    );
   });
 
   it.each(["owner", "moderator"] as const)(

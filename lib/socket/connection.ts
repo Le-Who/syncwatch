@@ -224,6 +224,24 @@ export function handleConnectionEvents(
       .catch((error) => console.error("Failed publishing join", error));
   });
 
+  socket.on("request_room_state", async ({ roomId }) => {
+    if (
+      typeof roomId !== "string" ||
+      roomId !== context.currentRoomId ||
+      !context.currentParticipantId
+    ) {
+      return;
+    }
+
+    const room = await getRedisRoom(roomId);
+    if (!room || !room.participants[context.currentParticipantId]) return;
+
+    socket.emit("room_state", {
+      room: sanitizeRoom(room),
+      serverTime: Date.now(),
+    });
+  });
+
   socket.on("reaction", (payload) => {
     try {
       if (!context.currentRoomId || !context.currentParticipantId) return;

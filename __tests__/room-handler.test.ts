@@ -125,6 +125,54 @@ describe("Room Handler Security & Auth Boundary", () => {
       .setExpirationTime("1h")
       .sign(new TextEncoder().encode("default_local_secret_dont_use_in_prod"));
 
+  it("returns a read-only snapshot for an authenticated room refresh", async () => {
+    const roomId = "snapshot-refresh-room";
+    const participantId = "snapshot-viewer";
+    let storedRoom = createEmptyRoom(roomId, "Snapshot Room");
+    storedRoom.participants[participantId] = {
+      id: participantId,
+      nickname: "Viewer",
+      role: "viewer",
+      joinedAt: 1,
+      lastSeen: 1,
+      connection: "connected",
+      connectionIds: [mockSocket.id],
+      playbackHealth: "idle",
+      readyMediaId: null,
+    };
+    (redisActor.getRedisRoom as any).mockImplementation(async () =>
+      structuredClone(storedRoom),
+    );
+    (redisActor.setRedisRoomCAS as any).mockImplementation(
+      async (_roomId: string, nextRoom: any) => {
+        storedRoom = structuredClone(nextRoom);
+        return true;
+      },
+    );
+    mockSocket.data.participantId = participantId;
+
+    await socketEventHandlers.join_room({ roomId, nickname: "Viewer" });
+    mockSocket.emit.mockClear();
+    (redisActor.setRedisRoomCAS as any).mockClear();
+
+    await socketEventHandlers.request_room_state({ roomId });
+
+    expect(mockSocket.emit).toHaveBeenCalledWith(
+      "room_state",
+      expect.objectContaining({
+        room: expect.objectContaining({
+          id: roomId,
+          participants: expect.objectContaining({
+            [participantId]: expect.not.objectContaining({
+              connectionIds: expect.anything(),
+            }),
+          }),
+        }),
+      }),
+    );
+    expect(redisActor.setRedisRoomCAS).not.toHaveBeenCalled();
+  });
+
   it("transfers the upgrading socket and removes the replacement identity after final grace without leaking connection IDs", async () => {
     const roomId = "upgrade-connection-room";
     const fallbackId = "fallback-upgrade";
