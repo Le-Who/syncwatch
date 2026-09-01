@@ -227,3 +227,50 @@ Status: DONE
 - Task 3 socket ownership remains in `RoomSocketService`/the app store. The connected/disconnected handlers only deduplicate transport notifications; they do not introduce a second socket lifecycle.
 - Prior participant-local waiting/error guards, paused/ended stall handling, success-aware health coalescing, and Redis/no-Redis legacy buffering no-ops are preserved.
 - The test socket emits duplicate connect notifications deliberately; production Socket.IO normally emits one, but the store and health paths are now idempotent if a duplicate is observed.
+
+## Review Fix Round 4
+
+Status: DONE
+
+Base: `e996ca45479d3dc63b4cd9397e8c54aeaad0da70`.
+
+### RED/GREEN evidence
+
+- Before changing the harness flow, added explicit pre-negative assertions against the real Player-owned intent manager and rendered provider state. `pnpm vitest run __tests__/degraded-multiplayer.integration.test.tsx` exited 1: 3 failed / 4 passed. YouTube, Twitch, and HTML5 all had `playing: false`, `pendingControl: true`, `expectedStatus: "paused"`, and `recentCommand: true` instead of the required playing/unblocked baseline.
+- Chose the brief's isolation option: each eligible-pause positive control now runs in its own test with a fresh Player, repository, event bus, consumers, and intent manager. Removed the control/reset chain from the negative scenarios; no direct nonce clearing, guard override, or production behavior change was introduced.
+- Every scenario explicitly establishes local and canonical playing, no pending control intent, expected status playing, and inactive media-transition, native-ignore/ACK, 2.5-second programmatic-seek/command, and scrubber guards. Provider callbacks are reacquired after readiness and initial reconciliation.
+- A call-through observer delegates to the production `setPauseDebounce` implementation and counts actual callback executions. Each pause transitions local playing from true to false and schedules exactly one 150 ms callback. At 149 ms there are zero callback executions, commands, and events. The negative case then enters visible local buffering while media, sequence, provider epoch, pending intent, and expected playing status remain eligible. Advancing the final 1 ms executes that same callback exactly once without emitting a pause.
+- The real `RoomCommandService`, `InMemoryRoomRepository`, `RoomEventBus`, and production canonical reducer remain wired. The independent B/C production `usePlaybackSync` consumers still begin at 20 and each observably seeks once to the hand-derived position 25, remaining playing.
+- GREEN, including the final restored-production run: `pnpm vitest run __tests__/degraded-multiplayer.integration.test.tsx` exited 0: 1 file / 10 tests passed.
+
+### Focused mutation evidence
+
+Temporarily removed only `!healthController.canAcceptProviderEvents() ||` from the delayed pause callback in `components/Player.tsx` with a controlled, uncommitted patch. The provider-entry health gate and all delayed epoch/media/sequence/expected-status conditions remained unchanged.
+
+Command: `pnpm vitest run __tests__/degraded-multiplayer.integration.test.tsx`.
+
+Result: exit 1, 3 failed / 7 passed. Only the YouTube, Twitch, and HTML5 `suppresses ... deferred native pause when waiting begins before debounce` cases failed, each at `expect(escapedPlaybackCommands).toEqual([])` with `expected [ 'pause' ] to deeply equal []`. Their playing/guard/timer preconditions had already passed. This demonstrates the delayed buffering guard itself prevents the escaped canonical pause; neither a stale intent nor an unarmed/cancelled timer can explain the negative result.
+
+Restored the exact line in a `finally` block before any further checks. `Get-FileHash -Algorithm SHA256 -LiteralPath 'components\Player.tsx'` returned the same before/after SHA256, `09F43C3AEE08C48FC02679F9A817B7675FBE16C4AB6034360C38D0E72193A803`. `git diff --exit-code -- components/Player.tsx` exited 0 with no diff. The restored focused run passed all 10 tests.
+
+### Changed files
+
+- `__tests__/degraded-multiplayer.integration.test.tsx`
+- `.superpowers/sdd/2026-08-31-syncwatch-parity-multiplayer/task-5-report.md`
+
+### Verification
+
+- `pnpm vitest run __tests__/degraded-multiplayer.integration.test.tsx`: final exit 0, 1 file / 10 tests passed.
+- `pnpm test`: run once in this round, exit 0, 44 files / 402 tests passed.
+- `pnpm exec eslint __tests__/degraded-multiplayer.integration.test.tsx`: exit 0, no diagnostics.
+- `pnpm exec tsc --noEmit --pretty false`: exit 0, no diagnostics.
+- `pnpm exec prettier --check __tests__/degraded-multiplayer.integration.test.tsx .superpowers/sdd/2026-08-31-syncwatch-parity-multiplayer/task-5-report.md`: exit 0.
+- `git diff --check`: exit 0.
+- No production build repeated: production code is unchanged, as required by the round brief.
+
+### Self-review and concerns
+
+- Reviewed the complete focused diff against every acceptance item. Positive and negative cases share fixture construction but no Player, intent, repository, or timer state. Cleanup disposes each Player before restoring the call-through spies and clearing fake timers.
+- The debounce callback is never invoked directly by the test. Its real timer is observed before and at the deadline, and the single-guard mutation kills every negative provider case while leaving the controls and other cases passing.
+- No production changes, helpers/reviewers, or edits to `progress.md`; no mutant remains. The original service-to-Player event-subscription limitation is not hidden or patched around: isolated controls deliberately finish and unmount before a new negative scenario starts.
+- Concerns: none for this harness correction. Git emits the repository's existing LF-to-CRLF normalization notice; it is informational and diff checks pass.

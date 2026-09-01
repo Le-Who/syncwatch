@@ -207,6 +207,7 @@ describe("degraded multiplayer through authoritative commands", () => {
 
   afterEach(() => {
     cleanup();
+    vi.restoreAllMocks();
     vi.clearAllTimers();
     vi.useRealTimers();
     useStore.setState({
@@ -234,7 +235,18 @@ describe("degraded multiplayer through authoritative commands", () => {
     ["twitch", "https://www.twitch.tv/videos/123456"],
     ["raw", "https://example.com/video.mp4"],
   ])(
-    "cancels %s deferred native pause when waiting begins before debounce",
+    "emits %s eligible native pause after its debounce through the authoritative service",
+    async (provider, url) => {
+      await runScenario(provider, url, "eligible-pause-control");
+    },
+  );
+
+  it.each([
+    ["youtube", "https://www.youtube.com/watch?v=dQw4w9WgXcQ"],
+    ["twitch", "https://www.twitch.tv/videos/123456"],
+    ["raw", "https://example.com/video.mp4"],
+  ])(
+    "suppresses %s deferred native pause when waiting begins before debounce",
     async (provider, url) => {
       await runScenario(provider, url, "pause-before-waiting");
     },
@@ -329,8 +341,34 @@ describe("degraded multiplayer through authoritative commands", () => {
 async function runScenario(
   provider: string,
   url: string,
-  scenario: "waiting-first" | "pause-before-waiting",
+  scenario: "waiting-first" | "eligible-pause-control" | "pause-before-waiting",
 ) {
+  const setMediaTransition = vi.spyOn(
+    PlaybackIntentManager.prototype,
+    "setMediaTransition",
+  );
+  const pauseDebounces: { delayMs: number; runs: number }[] = [];
+  const setPauseDebounce = PlaybackIntentManager.prototype.setPauseDebounce;
+  vi.spyOn(
+    PlaybackIntentManager.prototype,
+    "setPauseDebounce",
+  ).mockImplementation(function (
+    this: PlaybackIntentManager,
+    callback,
+    delayMs,
+  ) {
+    const observation = { delayMs, runs: 0 };
+    pauseDebounces.push(observation);
+    // Keep production timer ownership; only observe its actual invocation.
+    setPauseDebounce.call(
+      this,
+      () => {
+        observation.runs += 1;
+        callback();
+      },
+      delayMs,
+    );
+  });
   const initial = makeRoom(provider, url);
   const repository = new InMemoryRoomRepository([initial], () => Date.now());
   const consumers: ClientConsumer[] = Array.from({ length: 3 }, () => ({
@@ -398,8 +436,7 @@ async function runScenario(
   await act(async () => {
     await Promise.all(pendingCommands.splice(0));
   });
-  let callbacks = providerCallbacks.get(url)!;
-  act(() => callbacks.onLoadedMetadata?.());
+  act(() => providerCallbacks.get(url)!.onLoadedMetadata?.());
   await act(async () => {
     await Promise.all(pendingCommands.splice(0));
     await vi.advanceTimersByTimeAsync(3_100);
@@ -408,43 +445,34 @@ async function runScenario(
   escapedPlaybackCommands.length = 0;
   authoritativeEvents.length = 0;
 
-  if (scenario === "pause-before-waiting") {
-    const controlBefore = await repository.get(initial.id);
-    act(() => callbacks.onPause?.());
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(160);
-      await Promise.all(pendingCommands.splice(0));
-    });
-    const controlAfter = await repository.get(initial.id);
-    expect(escapedPlaybackCommands).toEqual(["pause"]);
-    expect(controlAfter?.sequence).toBe((controlBefore?.sequence ?? 0) + 1);
-    expect(controlAfter?.playback.status).toBe("paused");
-
-    await act(async () => {
-      await service.execute(
-        { currentRoomId: initial.id, currentParticipantId: "p0" },
-        {
-          roomId: initial.id,
-          clientSequence: controlAfter?.sequence ?? 0,
-          nonce: randomUUID(),
-          command: {
-            type: "play",
-            payload: {
-              position: 20 + (Date.now() - 10_000) / 1_000,
-            },
-          },
-        },
-      );
-      callbacks.onPlaying?.();
-    });
-    await act(() => vi.advanceTimersByTimeAsync(600));
-    callbacks = providerCallbacks.get(url)!;
-    escapedPlaybackCommands.length = 0;
-    authoritativeEvents.length = 0;
-  }
-
   const before = await repository.get(initial.id);
   expect(before).not.toBeNull();
+  const callbacks = providerCallbacks.get(url)!;
+  // Capture the real Player-owned manager without changing its guards.
+  const intentManager = setMediaTransition.mock
+    .contexts[0] as PlaybackIntentManager;
+  expect(intentManager).toBeInstanceOf(PlaybackIntentManager);
+  expect({
+    playing: providerPlaying.get(url),
+    canonicalStatus: useStore.getState().room?.playback.status,
+    pendingControl: intentManager.isAwaitingServerAck(),
+    expectedStatus: intentManager.getExpectedStatus(before?.playback.status),
+    inMediaTransition: intentManager.isInMediaTransition(),
+    ignoringNativeEvents: intentManager.isIgnoringNativeEvents(),
+    recentProgrammaticSeek: intentManager.isRecentProgrammaticSeek(2_500),
+    recentCommand: intentManager.isRecentCommand(2_500),
+    draggingScrubber: intentManager.isUserDraggingScrubber(),
+  }).toEqual({
+    playing: true,
+    canonicalStatus: "playing",
+    pendingControl: false,
+    expectedStatus: "playing",
+    inMediaTransition: false,
+    ignoringNativeEvents: false,
+    recentProgrammaticSeek: false,
+    recentCommand: false,
+    draggingScrubber: false,
+  });
 
   if (scenario === "waiting-first") {
     act(() => {
@@ -455,21 +483,46 @@ async function runScenario(
       vi.advanceTimersByTime(200);
     });
   } else {
-    act(() => {
-      callbacks.onPause?.();
-      callbacks.onWaiting?.();
-      vi.advanceTimersByTime(200);
-    });
+    const deferredEpoch = intentManager.currentProviderEventEpoch();
+    act(() => callbacks.onPause?.());
+    expect(providerPlaying.get(url)).toBe(false);
+    expect(pauseDebounces).toEqual([{ delayMs: 150, runs: 0 }]);
+    await act(() => vi.advanceTimersByTimeAsync(149));
+    expect(pauseDebounces).toEqual([{ delayMs: 150, runs: 0 }]);
+    expect(escapedPlaybackCommands).toEqual([]);
+    expect(authoritativeEvents).toEqual([]);
+
+    if (scenario === "pause-before-waiting") {
+      act(() => callbacks.onWaiting?.());
+      expect(screen.getByLabelText("Local buffering")).toBeInTheDocument();
+      // Only local health changes before the callback: its epoch, media,
+      // sequence, and expected playing status must still permit emission.
+      expect(intentManager.currentProviderEventEpoch()).toBe(deferredEpoch);
+      expect(useStore.getState().room).toMatchObject({
+        currentMediaId: before?.currentMediaId,
+        sequence: before?.sequence,
+        playback: { status: "playing" },
+      });
+      expect(intentManager.isAwaitingServerAck()).toBe(false);
+      expect(intentManager.getExpectedStatus("playing")).toBe("playing");
+      expect(pauseDebounces).toEqual([{ delayMs: 150, runs: 0 }]);
+    }
+
+    await act(() => vi.advanceTimersByTimeAsync(1));
+    expect(pauseDebounces).toEqual([{ delayMs: 150, runs: 1 }]);
   }
   await act(async () => {
     await Promise.all(pendingCommands.splice(0));
     await vi.advanceTimersByTimeAsync(0);
   });
-  if (scenario === "pause-before-waiting") {
-    expect(providerPlaying.get(url)).toBe(false);
-  }
-
   const after = await repository.get(initial.id);
+  if (scenario === "eligible-pause-control") {
+    expect(escapedPlaybackCommands).toEqual(["pause"]);
+    expect(after?.sequence).toBe((before?.sequence ?? 0) + 1);
+    expect(after?.playback.status).toBe("paused");
+    view.unmount();
+    return;
+  }
   expect(escapedPlaybackCommands).toEqual([]);
   expect(authoritativeEvents).toEqual([]);
   expect(screen.getByLabelText("Local buffering")).toBeInTheDocument();
