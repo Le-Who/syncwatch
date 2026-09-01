@@ -168,6 +168,44 @@ describe("PlaybackHealthController", () => {
     expect(telemetry.mock.calls).toEqual([["buffering"], ["buffering"]]);
   });
 
+  it("force-resyncs successful health once per connection generation", () => {
+    const telemetry = vi.fn(() => true);
+    const controller = new PlaybackHealthController({
+      emitTelemetry: telemetry,
+    });
+    controller.set("ready");
+    vi.advanceTimersByTime(100);
+
+    controller.resyncCurrent(1);
+    controller.resyncCurrent(1);
+    expect(telemetry).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(900);
+    expect(telemetry.mock.calls).toEqual([["ready"], ["ready"]]);
+
+    controller.resyncCurrent(2);
+    controller.resyncCurrent(2);
+    vi.advanceTimersByTime(1_000);
+    expect(telemetry).toHaveBeenCalledTimes(3);
+  });
+
+  it("force-resync sends the latest offline transition and disposal cancels it", () => {
+    let connected = false;
+    const telemetry = vi.fn(() => connected);
+    const controller = new PlaybackHealthController({
+      emitTelemetry: telemetry,
+    });
+    controller.set("buffering");
+    controller.set("ready");
+    connected = true;
+    controller.resyncCurrent(1);
+    controller.resyncCurrent(1);
+    controller.dispose();
+    vi.advanceTimersByTime(5_000);
+
+    expect(telemetry.mock.calls).toEqual([["buffering"], ["ready"], ["ready"]]);
+  });
+
   it("keeps stalled provider callbacks ineligible until reconciliation completes", () => {
     const controller = new PlaybackHealthController();
     controller.set("buffering");
@@ -182,6 +220,22 @@ describe("PlaybackHealthController", () => {
 });
 
 describe("PlaybackCoordinator", () => {
+  it("requires a freshly delivered reconnect frame and accepts equal sequence only once", () => {
+    const coordinator = new PlaybackCoordinator();
+    coordinator.beginMediaEpoch("media-a");
+    expect(coordinator.acceptCanonical(canonical(), 1)).toBe(true);
+
+    coordinator.beginConnectionEpoch(1);
+    expect(coordinator.acceptCanonical(canonical(), 1)).toBe(false);
+    expect(coordinator.awaitingConnectionFrame()).toBe(true);
+    expect(coordinator.acceptCanonical(canonical({ sequence: 11 }), 2)).toBe(
+      false,
+    );
+    expect(coordinator.awaitingConnectionFrame()).toBe(true);
+    expect(coordinator.acceptCanonical(canonical(), 2)).toBe(true);
+    expect(coordinator.awaitingConnectionFrame()).toBe(false);
+    expect(coordinator.acceptCanonical(canonical(), 2)).toBe(false);
+  });
   it("hard-seeks to current canonical time after a long local stall", () => {
     const coordinator = new PlaybackCoordinator();
     coordinator.beginMediaEpoch("media-a");

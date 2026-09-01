@@ -38,6 +38,7 @@ export class PlaybackHealthController {
   private lastSuccessfulHealth: PlaybackHealth | null = null;
   private recovery: PlaybackRecoveryMode = "none";
   private awaitingReconciliation = false;
+  private lastResyncGeneration: number | null = null;
   private readonly now: () => number;
   private readonly emitTelemetry?: (health: PlaybackHealth) => boolean;
   private readonly onHealthChange?: (health: PlaybackHealth) => void;
@@ -69,6 +70,10 @@ export class PlaybackHealthController {
     );
   }
 
+  needsReconciliation(): boolean {
+    return this.awaitingReconciliation;
+  }
+
   resendCurrent(): void {
     if (
       this.pendingTelemetry === null &&
@@ -77,6 +82,12 @@ export class PlaybackHealthController {
       return;
     }
     this.queueTelemetry(this.health);
+  }
+
+  resyncCurrent(connectionGeneration: number): void {
+    if (connectionGeneration === this.lastResyncGeneration) return;
+    this.lastResyncGeneration = connectionGeneration;
+    this.queueTelemetry(this.health, true);
   }
 
   beginMedia(mediaId: string | null): void {
@@ -125,9 +136,11 @@ export class PlaybackHealthController {
     return true;
   }
 
-  private queueTelemetry(health: PlaybackHealth): void {
+  private queueTelemetry(health: PlaybackHealth, force = false): void {
     if (!this.emitTelemetry) return;
+    if (force) this.pendingTelemetry = health;
     if (
+      !force &&
       this.pendingTelemetry === null &&
       this.lastSuccessfulHealth === health
     ) {
@@ -230,17 +243,35 @@ export class PlaybackCoordinator {
   private mediaId: string | null = null;
   private lastSequence = -1;
   private canonical: CanonicalPlayback | null = null;
+  private connectionDeliveryFloor: number | null = null;
 
   beginMediaEpoch(mediaId: string | null): boolean {
     if (this.mediaId === mediaId) return false;
     this.mediaId = mediaId;
     this.lastSequence = -1;
     this.canonical = null;
+    this.connectionDeliveryFloor = null;
     return true;
   }
 
-  acceptCanonical(playback: CanonicalPlayback): boolean {
+  beginConnectionEpoch(deliveryVersion: number): void {
+    this.connectionDeliveryFloor = deliveryVersion;
+  }
+
+  awaitingConnectionFrame(): boolean {
+    return this.connectionDeliveryFloor !== null;
+  }
+
+  acceptCanonical(playback: CanonicalPlayback, deliveryVersion = 0): boolean {
     if (playback.mediaItemId !== this.mediaId) return false;
+    if (this.connectionDeliveryFloor !== null) {
+      if (deliveryVersion <= this.connectionDeliveryFloor) return false;
+      if (playback.sequence < this.lastSequence) return false;
+      this.connectionDeliveryFloor = null;
+      this.lastSequence = playback.sequence;
+      this.canonical = { ...playback };
+      return true;
+    }
     if (playback.sequence <= this.lastSequence) return false;
     this.lastSequence = playback.sequence;
     this.canonical = { ...playback };

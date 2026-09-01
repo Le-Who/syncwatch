@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import type { RoomEvent } from "./room-events";
 import type { PlaybackHealth, RoomState } from "./types";
 import type { CommandAcknowledgement } from "./room-command-contract";
+import { reduceCanonicalRoomEvent } from "./room-event-reducer";
 
 interface LocalSettingsState {
   volume: number;
@@ -39,6 +40,7 @@ interface AppState {
   sessionToken: string | null;
   nickname: string;
   commandSequence: number;
+  canonicalDeliveryVersion: number;
   clockSyncReady: boolean;
   occRollbackTick: number;
   isResyncing: boolean;
@@ -116,11 +118,19 @@ function handleRoomEvent(event: RoomEvent) {
       if (!state.clockSyncReady) {
         newOffset = event.serverTime - Date.now();
       }
+      const reduced = reduceCanonicalRoomEvent(
+        {
+          room: state.room ?? event.room,
+          deliveryVersion: state.canonicalDeliveryVersion,
+        },
+        event,
+      );
       useStore.setState({
-        room: event.room,
+        room: reduced.room,
         serverClockOffset: newOffset,
         commandSequence: event.room.sequence,
         clockSyncReady: true,
+        canonicalDeliveryVersion: reduced.deliveryVersion,
       });
       return;
     }
@@ -133,21 +143,16 @@ function handleRoomEvent(event: RoomEvent) {
       ) {
         return;
       }
-      useStore.setState({
-        room: {
-          ...state.room,
-          sequence: playback.sequence,
-          playback: {
-            status: playback.status,
-            basePosition: playback.basePosition,
-            baseTimestamp: playback.baseTimestamp,
-            rate: playback.rate,
-            updatedBy: playback.updatedBy,
-            ...(playback.lastActionNonce
-              ? { lastActionNonce: playback.lastActionNonce }
-              : {}),
-          },
+      const reduced = reduceCanonicalRoomEvent(
+        {
+          room: state.room,
+          deliveryVersion: state.canonicalDeliveryVersion,
         },
+        event,
+      );
+      useStore.setState({
+        room: reduced.room,
+        canonicalDeliveryVersion: reduced.deliveryVersion,
       });
       return;
     }
@@ -286,6 +291,7 @@ export const useStore = create<AppState>((set, get) => ({
   sessionToken: null,
   nickname: "",
   commandSequence: 1,
+  canonicalDeliveryVersion: 0,
   clockSyncReady: false,
   occRollbackTick: 0,
   isResyncing: false,

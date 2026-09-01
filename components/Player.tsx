@@ -70,6 +70,7 @@ export default function Player() {
   const room = useStore((s) => s.room);
   const serverClockOffset = useStore((s) => s.serverClockOffset);
   const isConnected = useStore((s) => s.isConnected);
+  const canonicalDeliveryVersion = useStore((s) => s.canonicalDeliveryVersion);
   const currentMediaId = useStore((s) => s.room?.currentMediaId);
   const occRollbackTick = useStore((s) => s.occRollbackTick);
   const autoplayNext = useStore((s) => s.room?.settings.autoplayNext);
@@ -193,12 +194,16 @@ export default function Player() {
   );
 
   const previousConnectionRef = useRef(isConnected);
+  const connectionGenerationRef = useRef(0);
   useEffect(() => {
     if (previousConnectionRef.current === isConnected) return;
     previousConnectionRef.current = isConnected;
     setIsReconnecting(true);
     if (!isConnected) healthController.markReconnecting();
-    else healthController.resendCurrent();
+    else {
+      connectionGenerationRef.current += 1;
+      healthController.resyncCurrent(connectionGenerationRef.current);
+    }
     setProviderEventEpoch(intentManager.advanceProviderEventEpoch());
   }, [healthController, intentManager, isConnected]);
 
@@ -359,17 +364,20 @@ export default function Player() {
         seek: "playing",
         sync_correction: "playing",
       };
+      const completion = COMMANDS_WITH_COMPACT_PLAYBACK_UPDATE.has(type)
+        ? "playback_update"
+        : "command_ack";
       intentManager.markCommandEmitted(
         statusMap[type] || type,
         payload?.position,
         nonce,
-        COMMANDS_WITH_COMPACT_PLAYBACK_UPDATE.has(type)
-          ? "playback_update"
-          : "command_ack",
-        {
-          sequence: useStore.getState().room?.sequence ?? -1,
-          mediaId: useStore.getState().room?.currentMediaId ?? null,
-        },
+        completion,
+        completion === "playback_update"
+          ? {
+              sequence: useStore.getState().room?.sequence ?? -1,
+              mediaId: useStore.getState().room?.currentMediaId ?? null,
+            }
+          : null,
       );
       sendCommand(type, { ...payload, nonce });
     },
@@ -390,6 +398,7 @@ export default function Player() {
     performProgrammaticSeek,
     getCurrentMedia: () => currentMedia,
     getDuration: () => duration,
+    getCanonicalDeliveryVersion: () => canonicalDeliveryVersion,
     onReconciled: () => setIsReconnecting(false),
   });
 

@@ -80,7 +80,7 @@ export class PlaybackIntentManager {
     this._pendingNonce = nonce;
     this._pendingNonceTimestamp = Date.now();
     this._pendingCompletion = completion;
-    this._pendingBaseline = baseline;
+    this._pendingBaseline = completion === "playback_update" ? baseline : null;
     this.lastStateEmitted = {
       status,
       position,
@@ -250,10 +250,16 @@ export class PlaybackIntentManager {
   ): boolean {
     if (!this.isAwaitingServerAck() || !this._pendingBaseline) return false;
     if (nonce && nonce === this._pendingNonce) return false;
-    return (
-      mediaId === this._pendingBaseline.mediaId &&
-      sequence <= this._pendingBaseline.sequence
-    );
+    const sameMedia = mediaId === this._pendingBaseline.mediaId;
+    if (sameMedia && sequence <= this._pendingBaseline.sequence) return true;
+
+    this._pendingNonce = null;
+    this._pendingCompletion = "playback_update";
+    this._pendingBaseline = null;
+    this.lastCommandEmitTime = Number.NEGATIVE_INFINITY;
+    this.lastStateEmitted = null;
+    this.ignoreEventsFor(500);
+    return false;
   }
 
   public isRecentCommand(thresholdMs: number = 2000): boolean {

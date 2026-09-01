@@ -358,6 +358,52 @@ describe("PlaybackIntentManager", () => {
         false,
       );
     });
+
+    it("atomically clears obsolete optimistic play when newer unrelated authority wins", () => {
+      manager.markCommandEmitted("playing", 10, "mine", "playback_update", {
+        sequence: 12,
+        mediaId: "media-a",
+      });
+
+      expect(manager.shouldDeferCanonicalFrame(13, "media-a", "other")).toBe(
+        false,
+      );
+      expect(manager.isAwaitingServerAck()).toBe(false);
+      expect(manager.getExpectedStatus("paused")).toBe("paused");
+      expect(manager.lastStateEmittedRef).toBeNull();
+    });
+
+    it("clears obsolete intent on media epoch change but leaves exact completion intact", () => {
+      manager.markCommandEmitted("playing", 10, "mine", "playback_update", {
+        sequence: 12,
+        mediaId: "media-a",
+      });
+      expect(manager.shouldDeferCanonicalFrame(12, "media-b")).toBe(false);
+      expect(manager.isAwaitingServerAck()).toBe(false);
+
+      manager.markCommandEmitted("playing", 10, "exact", "playback_update", {
+        sequence: 12,
+        mediaId: "media-b",
+      });
+      expect(manager.shouldDeferCanonicalFrame(13, "media-b", "exact")).toBe(
+        false,
+      );
+      expect(manager.isAwaitingServerAck()).toBe(true);
+      manager.acknowledgeServerNonce("exact");
+      expect(manager.isAwaitingServerAck()).toBe(false);
+    });
+
+    it("never gives slow command acknowledgements a playback baseline", () => {
+      manager.markCommandEmitted(
+        "video_ended",
+        undefined,
+        "slow",
+        "command_ack",
+        { sequence: 12, mediaId: "media-a" },
+      );
+
+      expect(manager.shouldDeferCanonicalFrame(12, "media-a")).toBe(false);
+    });
     it.each([
       ["play", "playing", "paused"],
       ["pause", "paused", "playing"],

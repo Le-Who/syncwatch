@@ -22,6 +22,7 @@ type PlaybackSyncProps = {
   performProgrammaticSeek: (position: number, force?: boolean) => void;
   getCurrentMedia: () => { provider?: string } | undefined;
   getDuration: () => number;
+  getCanonicalDeliveryVersion?: () => number;
   onReconciled?: () => void;
 };
 
@@ -32,6 +33,7 @@ export function usePlaybackSync(props: PlaybackSyncProps) {
   const isAdjustingRateRef = useRef(false);
   const coordinatorRef = useRef(new PlaybackCoordinator());
   const propsRef = useRef(props);
+  const wasConnectedRef = useRef(props.getIsConnected());
 
   useEffect(() => {
     propsRef.current = props;
@@ -49,6 +51,8 @@ export function usePlaybackSync(props: PlaybackSyncProps) {
       const playback = room?.playback;
       const mediaId = room?.currentMediaId ?? null;
       const coordinator = coordinatorRef.current;
+      const connected = current.getIsConnected();
+      const deliveryVersion = current.getCanonicalDeliveryVersion?.() ?? 0;
 
       coordinator.beginMediaEpoch(mediaId);
       if (!room || !playback || !mediaId) {
@@ -56,6 +60,18 @@ export function usePlaybackSync(props: PlaybackSyncProps) {
         schedule(syncPlayback, 300);
         return;
       }
+
+      if (!connected) {
+        if (wasConnectedRef.current) {
+          coordinator.beginConnectionEpoch(deliveryVersion);
+        }
+        wasConnectedRef.current = false;
+        current.healthController.markReconnecting();
+        isAdjustingRateRef.current = false;
+        schedule(syncPlayback, 300);
+        return;
+      }
+      wasConnectedRef.current = true;
 
       const canonicalFrame = {
         mediaItemId: mediaId,
@@ -80,18 +96,16 @@ export function usePlaybackSync(props: PlaybackSyncProps) {
         schedule(syncPlayback, 300);
         return;
       }
-      coordinator.acceptCanonical(canonicalFrame);
+      coordinator.acceptCanonical(canonicalFrame, deliveryVersion);
+
+      if (coordinator.awaitingConnectionFrame()) {
+        schedule(syncPlayback, 300);
+        return;
+      }
 
       // Task 4's exact event/ACK path remains authoritative. Polling is only an
       // idempotent safety net and never blocks newer canonical reconciliation.
       current.intentManager.acknowledgeServerNonce(playback.lastActionNonce);
-
-      if (!current.getIsConnected()) {
-        current.healthController.markReconnecting();
-        isAdjustingRateRef.current = false;
-        schedule(syncPlayback, 300);
-        return;
-      }
 
       const media = current.getCurrentMedia();
       const decision = coordinator.reconcile({
@@ -143,8 +157,9 @@ export function usePlaybackSync(props: PlaybackSyncProps) {
       }
       setPlaybackRate(decision.playbackRate);
       isAdjustingRateRef.current = decision.isAdjusting;
+      const completedRecovery = current.healthController.needsReconciliation();
       current.healthController.completeRecovery();
-      current.onReconciled?.();
+      if (completedRecovery) current.onReconciled?.();
 
       let nextIntervalMs = 500;
       if (decision.drift > 0.5) nextIntervalMs = 250;

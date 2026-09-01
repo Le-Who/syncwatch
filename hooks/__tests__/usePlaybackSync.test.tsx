@@ -215,4 +215,136 @@ describe("usePlaybackSync", () => {
     healthController.dispose();
     intentManager.dispose();
   });
+
+  it("does not let a lost slow acknowledgement suppress same-sequence canonical pause", async () => {
+    const room = roomWithParticipants(3);
+    room.currentMediaId = "media-a";
+    room.playlist = [
+      {
+        id: "media-a",
+        url: "https://example.com/a.mp4",
+        provider: "raw",
+        title: "A",
+        duration: 120,
+        addedBy: "p0",
+      },
+    ];
+    room.sequence = 12;
+    room.playback = {
+      status: "paused",
+      basePosition: 10,
+      baseTimestamp: 10_000,
+      rate: 1,
+      updatedBy: "p0",
+    };
+    useStore.setState({
+      room,
+      serverClockOffset: 0,
+      isConnected: true,
+      canonicalDeliveryVersion: 1,
+    } as never);
+    const intentManager = new PlaybackIntentManager();
+    intentManager.markCommandEmitted(
+      "video_ended",
+      undefined,
+      "slow",
+      "command_ack",
+      { sequence: 12, mediaId: "media-a" },
+    );
+    const healthController = new PlaybackHealthController();
+    healthController.set("ready");
+    const setPlaying = vi.fn();
+    const view = renderHook(() =>
+      usePlaybackSync({
+        realPlayerRef: { current: null },
+        playerRef: { current: null },
+        getAccurateTime: () => 10,
+        getPlaying: () => true,
+        setPlaying,
+        getIsReady: () => true,
+        getSeeking: () => false,
+        getIsConnected: () => true,
+        getCanonicalDeliveryVersion: () => 1,
+        intentManager,
+        healthController,
+        performProgrammaticSeek: vi.fn(),
+        getCurrentMedia: () => ({ provider: "raw" }),
+        getDuration: () => 120,
+      }),
+    );
+    await act(() => vi.advanceTimersByTimeAsync(500));
+    expect(setPlaying).toHaveBeenCalledWith(false);
+    view.unmount();
+    healthController.dispose();
+    intentManager.dispose();
+  });
+
+  it("keeps reconnecting until a newly delivered same-sequence frame is accepted", async () => {
+    const room = roomWithParticipants(3);
+    room.currentMediaId = "media-a";
+    room.playlist = [
+      {
+        id: "media-a",
+        url: "https://example.com/a.mp4",
+        provider: "raw",
+        title: "A",
+        duration: 120,
+        addedBy: "p0",
+      },
+    ];
+    room.sequence = 12;
+    room.playback = {
+      status: "playing",
+      basePosition: 10,
+      baseTimestamp: 10_000,
+      rate: 1,
+      updatedBy: "p0",
+    };
+    useStore.setState({
+      room,
+      serverClockOffset: 0,
+      isConnected: true,
+      canonicalDeliveryVersion: 1,
+    } as never);
+    let connected = true;
+    let delivery = 1;
+    const onReconciled = vi.fn();
+    const healthController = new PlaybackHealthController();
+    healthController.set("ready");
+    const intentManager = new PlaybackIntentManager();
+    const view = renderHook(() =>
+      usePlaybackSync({
+        realPlayerRef: { current: null },
+        playerRef: { current: null },
+        getAccurateTime: () => 18,
+        getPlaying: () => true,
+        setPlaying: vi.fn(),
+        getIsReady: () => true,
+        getSeeking: () => false,
+        getIsConnected: () => connected,
+        getCanonicalDeliveryVersion: () => delivery,
+        intentManager,
+        healthController,
+        performProgrammaticSeek: vi.fn(),
+        getCurrentMedia: () => ({ provider: "raw" }),
+        getDuration: () => 120,
+        onReconciled,
+      }),
+    );
+    await act(() => vi.advanceTimersByTimeAsync(500));
+    onReconciled.mockClear();
+
+    connected = false;
+    await act(() => vi.advanceTimersByTimeAsync(2_000));
+    connected = true;
+    await act(() => vi.advanceTimersByTimeAsync(300));
+    expect(onReconciled).not.toHaveBeenCalled();
+
+    delivery = 2;
+    await act(() => vi.advanceTimersByTimeAsync(300));
+    expect(onReconciled).toHaveBeenCalledOnce();
+    view.unmount();
+    healthController.dispose();
+    intentManager.dispose();
+  });
 });
