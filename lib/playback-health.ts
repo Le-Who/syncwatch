@@ -250,7 +250,6 @@ export class PlaybackCoordinator {
     this.mediaId = mediaId;
     this.lastSequence = -1;
     this.canonical = null;
-    this.connectionDeliveryFloor = null;
     return true;
   }
 

@@ -11,6 +11,7 @@ import {
   PlayerTestHarness,
   type PlayerEventHandlers,
 } from "./player-test-harness";
+import { roomSocketService } from "@/lib/socket";
 
 const providerCallbacks = vi.hoisted(
   () => new Map<string, Record<string, (...args: any[]) => void>>(),
@@ -84,6 +85,9 @@ import { useStore, useSettingsStore } from "@/lib/store";
 let currentStoreState: any;
 
 function mockStoreState(state: any) {
+  state.connectionEpoch ??= 0;
+  state.connectionDeliveryFloor ??= 0;
+  state.canonicalDeliveryVersion ??= 0;
   currentStoreState = state;
   (useStore as any).mockImplementation((selector: any) =>
     selector ? selector(currentStoreState) : currentStoreState,
@@ -624,6 +628,7 @@ describe("Player Component", () => {
       serverClockOffset: 0,
       occRollbackTick: 0,
       isConnected: true,
+      connectionEpoch: 0,
     };
     mockStoreState(state);
     const view = render(<Player />);
@@ -631,6 +636,7 @@ describe("Player Component", () => {
       "https://www.youtube.com/watch?v=aaaaaaaaaaa",
     )?.onWaiting;
 
+    state.connectionEpoch += 1;
     state.isConnected = false;
     view.rerender(<Player />);
     state.isConnected = true;
@@ -638,6 +644,52 @@ describe("Player Component", () => {
     act(() => staleWaiting?.());
 
     expect(screen.queryByText("Local buffering")).not.toBeInTheDocument();
+  });
+
+  it("mounts into reconnect recovery when transport returned before a fresh room delivery", () => {
+    const healthSend = vi
+      .spyOn(roomSocketService, "sendParticipantHealth")
+      .mockReturnValue(true);
+    mockStoreState({
+      room: {
+        currentMediaId: "media-a",
+        sequence: 12,
+        leaderId: null,
+        playlist: [
+          {
+            id: "media-a",
+            url: "https://example.com/a.mp4",
+            provider: "raw",
+            title: "A",
+            duration: 120,
+          },
+        ],
+        settings: { autoplayNext: true, looping: false },
+        playback: {
+          status: "playing",
+          basePosition: 20,
+          baseTimestamp: Date.now(),
+          rate: 1,
+          updatedBy: "user1",
+        },
+        participants: { user1: { id: "user1", role: "owner" } },
+      },
+      participantId: "user1",
+      sendCommand: mockSendCommand,
+      serverClockOffset: 0,
+      occRollbackTick: 0,
+      isConnected: true,
+      connectionEpoch: 3,
+      connectionDeliveryFloor: 7,
+      canonicalDeliveryVersion: 7,
+    });
+
+    render(<Player />);
+
+    expect(screen.getByRole("status")).toHaveAccessibleName(/reconnecting/i);
+    expect(healthSend).toHaveBeenCalledOnce();
+    expect(healthSend).toHaveBeenCalledWith("idle");
+    healthSend.mockRestore();
   });
 
   it("removes the exact provider recovery timer on unmount", () => {

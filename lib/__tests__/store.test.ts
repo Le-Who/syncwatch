@@ -126,6 +126,8 @@ describe("useStore", () => {
         room: null,
         serverClockOffset: 0,
         isConnected: false,
+        connectionEpoch: 0,
+        connectionDeliveryFloor: 0,
         participantId: null,
         sessionToken: null,
         nickname: "",
@@ -155,6 +157,52 @@ describe("useStore", () => {
 
     expect(result.current.nickname).toBe("TestUser");
     expect(result.current.participantId).toBe("1234");
+  });
+
+  it("increments the transport epoch once per connected-to-disconnected transition", () => {
+    const { result } = renderHook(() => useStore());
+    const room = roomWithParticipants(3);
+    localStorage.setItem("sessionToken", "token");
+    act(() => {
+      useStore.setState({
+        room,
+        participantId: "p0",
+        sessionToken: "token",
+        commandSequence: room.sequence,
+        canonicalDeliveryVersion: 7,
+        isConnected: true,
+        connectionEpoch: 4,
+      });
+      result.current.init();
+    });
+    const onDisconnected = vi
+      .mocked(roomSocketService.on)
+      .mock.calls.find(([event]) => event === "disconnected")?.[1];
+    const onConnected = vi
+      .mocked(roomSocketService.on)
+      .mock.calls.find(([event]) => event === "connected")?.[1];
+
+    expect(onDisconnected).toEqual(expect.any(Function));
+    expect(onConnected).toEqual(expect.any(Function));
+    act(() => {
+      onDisconnected?.();
+      onDisconnected?.();
+    });
+    expect(result.current.isConnected).toBe(false);
+    expect(result.current.connectionEpoch).toBe(5);
+    expect(result.current.connectionDeliveryFloor).toBe(7);
+
+    act(() => {
+      onConnected?.();
+      onConnected?.();
+    });
+    expect(result.current.isConnected).toBe(true);
+    expect(result.current.connectionEpoch).toBe(5);
+    expect(roomSocketService.joinRoom).toHaveBeenCalledOnce();
+    expect(roomSocketService.upgradeSession).toHaveBeenCalledOnce();
+
+    act(() => onDisconnected?.());
+    expect(result.current.connectionEpoch).toBe(6);
   });
 
   it("reduces participant lifecycle events through one exhaustive room listener", () => {

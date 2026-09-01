@@ -70,6 +70,8 @@ export default function Player() {
   const room = useStore((s) => s.room);
   const serverClockOffset = useStore((s) => s.serverClockOffset);
   const isConnected = useStore((s) => s.isConnected);
+  const connectionEpoch = useStore((s) => s.connectionEpoch);
+  const connectionDeliveryFloor = useStore((s) => s.connectionDeliveryFloor);
   const canonicalDeliveryVersion = useStore((s) => s.canonicalDeliveryVersion);
   const currentMediaId = useStore((s) => s.room?.currentMediaId);
   const occRollbackTick = useStore((s) => s.occRollbackTick);
@@ -170,7 +172,11 @@ export default function Player() {
 
   const [intentManager] = useState(() => new PlaybackIntentManager());
   const [providerEventEpoch, setProviderEventEpoch] = useState(0);
-  const [isReconnecting, setIsReconnecting] = useState(!isConnected);
+  const mountsAwaitingFreshDelivery =
+    connectionEpoch > 0 && canonicalDeliveryVersion <= connectionDeliveryFloor;
+  const [isReconnecting, setIsReconnecting] = useState(
+    !isConnected || mountsAwaitingFreshDelivery,
+  );
   const [healthController] = useState(
     () =>
       new PlaybackHealthController({
@@ -193,19 +199,26 @@ export default function Player() {
     [healthController, intentManager],
   );
 
-  const previousConnectionRef = useRef(isConnected);
-  const connectionGenerationRef = useRef(0);
+  const observedConnectionEpochRef = useRef(
+    mountsAwaitingFreshDelivery ? connectionEpoch - 1 : connectionEpoch,
+  );
+  const resyncedConnectionEpochRef = useRef<number | null>(
+    isConnected && !mountsAwaitingFreshDelivery ? connectionEpoch : null,
+  );
   useEffect(() => {
-    if (previousConnectionRef.current === isConnected) return;
-    previousConnectionRef.current = isConnected;
-    setIsReconnecting(true);
-    if (!isConnected) healthController.markReconnecting();
-    else {
-      connectionGenerationRef.current += 1;
-      healthController.resyncCurrent(connectionGenerationRef.current);
+    const epochChanged = observedConnectionEpochRef.current !== connectionEpoch;
+    if (epochChanged) {
+      observedConnectionEpochRef.current = connectionEpoch;
+      setIsReconnecting(true);
+      healthController.markReconnecting();
+      setProviderEventEpoch(intentManager.advanceProviderEventEpoch());
     }
-    setProviderEventEpoch(intentManager.advanceProviderEventEpoch());
-  }, [healthController, intentManager, isConnected]);
+
+    if (isConnected && resyncedConnectionEpochRef.current !== connectionEpoch) {
+      resyncedConnectionEpochRef.current = connectionEpoch;
+      healthController.resyncCurrent(connectionEpoch);
+    }
+  }, [connectionEpoch, healthController, intentManager, isConnected]);
 
   const isDocumentVisibleRef = useRef(true);
   useEffect(() => {
@@ -393,12 +406,15 @@ export default function Player() {
     getIsReady: () => isReady,
     getSeeking: () => seeking,
     getIsConnected: () => isConnected,
+    getConnectionEpoch: () => connectionEpoch,
+    getConnectionDeliveryFloor: () => connectionDeliveryFloor,
     intentManager,
     healthController,
     performProgrammaticSeek,
     getCurrentMedia: () => currentMedia,
     getDuration: () => duration,
     getCanonicalDeliveryVersion: () => canonicalDeliveryVersion,
+    onReconnecting: () => setIsReconnecting(true),
     onReconciled: () => setIsReconnecting(false),
   });
 

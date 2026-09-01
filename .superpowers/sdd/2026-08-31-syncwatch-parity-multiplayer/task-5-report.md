@@ -183,3 +183,47 @@ For every provider it drives both `waiting → pause/seek/ended` and `pause sche
 - Task 3 lifecycle and server connection ownership are unchanged. The delivery counter is local client metadata and does not enter room state, persistence, authorization, or Redis ordering.
 - Equal-sequence reconnect hydration is limited to a strictly newer local delivery version inside an explicit connection epoch; ordinary compact duplicate rejection remains monotonic.
 - Legacy buffering compatibility paths remain canonical no-ops in both Redis and no-Redis repositories.
+
+## Review Fix Round 3
+
+Status: DONE
+
+### Verified RED findings
+
+- The authoritative provider test originally invoked native pause only 500 ms after readiness. Its new eligible-pause control failed for Twitch and HTML5 (`[]` instead of `['pause']`), proving those cases were returning through Player's initialization/native guard rather than arming the 150 ms debounce.
+- The healthy peers were previously handed `currentPosition: 25`, so their claimed advancement was an input assumption rather than an observed player action.
+- The store's first duplicate disconnect test left transport generation at 4 instead of the expected 5, and the sub-interval sync test observed zero reconnect callbacks after a false-to-true pulse. Polling `isConnected` could not see a disconnect that completed between sync intervals.
+- A strengthened pulse then exposed that a pre-disconnect delivery arriving between sync ticks could be mistaken for reconnect evidence. The store had to capture the exact delivery floor synchronously with the disconnect epoch rather than infer it from the hook's last poll.
+- Once generation tracking was added, the duplicate-connect control initially called `joinRoom` twice, exposing a reconnect-notification flood until the connected handler was made idempotent.
+- Review of the strengthened harness found that its sequence-changing control reset left a cached provider callback behind. The callback failed the production sequence guard before reaching pause/waiting behavior; an explicit local-buffering/player-state assertion reproduced the false positive.
+- A media switch between sync ticks initially cleared the just-opened connection delivery floor because the coordinator reset media state after starting the connection epoch. Mounting a Player after the pulse also initialized its refs at the current epoch and incorrectly showed `Synced`, skipped health resend, and accepted the stale snapshot.
+
+### Implemented fixes
+
+- The degraded multiplayer harness now supplies a realistic provider clock and waits 3.1 seconds after metadata, beyond Player's 1.5-second initialization/native guard and Twitch's 2.5-second phantom-pause guard. For YouTube, Twitch, and HTML5, an eligible native pause is first proven to emit through the real `RoomCommandService` after 150 ms; the room is then authoritatively reset before the `pause -> waiting -> timer` chain proves zero escaped commands, events, or sequence/status changes.
+- After the authoritative reset, the harness waits out Task 4's post-ack cooldown and reacquires the current-sequence provider callbacks. It asserts the pause really changed the provider's `playing` prop before waiting and that local buffering presentation appeared, closing both early-return false positives.
+- Healthy B and C are separate `usePlaybackSync` consumers with independent local player state. Both begin at position 20, consume the shared production canonical store, and observably perform a hard seek to position 25 while stalled A remains participant-local.
+- `AppState.connectionEpoch` now increments synchronously and exactly once for each connected-to-disconnected socket transition, alongside the exact `connectionDeliveryFloor` from that moment. Duplicate disconnects are ignored, and duplicate connected notifications no longer rejoin or re-upgrade the room.
+- Player provider epochs, reconnect presentation, and force health resend are keyed to the store epoch. A batched disconnect/reconnect therefore invalidates retained provider callbacks and force-resends current health once even if React never renders the intermediate disconnected state.
+- `usePlaybackSync` detects connection-epoch changes independently of connectivity polling. It opens the coordinator's fresh-delivery gate at the store-captured disconnect floor, so a fresh frame that arrived after the pulse can be accepted while both the old in-memory snapshot and a pre-disconnect frame unseen by the sleeping sync interval remain ineligible.
+- Media and connection epochs are now orthogonal: switching media clears media canonical state without clearing an unresolved reconnect delivery floor, and the hook establishes the media epoch before applying the transport floor. A pre-drop media change cannot masquerade as a post-reconnect frame.
+- Player and `usePlaybackSync` initialize directly into recovery when mounted after transport has returned but `canonicalDeliveryVersion` has not passed `connectionDeliveryFloor`. The badge starts as `Reconnecting`, current health is force-resend once, retained native callbacks are invalidated, and reconciliation still waits for a fresh delivery.
+- The real store/socket integration pulse covers duplicate disconnect/connect notifications, one health resend, a rejected older room snapshot, an accepted freshly delivered equal-sequence `room_state`, the accessible `Reconnecting` badge, and exactly-once reconciliation completion.
+
+### Verification
+
+- Strengthened authoritative multiplayer integration: 1 file, 7 tests passed across YouTube, Twitch, and HTML5.
+- Final focused Player/sync/store/health/intent/integration command: 6 files, 110 tests passed.
+- `pnpm test`: 44 files, 399 tests passed.
+- `pnpm lint`: exit 0.
+- `pnpm exec tsc --noEmit --pretty false`: exit 0, no diagnostics.
+- `pnpm build`: exit 0; Next production and server TypeScript builds completed with only the pre-existing Browserslist-age and npm configuration notices.
+- Scoped Prettier and `git diff --check`: exit 0.
+- Independent read-only re-review found no remaining Critical, Important, or Minor findings; its focused regression set passed 5 files / 73 tests, plus TypeScript and diff checks.
+
+### Boundaries and concerns
+
+- Task 4 exact nonce completion, pending-intent supersession, and compact-only baselines are unchanged. Connection generation is local transport metadata and never enters canonical ordering or authorization.
+- Task 3 socket ownership remains in `RoomSocketService`/the app store. The connected/disconnected handlers only deduplicate transport notifications; they do not introduce a second socket lifecycle.
+- Prior participant-local waiting/error guards, paused/ended stall handling, success-aware health coalescing, and Redis/no-Redis legacy buffering no-ops are preserved.
+- The test socket emits duplicate connect notifications deliberately; production Socket.IO normally emits one, but the store and health paths are now idempotent if a duplicate is observed.

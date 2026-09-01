@@ -17,12 +17,15 @@ type PlaybackSyncProps = {
   getIsReady: () => boolean;
   getSeeking: () => boolean;
   getIsConnected: () => boolean;
+  getConnectionEpoch?: () => number;
+  getConnectionDeliveryFloor?: () => number;
   intentManager: PlaybackIntentManager;
   healthController: PlaybackHealthController;
   performProgrammaticSeek: (position: number, force?: boolean) => void;
   getCurrentMedia: () => { provider?: string } | undefined;
   getDuration: () => number;
   getCanonicalDeliveryVersion?: () => number;
+  onReconnecting?: () => void;
   onReconciled?: () => void;
 };
 
@@ -34,6 +37,19 @@ export function usePlaybackSync(props: PlaybackSyncProps) {
   const coordinatorRef = useRef(new PlaybackCoordinator());
   const propsRef = useRef(props);
   const wasConnectedRef = useRef(props.getIsConnected());
+  const initialConnectionEpoch = props.getConnectionEpoch?.() ?? 0;
+  const initialDeliveryVersion = props.getCanonicalDeliveryVersion?.() ?? 0;
+  const initialConnectionFloor =
+    props.getConnectionDeliveryFloor?.() ?? Number.NEGATIVE_INFINITY;
+  const mountsAwaitingFreshDelivery =
+    initialConnectionEpoch > 0 &&
+    initialDeliveryVersion <= initialConnectionFloor;
+  const connectionEpochRef = useRef(
+    mountsAwaitingFreshDelivery
+      ? initialConnectionEpoch - 1
+      : initialConnectionEpoch,
+  );
+  const lastObservedDeliveryRef = useRef(initialDeliveryVersion);
 
   useEffect(() => {
     propsRef.current = props;
@@ -53,8 +69,22 @@ export function usePlaybackSync(props: PlaybackSyncProps) {
       const coordinator = coordinatorRef.current;
       const connected = current.getIsConnected();
       const deliveryVersion = current.getCanonicalDeliveryVersion?.() ?? 0;
+      const connectionEpoch = current.getConnectionEpoch?.() ?? 0;
+      let beganConnectionEpoch = false;
 
       coordinator.beginMediaEpoch(mediaId);
+      if (connectionEpoch !== connectionEpochRef.current) {
+        connectionEpochRef.current = connectionEpoch;
+        coordinator.beginConnectionEpoch(
+          current.getConnectionDeliveryFloor?.() ??
+            lastObservedDeliveryRef.current,
+        );
+        current.healthController.markReconnecting();
+        current.onReconnecting?.();
+        beganConnectionEpoch = true;
+      }
+      lastObservedDeliveryRef.current = deliveryVersion;
+
       if (!room || !playback || !mediaId) {
         driftRef.current = 0;
         schedule(syncPlayback, 300);
@@ -62,7 +92,7 @@ export function usePlaybackSync(props: PlaybackSyncProps) {
       }
 
       if (!connected) {
-        if (wasConnectedRef.current) {
+        if (wasConnectedRef.current && !beganConnectionEpoch) {
           coordinator.beginConnectionEpoch(deliveryVersion);
         }
         wasConnectedRef.current = false;

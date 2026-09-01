@@ -36,6 +36,10 @@ interface AppState {
   room: RoomState | null;
   serverClockOffset: number;
   isConnected: boolean;
+  /** Monotonic transport generation, advanced once when a live socket drops. */
+  connectionEpoch: number;
+  /** Canonical delivery version observed synchronously at the socket drop. */
+  connectionDeliveryFloor: number;
   participantId: string | null;
   sessionToken: string | null;
   nickname: string;
@@ -61,6 +65,7 @@ function assertNever(value: never): never {
 }
 
 function handleConnected() {
+  if (useStore.getState().isConnected) return;
   useStore.setState({ isConnected: true });
   const state = useStore.getState();
   if (state.room && state.participantId) {
@@ -80,7 +85,13 @@ function handleConnected() {
 }
 
 function handleDisconnected() {
-  useStore.setState({ isConnected: false });
+  const state = useStore.getState();
+  if (!state.isConnected) return;
+  useStore.setState({
+    isConnected: false,
+    connectionEpoch: state.connectionEpoch + 1,
+    connectionDeliveryFloor: state.canonicalDeliveryVersion,
+  });
 }
 
 function handleClockSync({ offset }: { offset: number }) {
@@ -287,6 +298,8 @@ export const useStore = create<AppState>((set, get) => ({
   room: null,
   serverClockOffset: 0,
   isConnected: false,
+  connectionEpoch: 0,
+  connectionDeliveryFloor: 0,
   participantId: null,
   sessionToken: null,
   nickname: "",

@@ -347,4 +347,180 @@ describe("usePlaybackSync", () => {
     healthController.dispose();
     intentManager.dispose();
   });
+
+  it("observes a transport epoch pulse even when no sync tick sees the disconnected state", async () => {
+    const room = roomWithParticipants(3);
+    room.currentMediaId = "media-a";
+    room.playlist = [
+      {
+        id: "media-a",
+        url: "https://example.com/a.mp4",
+        provider: "raw",
+        title: "A",
+        duration: 120,
+        addedBy: "p0",
+      },
+    ];
+    room.sequence = 12;
+    room.playback = {
+      status: "playing",
+      basePosition: 10,
+      baseTimestamp: 10_000,
+      rate: 1,
+      updatedBy: "p0",
+    };
+    useStore.setState({
+      room,
+      serverClockOffset: 0,
+      isConnected: true,
+      connectionEpoch: 0,
+      canonicalDeliveryVersion: 1,
+    });
+    const healthController = new PlaybackHealthController();
+    healthController.set("ready");
+    const intentManager = new PlaybackIntentManager();
+    const onReconnecting = vi.fn();
+    const onReconciled = vi.fn();
+    const view = renderHook(() =>
+      usePlaybackSync({
+        realPlayerRef: { current: null },
+        playerRef: { current: null },
+        getAccurateTime: () => 18,
+        getPlaying: () => true,
+        setPlaying: vi.fn(),
+        getIsReady: () => true,
+        getSeeking: () => false,
+        getIsConnected: () => useStore.getState().isConnected,
+        getConnectionEpoch: () => useStore.getState().connectionEpoch,
+        getConnectionDeliveryFloor: () =>
+          useStore.getState().connectionDeliveryFloor,
+        getCanonicalDeliveryVersion: () =>
+          useStore.getState().canonicalDeliveryVersion,
+        intentManager,
+        healthController,
+        performProgrammaticSeek: vi.fn(),
+        getCurrentMedia: () => ({ provider: "raw" }),
+        getDuration: () => 120,
+        onReconnecting,
+        onReconciled,
+      }),
+    );
+    await act(() => vi.advanceTimersByTimeAsync(500));
+    onReconciled.mockClear();
+
+    act(() => {
+      // This delivery happened before the socket dropped, but after the last
+      // sync tick. It must be part of the disconnect floor, not reconnect proof.
+      room.currentMediaId = "media-b";
+      room.playlist.push({
+        id: "media-b",
+        url: "https://example.com/b.mp4",
+        provider: "raw",
+        title: "B",
+        duration: 120,
+        addedBy: "p0",
+      });
+      room.sequence = 13;
+      room.playback = {
+        ...room.playback,
+        basePosition: 18,
+        baseTimestamp: 18_000,
+      };
+      useStore.setState({ room, canonicalDeliveryVersion: 2 });
+      useStore.setState({
+        isConnected: false,
+        connectionEpoch: 1,
+        connectionDeliveryFloor: 2,
+      });
+      useStore.setState({ isConnected: true });
+    });
+    await act(() => vi.advanceTimersByTimeAsync(2_000));
+    expect(onReconnecting).toHaveBeenCalledOnce();
+    expect(healthController.needsReconciliation()).toBe(true);
+    expect(onReconciled).not.toHaveBeenCalled();
+
+    act(() => useStore.setState({ canonicalDeliveryVersion: 3 }));
+    await act(() => vi.advanceTimersByTimeAsync(300));
+    expect(onReconciled).toHaveBeenCalledOnce();
+    expect(healthController.needsReconciliation()).toBe(false);
+
+    act(() => useStore.setState({ canonicalDeliveryVersion: 4 }));
+    await act(() => vi.advanceTimersByTimeAsync(500));
+    expect(onReconciled).toHaveBeenCalledOnce();
+    view.unmount();
+    healthController.dispose();
+    intentManager.dispose();
+  });
+
+  it("mounts with the reconnect gate open when transport returned before a fresh delivery", async () => {
+    const room = roomWithParticipants(3);
+    room.currentMediaId = "media-a";
+    room.playlist = [
+      {
+        id: "media-a",
+        url: "https://example.com/a.mp4",
+        provider: "raw",
+        title: "A",
+        duration: 120,
+        addedBy: "p0",
+      },
+    ];
+    room.sequence = 12;
+    room.playback = {
+      status: "playing",
+      basePosition: 10,
+      baseTimestamp: 10_000,
+      rate: 1,
+      updatedBy: "p0",
+    };
+    useStore.setState({
+      room,
+      serverClockOffset: 0,
+      isConnected: true,
+      connectionEpoch: 2,
+      connectionDeliveryFloor: 4,
+      canonicalDeliveryVersion: 4,
+    });
+    const healthController = new PlaybackHealthController();
+    healthController.set("ready");
+    const intentManager = new PlaybackIntentManager();
+    const onReconnecting = vi.fn();
+    const onReconciled = vi.fn();
+    const view = renderHook(() =>
+      usePlaybackSync({
+        realPlayerRef: { current: null },
+        playerRef: { current: null },
+        getAccurateTime: () => 18,
+        getPlaying: () => true,
+        setPlaying: vi.fn(),
+        getIsReady: () => true,
+        getSeeking: () => false,
+        getIsConnected: () => useStore.getState().isConnected,
+        getConnectionEpoch: () => useStore.getState().connectionEpoch,
+        getConnectionDeliveryFloor: () =>
+          useStore.getState().connectionDeliveryFloor,
+        getCanonicalDeliveryVersion: () =>
+          useStore.getState().canonicalDeliveryVersion,
+        intentManager,
+        healthController,
+        performProgrammaticSeek: vi.fn(),
+        getCurrentMedia: () => ({ provider: "raw" }),
+        getDuration: () => 120,
+        onReconnecting,
+        onReconciled,
+      }),
+    );
+
+    await act(() => vi.advanceTimersByTimeAsync(500));
+    expect(onReconnecting).toHaveBeenCalledOnce();
+    expect(onReconciled).not.toHaveBeenCalled();
+    expect(healthController.needsReconciliation()).toBe(true);
+
+    act(() => useStore.setState({ canonicalDeliveryVersion: 5 }));
+    await act(() => vi.advanceTimersByTimeAsync(300));
+    expect(onReconciled).toHaveBeenCalledOnce();
+    view.unmount();
+    healthController.dispose();
+    intentManager.dispose();
+  });
 });
