@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useStore } from "@/lib/store";
 import { PlaybackIntentManager } from "@/lib/playback-intent-manager";
 import { roomSocketService } from "@/lib/socket";
+import type { CommandAcknowledgement } from "@/lib/room-command-contract";
 import { usePlaybackIntentAcknowledgement } from "../usePlaybackIntentAcknowledgement";
 
 const socketDouble = vi.hoisted(() => {
@@ -52,14 +53,18 @@ const SLOW_NONCE = "00000000-0000-4000-8000-000000000201";
 const FAST_NONCE = "00000000-0000-4000-8000-000000000202";
 const OTHER_NONCE = "00000000-0000-4000-8000-000000000299";
 
-function deliverAcknowledgement(
-  acknowledgement: NonNullable<
-    ReturnType<typeof useStore.getState>["lastCommandAcknowledgement"]
-  >,
+function deliverAcknowledgements(
+  ...acknowledgements: CommandAcknowledgement[]
 ) {
   act(() => {
-    useStore.setState({ lastCommandAcknowledgement: acknowledgement });
+    for (const acknowledgement of acknowledgements) {
+      socketDouble.serverEmit("command_ack", acknowledgement);
+    }
   });
+}
+
+function deliverAcknowledgement(acknowledgement: CommandAcknowledgement) {
+  deliverAcknowledgements(acknowledgement);
 }
 
 function deliverPlaybackUpdate(nonce: string, status = "playing") {
@@ -89,6 +94,7 @@ describe("usePlaybackIntentAcknowledgement", () => {
     roomSocketService.connect("room-a", "Friend", "participant-1", null);
     manager = new PlaybackIntentManager();
     useStore.setState({ lastCommandAcknowledgement: null });
+    useStore.getState().init();
   });
 
   afterEach(() => {
@@ -142,6 +148,83 @@ describe("usePlaybackIntentAcknowledgement", () => {
     expect(manager.getExpectedStatus("paused")).toBe("paused");
   });
 
+  it.each([
+    [
+      "applied slow",
+      "video_ended",
+      "command_ack",
+      { nonce: SLOW_NONCE, status: "applied" },
+    ],
+    [
+      "ignored no-op",
+      "paused",
+      "playback_update",
+      { nonce: SLOW_NONCE, status: "ignored", code: "NO_CHANGE" },
+    ],
+    [
+      "rejected contention",
+      "playing",
+      "playback_update",
+      { nonce: SLOW_NONCE, status: "rejected", code: "CONTENTION" },
+    ],
+  ] as const)(
+    "does not lose exact %s ACK N when unrelated ACK M follows in one tick",
+    (_label, status, completion, acknowledgement) => {
+      renderHook(() => usePlaybackIntentAcknowledgement(manager));
+      manager.markCommandEmitted(status, 12, SLOW_NONCE, completion);
+
+      deliverAcknowledgements(acknowledgement, {
+        nonce: OTHER_NONCE,
+        status: "applied",
+      });
+
+      expect(manager.isAwaitingServerAck()).toBe(false);
+      expect(manager.getExpectedStatus("paused")).toBe("paused");
+      expect(useStore.getState().lastCommandAcknowledgement?.nonce).toBe(
+        OTHER_NONCE,
+      );
+    },
+  );
+
+  it("keeps an unrelated ACK pending until the exact ACK arrives later in the same tick", () => {
+    renderHook(() => usePlaybackIntentAcknowledgement(manager));
+    manager.markCommandEmitted(
+      "video_ended",
+      undefined,
+      SLOW_NONCE,
+      "command_ack",
+    );
+
+    deliverAcknowledgements(
+      { nonce: OTHER_NONCE, status: "applied" },
+      { nonce: SLOW_NONCE, status: "applied" },
+    );
+
+    expect(manager.isAwaitingServerAck()).toBe(false);
+  });
+
+  it("does not let an old ACK clear a newer overwritten intent", () => {
+    renderHook(() => usePlaybackIntentAcknowledgement(manager));
+    manager.markCommandEmitted(
+      "video_ended",
+      undefined,
+      SLOW_NONCE,
+      "command_ack",
+    );
+    manager.markCommandEmitted(
+      "update_duration",
+      undefined,
+      FAST_NONCE,
+      "command_ack",
+    );
+
+    deliverAcknowledgement({ nonce: SLOW_NONCE, status: "applied" });
+    expect(manager.isAwaitingServerAck()).toBe(true);
+
+    deliverAcknowledgement({ nonce: FAST_NONCE, status: "applied" });
+    expect(manager.isAwaitingServerAck()).toBe(false);
+  });
+
   it("consumes playback_updated before a later ACK even when sync gates would block polling", () => {
     renderHook(() => usePlaybackIntentAcknowledgement(manager));
     manager.markCommandEmitted("buffering", 12, FAST_NONCE, "playback_update");
@@ -162,6 +245,26 @@ describe("usePlaybackIntentAcknowledgement", () => {
 
     deliverPlaybackUpdate(FAST_NONCE);
     expect(manager.isAwaitingServerAck()).toBe(false);
+  });
+
+  it("uses authoritative paused status immediately after an exact seek playback update", () => {
+    vi.useFakeTimers();
+    renderHook(() => usePlaybackIntentAcknowledgement(manager));
+    manager.markCommandEmitted("playing", 44, FAST_NONCE, "playback_update");
+
+    deliverPlaybackUpdate(OTHER_NONCE, "paused");
+    expect(manager.isAwaitingServerAck()).toBe(true);
+    expect(manager.getExpectedStatus("paused")).toBe("playing");
+
+    deliverPlaybackUpdate(FAST_NONCE, "paused");
+    expect(manager.isAwaitingServerAck()).toBe(false);
+    expect(manager.getExpectedStatus("paused")).toBe("paused");
+    expect(manager.isIgnoringNativeEvents()).toBe(true);
+
+    vi.advanceTimersByTime(250);
+    deliverPlaybackUpdate(FAST_NONCE, "paused");
+    vi.advanceTimersByTime(250);
+    expect(manager.isIgnoringNativeEvents()).toBe(false);
   });
 
   it("does not lose exact nonce N when a rapid unrelated playback update M follows", () => {
@@ -208,5 +311,23 @@ describe("usePlaybackIntentAcknowledgement", () => {
     deliverPlaybackUpdate(FAST_NONCE);
 
     expect(manager.isAwaitingServerAck()).toBe(true);
+  });
+
+  it("mounts, unmounts, and remounts with exactly one ACK callback", () => {
+    const acknowledgeCommand = vi.spyOn(manager, "acknowledgeCommand");
+    const first = renderHook(() => usePlaybackIntentAcknowledgement(manager));
+    first.unmount();
+    renderHook(() => usePlaybackIntentAcknowledgement(manager));
+    manager.markCommandEmitted(
+      "video_ended",
+      undefined,
+      SLOW_NONCE,
+      "command_ack",
+    );
+
+    deliverAcknowledgement({ nonce: SLOW_NONCE, status: "applied" });
+
+    expect(acknowledgeCommand).toHaveBeenCalledTimes(1);
+    expect(manager.isAwaitingServerAck()).toBe(false);
   });
 });

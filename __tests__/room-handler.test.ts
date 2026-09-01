@@ -740,6 +740,31 @@ describe("Room Handler Security & Auth Boundary", () => {
     },
   );
 
+  it("enforces the command size limit in UTF-8 bytes and preserves the nonce", async () => {
+    const nonce = "01890f3e-4c4d-7cc2-8d8c-123456789305";
+    mockSocket.emit.mockClear();
+
+    await socketEventHandlers.command({
+      roomId: "multibyte-room",
+      nonce,
+      clientSequence: 1,
+      command: {
+        type: "send_chat",
+        payload: { message: "😀".repeat(13_000) },
+      },
+    });
+
+    const acknowledgements = mockSocket.emit.mock.calls.filter(
+      ([event]: any[]) => event === "command_ack",
+    );
+    expect(acknowledgements).toHaveLength(1);
+    expect(acknowledgements[0]?.[1]).toMatchObject({
+      nonce,
+      status: "rejected",
+      message: "Payload too large. Request rejected.",
+    });
+  });
+
   it.each([
     ["v7", "01890f3e-4c4d-7cc2-8d8c-123456789302"],
     ["v8", "01890f3e-4c4d-8cc2-8d8c-123456789302"],

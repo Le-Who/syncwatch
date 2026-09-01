@@ -264,7 +264,9 @@ describe("PlaybackIntentManager", () => {
       // @ts-ignore
       manager._mediaTransitionId = "media2";
 
-      const consoleWarnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const consoleWarnSpy = vi
+        .spyOn(console, "warn")
+        .mockImplementation(() => {});
 
       // Advance to trigger the 8s timeout created for "media1"
       vi.advanceTimersByTime(8000);
@@ -319,15 +321,29 @@ describe("PlaybackIntentManager", () => {
   });
 
   describe("Nonces", () => {
-    it("should check and consume matching nonce", () => {
-      manager.markCommandEmitted("playing", 10, "nonce123");
+    it.each([
+      ["play", "playing", "paused"],
+      ["pause", "paused", "playing"],
+    ])(
+      "should consume canonical %s and immediately use authoritative status",
+      (_command, optimisticStatus, authoritativeStatus) => {
+        manager.markCommandEmitted(optimisticStatus, 10, "nonce123");
 
-      manager.checkAndConsumeNonce("nonce123");
+        manager.checkAndConsumeNonce("nonce123");
 
-      expect(manager.isIgnoringNativeEvents()).toBe(true);
-      // acknowledgeServerNonce clears the pending nonce but preserves lastStateEmitted
-      expect(manager.lastStateEmittedRef?.nonce).toBe("nonce123");
-    });
+        expect(manager.isIgnoringNativeEvents()).toBe(true);
+        expect(manager.isAwaitingServerAck()).toBe(false);
+        expect(manager.lastStateEmittedRef).toBeNull();
+        expect(manager.getExpectedStatus(authoritativeStatus)).toBe(
+          authoritativeStatus,
+        );
+
+        vi.advanceTimersByTime(250);
+        manager.checkAndConsumeNonce("nonce123");
+        vi.advanceTimersByTime(250);
+        expect(manager.isIgnoringNativeEvents()).toBe(false);
+      },
+    );
 
     it("should not consume non-matching nonce", () => {
       manager.markCommandEmitted("playing", 10, "nonce123");

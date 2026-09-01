@@ -1,9 +1,7 @@
 import { io, Socket } from "socket.io-client";
 import type { RoomEvent } from "./room-events";
-import {
-  commandNonceSchema,
-  type CommandAcknowledgement,
-} from "./room-command-contract";
+import type { CommandAcknowledgement } from "./room-command-contract";
+import { commandNonceSchema } from "./command-nonce";
 
 type RoomSocketEvent =
   | "connected"

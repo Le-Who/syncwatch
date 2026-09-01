@@ -1,31 +1,34 @@
 "use client";
 
 import { useEffect } from "react";
-import { useStore } from "@/lib/store";
 import { PlaybackIntentManager } from "@/lib/playback-intent-manager";
 import { roomSocketService } from "@/lib/socket";
 import type { RoomEvent } from "@/lib/room-events";
+import type { CommandAcknowledgement } from "@/lib/room-command-contract";
 
 /** Connects this Player instance to every correlated completion signal. */
 export function usePlaybackIntentAcknowledgement(
   intentManager: PlaybackIntentManager,
 ) {
-  const acknowledgement = useStore((state) => state.lastCommandAcknowledgement);
-
   useEffect(() => {
-    if (acknowledgement) {
-      intentManager.acknowledgeCommand(acknowledgement);
-    }
-  }, [acknowledgement, intentManager]);
-
-  useEffect(() => {
+    const handleCommandAcknowledgement = (
+      acknowledgement?: CommandAcknowledgement,
+    ) => {
+      if (acknowledgement) {
+        intentManager.acknowledgeCommand(acknowledgement);
+      }
+    };
     const handleRoomEvent = (event: RoomEvent) => {
       if (event.type === "playback_updated") {
         intentManager.acknowledgeServerNonce(event.playback.lastActionNonce);
       }
     };
 
+    roomSocketService.on("command_ack", handleCommandAcknowledgement);
     roomSocketService.onRoomEvent(handleRoomEvent);
-    return () => roomSocketService.offRoomEvent(handleRoomEvent);
+    return () => {
+      roomSocketService.off("command_ack", handleCommandAcknowledgement);
+      roomSocketService.offRoomEvent(handleRoomEvent);
+    };
   }, [intentManager]);
 }

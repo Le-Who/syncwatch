@@ -13,10 +13,8 @@ import type {
   CommandRejectionCode,
   RoomCommandEnvelope,
 } from "../room-command-contract";
-import {
-  commandNonceSchema,
-  roomCommandEnvelopeSchema,
-} from "../room-command-contract";
+import { roomCommandEnvelopeSchema } from "../room-command-contract";
+import { commandNonceSchema } from "../command-nonce";
 import { upgradeParticipantIdentity } from "../participant-lifecycle";
 import { getRedisRoom, setRedisRoomCAS } from "../redis-actor";
 import { sanitizeRoom } from "../room-handler";
@@ -221,7 +219,7 @@ export function handleCommandEvents(
         const serializedCommand = JSON.stringify(rawCommand);
         if (
           typeof serializedCommand !== "string" ||
-          serializedCommand.length > MAX_COMMAND_BYTES
+          Buffer.byteLength(serializedCommand, "utf8") > MAX_COMMAND_BYTES
         ) {
           const ack = rejected(fallbackNonce, "INVALID_COMMAND");
           ack.message = "Payload too large. Request rejected.";

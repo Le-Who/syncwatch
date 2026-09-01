@@ -2,10 +2,10 @@
  * PlaybackIntentManager — Guards against spurious native player events.
  *
  * Core mechanism: When the client emits a command (play/pause/seek), we
- * record the nonce. Native events are blocked until the server echoes back
- * a room_state with a matching nonce (ACK-based), OR a safety-net timeout
- * expires. This replaces fragile wall-clock heuristics with deterministic
- * server acknowledgment.
+ * record the nonce. Native events are blocked until the server returns the
+ * correlated terminal command ACK or canonical playback event, OR a
+ * safety-net timeout expires. This replaces fragile wall-clock heuristics
+ * with deterministic server acknowledgement.
  */
 import type { CommandAcknowledgement } from "./room-command-contract";
 
@@ -167,6 +167,8 @@ export class PlaybackIntentManager {
     if (serverNonce && this._pendingNonce === serverNonce) {
       this._pendingNonce = null;
       this._pendingCompletion = "playback_update";
+      this.lastCommandEmitTime = Number.NEGATIVE_INFINITY;
+      this.lastStateEmitted = null;
       // Brief post-ACK cooldown to absorb trailing native events
       this.ignoreEventsFor(500);
     }
