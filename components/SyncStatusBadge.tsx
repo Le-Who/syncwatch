@@ -8,6 +8,7 @@ import { BADGE_SYNCED } from "@/lib/sync-config";
 interface SyncStatusBadgeProps {
   driftRef: React.MutableRefObject<number>;
   playbackHealth: PlaybackHealth;
+  reconnecting?: boolean;
 }
 
 type SyncPresentation =
@@ -30,6 +31,7 @@ function presentationFor(
 export function SyncStatusBadge({
   driftRef,
   playbackHealth,
+  reconnecting = false,
 }: SyncStatusBadgeProps) {
   const isConnected = useStore((state) => state.isConnected);
   const playbackStatus = useStore((state) => state.room?.playback?.status);
@@ -43,7 +45,7 @@ export function SyncStatusBadge({
   }, [driftRef]);
 
   const presentation = presentationFor(
-    isConnected,
+    isConnected && !reconnecting,
     playbackHealth,
     displayDrift,
   );
@@ -89,6 +91,7 @@ export function SyncStatusBadge({
     <div
       className="pointer-events-none absolute top-3 right-3 z-30 flex items-center space-x-2 rounded-full border border-white/10 bg-black/60 px-3 py-1.5 text-[10px] font-bold tracking-wider uppercase shadow-lg backdrop-blur-md"
       role="status"
+      aria-label={config.label}
       aria-live="polite"
     >
       <div className={`h-2 w-2 rounded-full ${config.dot}`} />

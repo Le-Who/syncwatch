@@ -21,7 +21,7 @@ export type PlaybackRecoveryMode =
 
 type PlaybackHealthControllerOptions = {
   now?: () => number;
-  emitTelemetry?: (health: PlaybackHealth) => void;
+  emitTelemetry?: (health: PlaybackHealth) => boolean;
   onHealthChange?: (health: PlaybackHealth) => void;
 };
 
@@ -35,9 +35,11 @@ export class PlaybackHealthController {
   private pendingTelemetry: PlaybackHealth | null = null;
   private telemetryTimer: ReturnType<typeof setTimeout> | null = null;
   private lastTelemetryAt: number | null = null;
+  private lastSuccessfulHealth: PlaybackHealth | null = null;
   private recovery: PlaybackRecoveryMode = "none";
+  private awaitingReconciliation = false;
   private readonly now: () => number;
-  private readonly emitTelemetry?: (health: PlaybackHealth) => void;
+  private readonly emitTelemetry?: (health: PlaybackHealth) => boolean;
   private readonly onHealthChange?: (health: PlaybackHealth) => void;
 
   constructor(options: PlaybackHealthControllerOptions = {}) {
@@ -56,22 +58,44 @@ export class PlaybackHealthController {
 
   completeRecovery(): void {
     this.recovery = "none";
+    this.awaitingReconciliation = false;
+  }
+
+  canAcceptProviderEvents(): boolean {
+    return (
+      this.health !== "buffering" &&
+      this.health !== "error" &&
+      !this.awaitingReconciliation
+    );
+  }
+
+  resendCurrent(): void {
+    if (
+      this.pendingTelemetry === null &&
+      this.lastSuccessfulHealth === this.health
+    ) {
+      return;
+    }
+    this.queueTelemetry(this.health);
   }
 
   beginMedia(mediaId: string | null): void {
     if (!mediaId) {
       this.recovery = "none";
+      this.awaitingReconciliation = false;
       this.stallStartedAt = null;
       this.set("idle");
       return;
     }
     this.recovery = "media-change";
+    this.awaitingReconciliation = true;
     this.stallStartedAt = null;
     this.set("idle");
   }
 
   markReconnecting(): void {
     this.recovery = "reconnect";
+    this.awaitingReconciliation = true;
   }
 
   set(next: PlaybackHealth, at = this.now()): boolean {
@@ -80,6 +104,9 @@ export class PlaybackHealthController {
     const previous = this.health;
     if (next === "buffering") {
       this.stallStartedAt = at;
+      this.awaitingReconciliation = true;
+    } else if (next === "error") {
+      this.awaitingReconciliation = true;
     } else if (previous === "buffering") {
       if (
         this.stallStartedAt !== null &&
@@ -100,6 +127,12 @@ export class PlaybackHealthController {
 
   private queueTelemetry(health: PlaybackHealth): void {
     if (!this.emitTelemetry) return;
+    if (
+      this.pendingTelemetry === null &&
+      this.lastSuccessfulHealth === health
+    ) {
+      return;
+    }
     const now = this.now();
     if (
       this.lastTelemetryAt === null ||
@@ -128,9 +161,14 @@ export class PlaybackHealthController {
       clearTimeout(this.telemetryTimer);
       this.telemetryTimer = null;
     }
-    this.pendingTelemetry = null;
-    this.lastTelemetryAt = this.now();
-    this.emitTelemetry?.(health);
+    const sent = this.emitTelemetry?.(health) === true;
+    if (sent) {
+      this.pendingTelemetry = null;
+      this.lastTelemetryAt = this.now();
+      this.lastSuccessfulHealth = health;
+    } else {
+      this.pendingTelemetry = health;
+    }
   }
 
   dispose(): void {

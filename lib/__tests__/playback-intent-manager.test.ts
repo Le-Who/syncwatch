@@ -336,6 +336,28 @@ describe("PlaybackIntentManager", () => {
   });
 
   describe("Nonces", () => {
+    it("defers only stale same-epoch frames while an exact intent is pending", () => {
+      manager.markCommandEmitted("playing", 10, "nonce123", "playback_update", {
+        sequence: 12,
+        mediaId: "media-a",
+      });
+
+      expect(manager.shouldDeferCanonicalFrame(12, "media-a", "other")).toBe(
+        true,
+      );
+      expect(manager.shouldDeferCanonicalFrame(11, "media-a", undefined)).toBe(
+        true,
+      );
+      expect(manager.shouldDeferCanonicalFrame(13, "media-a", "other")).toBe(
+        false,
+      );
+      expect(manager.shouldDeferCanonicalFrame(12, "media-b", undefined)).toBe(
+        false,
+      );
+      expect(manager.shouldDeferCanonicalFrame(13, "media-a", "nonce123")).toBe(
+        false,
+      );
+    });
     it.each([
       ["play", "playing", "paused"],
       ["pause", "paused", "playing"],

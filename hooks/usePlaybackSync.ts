@@ -22,6 +22,7 @@ type PlaybackSyncProps = {
   performProgrammaticSeek: (position: number, force?: boolean) => void;
   getCurrentMedia: () => { provider?: string } | undefined;
   getDuration: () => number;
+  onReconciled?: () => void;
 };
 
 /** Reconciles this provider to monotonic canonical playback without room writes. */
@@ -56,7 +57,7 @@ export function usePlaybackSync(props: PlaybackSyncProps) {
         return;
       }
 
-      coordinator.acceptCanonical({
+      const canonicalFrame = {
         mediaItemId: mediaId,
         status: playback.status,
         basePosition: playback.basePosition,
@@ -67,7 +68,19 @@ export function usePlaybackSync(props: PlaybackSyncProps) {
         ...(playback.lastActionNonce
           ? { lastActionNonce: playback.lastActionNonce }
           : {}),
-      });
+      } as const;
+
+      if (
+        current.intentManager.shouldDeferCanonicalFrame(
+          room.sequence,
+          mediaId,
+          playback.lastActionNonce,
+        )
+      ) {
+        schedule(syncPlayback, 300);
+        return;
+      }
+      coordinator.acceptCanonical(canonicalFrame);
 
       // Task 4's exact event/ACK path remains authoritative. Polling is only an
       // idempotent safety net and never blocks newer canonical reconciliation.
@@ -95,6 +108,9 @@ export function usePlaybackSync(props: PlaybackSyncProps) {
       driftRef.current = decision.drift;
 
       if (decision.kind === "waiting") {
+        if (!decision.shouldPlay && current.getPlaying()) {
+          current.setPlaying(false);
+        }
         isAdjustingRateRef.current = false;
         schedule(syncPlayback, 300);
         return;
@@ -128,6 +144,7 @@ export function usePlaybackSync(props: PlaybackSyncProps) {
       setPlaybackRate(decision.playbackRate);
       isAdjustingRateRef.current = decision.isAdjusting;
       current.healthController.completeRecovery();
+      current.onReconciled?.();
 
       let nextIntervalMs = 500;
       if (decision.drift > 0.5) nextIntervalMs = 250;

@@ -87,3 +87,45 @@ Tests and harnesses:
 - Same-sequence full room snapshots remain admissible so health/presence can update without manufacturing playback sequence changes; older snapshots and compact duplicates are rejected.
 - Health telemetry is intentionally best-effort and ephemeral. A dropped health update can make another participant's badge briefly stale, but it cannot affect playback; the latest local transition is coalesced and eventually sent while connected.
 - The build still prints the pre-existing Browserslist database age and npm configuration deprecation warnings.
+
+## Review Fix Round 1
+
+Status: DONE
+
+### Verified RED findings
+
+The review scenarios were reproduced before production changes. The focused RED run reported 11 failures:
+
+- stalled YouTube, Twitch, and HTML5 chains emitted native seek/end and, for YouTube, the deferred native pause command;
+- paused and ended canonical frames did not stop a locally stalled provider because `waiting` reconciliation returned too early;
+- a same-sequence paused poll rolled back an optimistic exact play intent;
+- health telemetry had no success contract or reconnect resend path;
+- provider recovery eligibility and intent-baseline APIs did not exist;
+- the reconnect badge disappeared as soon as transport connectivity returned and had no accessible name.
+
+### Implemented fixes
+
+- Provider-native pause, seek, end, and play callbacks now cross a shared eligibility boundary based on current media, sequence, provider epoch, local health, and recovery completion. The 150 ms pause callback repeats the checks with captured epoch/media/sequence, closing the delayed YouTube bypass. Explicit app controls still issue deliberate commands.
+- `onSeeked` no longer treats a seek completion as proof that buffering recovered. Ready/playing signals update health, and canonical reconciliation decides playback before provider-native commands become eligible.
+- Playback intents now record their media/sequence baseline. Polling defers only nonmatching same-epoch frames at or below that baseline; exact frames complete normally, while a genuinely newer unrelated canonical frame wins immediately.
+- Paused/ended canonical decisions stop local playback even when target seek/rate reconciliation remains deferred by buffering or provider error. Recovery never transiently autoplays those states.
+- Health telemetry reports send success. Failed/offline delivery retains the latest state without advancing the success timestamp; reconnect resends the actual current health, successful duplicates are suppressed within the one-second budget, and disposal removes pending timers.
+- Player reconnect presentation remains `Reconnecting` after transport return until a fresh canonical frame is accepted and ready reconciliation completes. The status exposes an explicit accessible label.
+- The product harness drives `waiting → pause/seek/ended` through the real Player/provider boundary for YouTube, Twitch, and HTML5. Two independent healthy coordinators consume the same three-participant canonical store and continue at 25 seconds while sequence 41 and playing state remain unchanged and no room command is captured.
+
+### Verification
+
+- Required focused command: 3 files, 69 tests passed.
+- Hook/ACK/adapter focused command: 3 files, 30 tests passed.
+- `pnpm test`: 43 files, 380 tests passed.
+- `pnpm lint`: exit 0.
+- `pnpm exec tsc --noEmit --pretty false`: exit 0, no diagnostics.
+- `pnpm build`: exit 0; Next production and server TypeScript builds completed with only the pre-existing informational warnings.
+- Scoped Prettier and `git diff --check`: exit 0.
+
+### Boundaries and concerns
+
+- Task 4 exact nonce ACK/event handling remains unchanged: the new baseline affects only stale polling reconciliation and never substitutes for nonce completion.
+- Task 3 lifecycle and server health storage are unchanged. Redis/no-Redis legacy `buffering` remains an authorized canonical no-op.
+- Health telemetry remains deliberately best-effort. Failed sends are retried on reconnect/current-state resend rather than by an unbounded background retry loop.
+- Provider metadata/duration callbacks remain current-epoch operations; only playback-transition callbacks require ready recovery eligibility.

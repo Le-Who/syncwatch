@@ -82,7 +82,7 @@ describe("PlaybackHealthController", () => {
   });
 
   it("coalesces telemetry to one effective update per second and emits the latest state", () => {
-    const telemetry = vi.fn();
+    const telemetry = vi.fn(() => true);
     const controller = new PlaybackHealthController({
       emitTelemetry: telemetry,
     });
@@ -108,7 +108,7 @@ describe("PlaybackHealthController", () => {
   });
 
   it("cancels pending telemetry exactly when disposed", () => {
-    const telemetry = vi.fn();
+    const telemetry = vi.fn(() => true);
     const controller = new PlaybackHealthController({
       emitTelemetry: telemetry,
     });
@@ -131,6 +131,53 @@ describe("PlaybackHealthController", () => {
     controller.set("buffering", 20_000);
     controller.set("ready", 23_000);
     expect(controller.recoveryMode()).toBe("long-stall");
+  });
+
+  it("retains the latest offline health and sends it once after reconnect", () => {
+    let connected = false;
+    const telemetry = vi.fn(() => connected);
+    const controller = new PlaybackHealthController({
+      emitTelemetry: telemetry,
+    });
+
+    controller.set("buffering");
+    controller.set("ready");
+    connected = true;
+    controller.resendCurrent();
+    controller.resendCurrent();
+
+    expect(telemetry.mock.calls).toEqual([["buffering"], ["ready"], ["ready"]]);
+    vi.advanceTimersByTime(1_000);
+    expect(telemetry).toHaveBeenCalledTimes(3);
+  });
+
+  it("resends the actual current buffering health and disposes failed retries", () => {
+    let connected = false;
+    const telemetry = vi.fn(() => connected);
+    const controller = new PlaybackHealthController({
+      emitTelemetry: telemetry,
+    });
+
+    controller.set("buffering");
+    connected = true;
+    controller.resendCurrent();
+    controller.resendCurrent();
+    controller.dispose();
+    vi.advanceTimersByTime(5_000);
+
+    expect(telemetry.mock.calls).toEqual([["buffering"], ["buffering"]]);
+  });
+
+  it("keeps stalled provider callbacks ineligible until reconciliation completes", () => {
+    const controller = new PlaybackHealthController();
+    controller.set("buffering");
+    expect(controller.canAcceptProviderEvents()).toBe(false);
+
+    controller.set("ready", 500);
+    expect(controller.canAcceptProviderEvents()).toBe(false);
+
+    controller.completeRecovery();
+    expect(controller.canAcceptProviderEvents()).toBe(true);
   });
 });
 

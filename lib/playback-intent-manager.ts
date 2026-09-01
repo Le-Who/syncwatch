@@ -10,6 +10,10 @@
 import type { CommandAcknowledgement } from "./room-command-contract";
 
 export type PlaybackIntentCompletion = "playback_update" | "command_ack";
+export type PlaybackIntentBaseline = {
+  sequence: number;
+  mediaId: string | null;
+};
 
 export class PlaybackIntentManager {
   private mediaTransitionTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -39,6 +43,7 @@ export class PlaybackIntentManager {
   /** Applied fast commands require canonical playback state; slow commands
    *  can finish from their correlated acknowledgement alone. */
   private _pendingCompletion: PlaybackIntentCompletion = "playback_update";
+  private _pendingBaseline: PlaybackIntentBaseline | null = null;
   /** Safety-net timeout (ms): if no ACK arrives within this window, unblock.
    *  This covers lost packets and socket reconnections. */
   private static readonly NONCE_ACK_TIMEOUT_MS = 3000;
@@ -56,6 +61,10 @@ export class PlaybackIntentManager {
     return epoch === this.providerEventEpoch;
   }
 
+  public currentProviderEventEpoch(): number {
+    return this.providerEventEpoch;
+  }
+
   public isUserDraggingScrubber(): boolean {
     return this._userIsDraggingScrubber;
   }
@@ -65,11 +74,13 @@ export class PlaybackIntentManager {
     position: number | undefined,
     nonce: string,
     completion: PlaybackIntentCompletion = "playback_update",
+    baseline: PlaybackIntentBaseline | null = null,
   ) {
     this.lastCommandEmitTime = Date.now();
     this._pendingNonce = nonce;
     this._pendingNonceTimestamp = Date.now();
     this._pendingCompletion = completion;
+    this._pendingBaseline = baseline;
     this.lastStateEmitted = {
       status,
       position,
@@ -162,6 +173,7 @@ export class PlaybackIntentManager {
     ) {
       this._pendingNonce = null;
       this._pendingCompletion = "playback_update";
+      this._pendingBaseline = null;
       return false;
     }
     return true;
@@ -177,6 +189,7 @@ export class PlaybackIntentManager {
     if (serverNonce && this._pendingNonce === serverNonce) {
       this._pendingNonce = null;
       this._pendingCompletion = "playback_update";
+      this._pendingBaseline = null;
       this.lastCommandEmitTime = Number.NEGATIVE_INFINITY;
       this.lastStateEmitted = null;
       // Brief post-ACK cooldown to absorb trailing native events
@@ -199,6 +212,7 @@ export class PlaybackIntentManager {
     }
     this._pendingNonce = null;
     this._pendingCompletion = "playback_update";
+    this._pendingBaseline = null;
     this.lastCommandEmitTime = Number.NEGATIVE_INFINITY;
     this.lastStateEmitted = null;
     this.ignoreEventsFor(500);
@@ -226,6 +240,19 @@ export class PlaybackIntentManager {
       this._userIsDraggingScrubber ||
       this.isInMediaTransition() ||
       this.isAwaitingServerAck()
+    );
+  }
+
+  public shouldDeferCanonicalFrame(
+    sequence: number,
+    mediaId: string | null,
+    nonce?: string,
+  ): boolean {
+    if (!this.isAwaitingServerAck() || !this._pendingBaseline) return false;
+    if (nonce && nonce === this._pendingNonce) return false;
+    return (
+      mediaId === this._pendingBaseline.mediaId &&
+      sequence <= this._pendingBaseline.sequence
     );
   }
 
@@ -275,6 +302,7 @@ export class PlaybackIntentManager {
     this._pendingNonce = null;
     this._pendingNonceTimestamp = 0;
     this._pendingCompletion = "playback_update";
+    this._pendingBaseline = null;
     this.lastCommandEmitTime = Number.NEGATIVE_INFINITY;
     this.lastStateEmitted = null;
     this.providerEventEpoch += 1;

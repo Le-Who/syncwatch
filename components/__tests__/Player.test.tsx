@@ -3,7 +3,10 @@ import Player from "../Player";
 import { SyncStatusBadge } from "../SyncStatusBadge";
 import { vi, describe, beforeEach, afterEach, it, expect } from "vitest";
 import { PlaybackIntentManager } from "@/lib/playback-intent-manager";
-import { PlaybackHealthController } from "@/lib/playback-health";
+import {
+  PlaybackCoordinator,
+  PlaybackHealthController,
+} from "@/lib/playback-health";
 import {
   PlayerTestHarness,
   type PlayerEventHandlers,
@@ -30,6 +33,8 @@ vi.mock("next/dynamic", () => ({
         onPlaying: props.onPlaying,
         onPlay: props.onPlay,
         onPause: props.onPause,
+        onSeeked: props.onSeeked,
+        onEnded: props.onEnded,
         onLoadedMetadata: props.onLoadedMetadata,
       });
       return (
@@ -175,6 +180,7 @@ describe("Player Component", () => {
       sendCommand: mockSendCommand,
       serverClockOffset: 0,
       occRollbackTick: 0,
+      isConnected: true,
     });
 
     render(<Player />);
@@ -214,6 +220,7 @@ describe("Player Component", () => {
       sendCommand: mockSendCommand,
       serverClockOffset: 0,
       occRollbackTick: 0,
+      isConnected: true,
     });
 
     render(<Player />);
@@ -221,7 +228,7 @@ describe("Player Component", () => {
     fireEvent.click(screen.getByTestId("loadedmetadata-event"));
 
     act(() => {
-      vi.advanceTimersByTime(1600);
+      vi.advanceTimersByTime(2_100);
     });
     fireEvent.click(screen.getByTestId("pause-event"));
     act(() => {
@@ -401,6 +408,91 @@ describe("Player Component", () => {
     ).toHaveTextContent(/friends are still watching/i);
     expect(screen.getByText("Local buffering")).toBeInTheDocument();
   });
+
+  it.each([
+    ["youtube", "https://www.youtube.com/watch?v=dQw4w9WgXcQ"],
+    ["twitch", "https://www.twitch.tv/videos/123456"],
+    ["raw", "https://example.com/video.mp4"],
+  ])(
+    "suppresses %s waiting→pause/seek/ended provider chains without stopping healthy peers",
+    (provider, url) => {
+      vi.useFakeTimers();
+      vi.setSystemTime(10_000);
+      const mediaId = "00000000-0000-4000-8000-000000000001";
+      const state = {
+        room: {
+          currentMediaId: mediaId,
+          sequence: 41,
+          leaderId: null,
+          playlist: [{ id: mediaId, url, provider, title: "Shared video" }],
+          settings: { autoplayNext: true, looping: false },
+          playback: {
+            status: "playing",
+            basePosition: 20,
+            baseTimestamp: 10_000,
+            rate: 1,
+            updatedBy: "user2",
+          },
+          participants: {
+            user1: { id: "user1", role: "owner", playbackHealth: "ready" },
+            user2: { id: "user2", role: "viewer", playbackHealth: "ready" },
+            user3: { id: "user3", role: "viewer", playbackHealth: "ready" },
+          },
+        },
+        participantId: "user1",
+        sendCommand: mockSendCommand,
+        setLocalPlaybackHealth: vi.fn(),
+        serverClockOffset: 0,
+        occRollbackTick: 0,
+        isConnected: true,
+      };
+      mockStoreState(state);
+      const view = render(<Player />);
+      fireEvent.click(screen.getByText(/Initialize Stream Sync/i));
+      const callbacks = providerCallbacks.get(url);
+      act(() => callbacks?.onLoadedMetadata?.({ target: { duration: 120 } }));
+      mockSendCommand.mockClear();
+
+      act(() => {
+        callbacks?.onWaiting?.();
+        callbacks?.onPause?.();
+        callbacks?.onSeeked?.();
+        callbacks?.onEnded?.();
+        vi.advanceTimersByTime(5_000);
+      });
+
+      expect(mockSendCommand).not.toHaveBeenCalled();
+      expect(state.room.sequence).toBe(41);
+      expect(state.room.playback.status).toBe("playing");
+      for (const _healthyParticipant of ["user2", "user3"] as const) {
+        const coordinator = new PlaybackCoordinator();
+        coordinator.beginMediaEpoch(mediaId);
+        coordinator.acceptCanonical({
+          mediaItemId: mediaId,
+          status: "playing",
+          basePosition: state.room.playback.basePosition,
+          baseTimestamp: state.room.playback.baseTimestamp,
+          rate: state.room.playback.rate,
+          updatedBy: state.room.playback.updatedBy,
+          sequence: state.room.sequence,
+        });
+        const decision = coordinator.reconcile({
+          now: Date.now(),
+          serverClockOffset: 0,
+          currentPosition: 25,
+          provider,
+          duration: 120,
+          isReady: true,
+          health: "ready",
+          recoveryMode: "none",
+          previouslyAdjusting: false,
+        });
+        expect(decision.targetPosition).toBe(25);
+        expect(decision.shouldPlay).toBe(true);
+      }
+      view.unmount();
+    },
+  );
 
   it("ignores a delayed provider callback from the previous media epoch", () => {
     const mediaA = "00000000-0000-4000-8000-000000000001";
@@ -641,11 +733,28 @@ describe("SyncStatusBadge human states", () => {
       <SyncStatusBadge
         driftRef={{ current: entry.drift }}
         playbackHealth={entry.health}
+        reconnecting={!entry.isConnected}
       />,
     );
 
     act(() => vi.advanceTimersByTime(500));
 
     expect(screen.getByText(entry.label)).toBeInTheDocument();
+  });
+
+  it("keeps an accessible reconnecting label after transport reconnect", () => {
+    mockStoreState({
+      isConnected: true,
+      room: { playback: { status: "playing" } },
+    });
+    render(
+      <SyncStatusBadge
+        driftRef={{ current: 0 }}
+        playbackHealth="ready"
+        reconnecting
+      />,
+    );
+
+    expect(screen.getByRole("status")).toHaveAccessibleName(/reconnecting/i);
   });
 });

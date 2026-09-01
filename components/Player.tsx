@@ -169,6 +169,7 @@ export default function Player() {
 
   const [intentManager] = useState(() => new PlaybackIntentManager());
   const [providerEventEpoch, setProviderEventEpoch] = useState(0);
+  const [isReconnecting, setIsReconnecting] = useState(!isConnected);
   const [healthController] = useState(
     () =>
       new PlaybackHealthController({
@@ -177,7 +178,7 @@ export default function Player() {
           useStore.getState().setLocalPlaybackHealth?.(health);
         },
         emitTelemetry: (health) => {
-          roomSocketService.sendParticipantHealth(health);
+          return roomSocketService.sendParticipantHealth(health);
         },
       }),
   );
@@ -195,7 +196,9 @@ export default function Player() {
   useEffect(() => {
     if (previousConnectionRef.current === isConnected) return;
     previousConnectionRef.current = isConnected;
+    setIsReconnecting(true);
     if (!isConnected) healthController.markReconnecting();
+    else healthController.resendCurrent();
     setProviderEventEpoch(intentManager.advanceProviderEventEpoch());
   }, [healthController, intentManager, isConnected]);
 
@@ -363,6 +366,10 @@ export default function Player() {
         COMMANDS_WITH_COMPACT_PLAYBACK_UPDATE.has(type)
           ? "playback_update"
           : "command_ack",
+        {
+          sequence: useStore.getState().room?.sequence ?? -1,
+          mediaId: useStore.getState().room?.currentMediaId ?? null,
+        },
       );
       sendCommand(type, { ...payload, nonce });
     },
@@ -383,6 +390,7 @@ export default function Player() {
     performProgrammaticSeek,
     getCurrentMedia: () => currentMedia,
     getDuration: () => duration,
+    onReconciled: () => setIsReconnecting(false),
   });
 
   const handlePlay = () => {
@@ -465,7 +473,19 @@ export default function Player() {
 
     setPlaying(false);
 
+    const deferredEpoch = intentManager.currentProviderEventEpoch();
+    const deferredMediaId = currentMediaId;
+    const deferredSequence = room?.sequence ?? -1;
     intentManager.setPauseDebounce(() => {
+      const deferredRoom = useStore.getState().room;
+      if (
+        !healthController.canAcceptProviderEvents() ||
+        !intentManager.isProviderEventEpochCurrent(deferredEpoch) ||
+        deferredRoom?.currentMediaId !== deferredMediaId ||
+        (deferredRoom?.sequence ?? -1) !== deferredSequence
+      ) {
+        return;
+      }
       // Look at local state first
       const currentPlayback = useStore.getState().room?.playback;
       const expectedStatus = intentManager.getExpectedStatus(
@@ -769,7 +789,11 @@ export default function Player() {
         )}
 
         {/* Universal Sync Status Badge — visible for ALL providers */}
-        <SyncStatusBadge driftRef={driftRef} playbackHealth={playbackHealth} />
+        <SyncStatusBadge
+          driftRef={driftRef}
+          playbackHealth={playbackHealth}
+          reconnecting={isReconnecting}
+        />
 
         {/* Thematic Scanline Overlay */}
         {currentMedia.provider?.toLowerCase() !== "youtube" && (

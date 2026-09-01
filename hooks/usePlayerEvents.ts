@@ -43,7 +43,7 @@ export function usePlayerEvents({
   playing,
   setIsReady,
   setError,
-  setPlaying,
+  setPlaying: _setPlaying,
   setDuration,
   emitCommand,
   handleNativePlay,
@@ -59,6 +59,11 @@ export function usePlayerEvents({
       intentManager.isProviderEventEpochCurrent(providerEventEpoch)
     );
   }, [canonicalSequence, currentMediaId, intentManager, providerEventEpoch]);
+  const canAcceptProviderEvent = useCallback(
+    () =>
+      isCurrentProviderEpoch() && healthController.canAcceptProviderEvents(),
+    [healthController, isCurrentProviderEpoch],
+  );
 
   useEffect(
     () => () => {
@@ -94,12 +99,6 @@ export function usePlayerEvents({
           ready: true,
         });
       }
-
-      // Auto-resume if server is playing after media switch
-      const currentPlayback = useStore.getState().room?.playback;
-      if (currentPlayback?.status === "playing") {
-        setPlaying(true);
-      }
     },
     [
       currentMediaId,
@@ -111,7 +110,6 @@ export function usePlayerEvents({
       setDuration,
       setIsReady,
       setError,
-      setPlaying,
     ],
   );
 
@@ -129,7 +127,7 @@ export function usePlayerEvents({
   /** Shared onSeek logic — filters programmatic seeks */
   const handleSeek = useCallback(
     (seconds: number, isTwitch: boolean) => {
-      if (!isCurrentProviderEpoch()) return;
+      if (!canAcceptProviderEvent()) return;
       if (intentManager.isRecentProgrammaticSeek(1500)) return;
       if (intentManager.isRecentCommand(1500)) return;
 
@@ -142,7 +140,7 @@ export function usePlayerEvents({
           intentManager.ignoreEventsFor(2000);
           const timer = setTimeout(() => {
             ownedTimers.current.delete(timer);
-            if (isCurrentProviderEpoch() && realPlayerRef.current?.play) {
+            if (canAcceptProviderEvent() && realPlayerRef.current?.play) {
               realPlayerRef.current.play();
             }
           }, 200);
@@ -155,7 +153,7 @@ export function usePlayerEvents({
       playing,
       intentManager,
       emitCommand,
-      isCurrentProviderEpoch,
+      canAcceptProviderEvent,
       realPlayerRef,
     ],
   );
@@ -195,11 +193,11 @@ export function usePlayerEvents({
 
   /** Shared onEnded handler */
   const handleEnded = useCallback(() => {
-    if (!isCurrentProviderEpoch()) return;
+    if (!canAcceptProviderEvent()) return;
     if (canControl) {
       emitCommand("video_ended", { currentMediaId });
     }
-  }, [canControl, currentMediaId, emitCommand, isCurrentProviderEpoch]);
+  }, [canAcceptProviderEvent, canControl, currentMediaId, emitCommand]);
 
   /** Shared onWaiting/buffering handler */
   const handleWaiting = useCallback(() => {
@@ -216,18 +214,15 @@ export function usePlayerEvents({
   /** Shared onSeeked handler (ReactPlayer only, but harmless for Twitch) */
   const handleSeeked = useCallback(() => {
     if (!isCurrentProviderEpoch()) return;
-    if (healthController.current() === "buffering") {
-      healthController.set("ready");
-    }
-  }, [healthController, isCurrentProviderEpoch]);
+  }, [isCurrentProviderEpoch]);
 
   const guardedNativePlay = useCallback(() => {
-    if (isCurrentProviderEpoch()) handleNativePlay();
-  }, [handleNativePlay, isCurrentProviderEpoch]);
+    if (canAcceptProviderEvent()) handleNativePlay();
+  }, [canAcceptProviderEvent, handleNativePlay]);
 
   const guardedNativePause = useCallback(() => {
-    if (isCurrentProviderEpoch()) handleNativePause();
-  }, [handleNativePause, isCurrentProviderEpoch]);
+    if (canAcceptProviderEvent()) handleNativePause();
+  }, [canAcceptProviderEvent, handleNativePause]);
 
   return {
     handleReady,
