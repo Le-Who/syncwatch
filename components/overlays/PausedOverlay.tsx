@@ -11,13 +11,14 @@ export function PausedOverlay({ canControl, onPlay }: PausedOverlayProps) {
   return (
     <div className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/40 backdrop-blur-[2px] transition-opacity duration-300">
       <button
-        className="bg-theme-bg/80 border-theme-accent text-theme-accent pointer-events-auto flex h-24 w-24 cursor-pointer items-center justify-center rounded-full border-4 shadow-[0_0_30px_var(--color-theme-accent)] backdrop-blur-md transition-transform hover:scale-110 active:scale-95"
+        aria-label="Resume playback"
+        className="bg-theme-bg/80 border-theme-accent text-theme-accent outline-none focus-visible:ring-4 focus-visible:ring-theme-accent focus-visible:ring-offset-4 focus-visible:ring-offset-black/40 pointer-events-auto flex h-24 w-24 cursor-pointer items-center justify-center rounded-full border-4 shadow-[0_0_30px_var(--color-theme-accent)] backdrop-blur-md transition-all hover:scale-110 active:scale-95"
         onClick={(e) => {
           e.stopPropagation();
           if (canControl) onPlay();
         }}
       >
-        <Play className="ml-2 h-12 w-12" />
+        <Play aria-hidden="true" className="ml-2 h-12 w-12" />
       </button>
     </div>
   );
