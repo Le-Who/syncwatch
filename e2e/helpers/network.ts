@@ -3,11 +3,24 @@ import type { BrowserContext, CDPSession, Page } from "@playwright/test";
 const DOWNLOAD_THROUGHPUT = 1_500_000;
 const UPLOAD_THROUGHPUT = 750_000;
 
-export async function setLatency(page: Page, latencyMs: number) {
+export interface NetworkEmulationHandle {
+  setLatency(latencyMs: number): Promise<void>;
+  resetAndDispose(): Promise<void>;
+}
+
+export async function setLatency(
+  page: Page,
+  latencyMs: number,
+): Promise<NetworkEmulationHandle> {
   const session = await page.context().newCDPSession(page);
-  await session.send("Network.enable");
-  await applyLatency(session, latencyMs);
-  return session;
+  try {
+    await session.send("Network.enable");
+    await applyLatency(session, latencyMs);
+    return createNetworkHandle(session);
+  } catch (error) {
+    await session.detach().catch(() => {});
+    throw error;
+  }
 }
 
 export async function pulseOffline(
@@ -30,7 +43,7 @@ export async function alternateLatency(
   if (latencyValues.length < 2) {
     throw new Error("alternateLatency requires at least two latency values");
   }
-  const session = await setLatency(page, latencyValues[0]);
+  const network = await setLatency(page, latencyValues[0]);
   let stopped = false;
   let nextIndex = 1;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -38,22 +51,43 @@ export async function alternateLatency(
 
   const schedule = () => {
     timer = setTimeout(() => {
-      activeUpdate = applyLatency(session, latencyValues[nextIndex]).then(
-        () => {
-          nextIndex = (nextIndex + 1) % latencyValues.length;
-          if (!stopped) schedule();
-        },
-      );
+      activeUpdate = network.setLatency(latencyValues[nextIndex]).then(() => {
+        nextIndex = (nextIndex + 1) % latencyValues.length;
+        if (!stopped) schedule();
+      });
     }, intervalMs);
   };
   schedule();
 
-  return async () => {
-    stopped = true;
-    if (timer) clearTimeout(timer);
-    await activeUpdate;
-    await applyLatency(session, 0);
-    await session.detach();
+  return {
+    setLatency: (latencyMs: number) => network.setLatency(latencyMs),
+    async resetAndDispose() {
+      if (!stopped) {
+        stopped = true;
+        if (timer) clearTimeout(timer);
+        await activeUpdate;
+      }
+      await network.resetAndDispose();
+    },
+  };
+}
+
+function createNetworkHandle(session: CDPSession): NetworkEmulationHandle {
+  let disposed = false;
+  return {
+    async setLatency(latencyMs: number) {
+      if (disposed) throw new Error("Network emulation is already disposed");
+      await applyLatency(session, latencyMs);
+    },
+    async resetAndDispose() {
+      if (disposed) return;
+      disposed = true;
+      try {
+        await applyLatency(session, 0);
+      } finally {
+        await session.detach();
+      }
+    },
   };
 }
 

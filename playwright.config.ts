@@ -2,6 +2,7 @@ import { defineConfig, devices } from "@playwright/test";
 import { loadEnvConfig } from "@next/env";
 import path from "path";
 
+delete process.env.NO_COLOR;
 loadEnvConfig(path.resolve(__dirname, "./"));
 export default defineConfig({
   testDir: "./e2e",
@@ -34,10 +35,11 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "npx tsx server.ts",
+    command: "pnpm exec tsx server.ts",
     port: 3001,
     env: {
       PORT: "3001",
+      BROWSERSLIST_IGNORE_OLD_DATA: "true",
     },
     reuseExistingServer: false,
     timeout: 120 * 1000,

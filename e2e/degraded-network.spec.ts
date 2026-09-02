@@ -10,9 +10,15 @@ import {
   initializePlayback,
   mediaPosition,
   playbackControl,
+  renameParticipantAndExpect,
   seekToFraction,
 } from "./helpers/room";
-import { alternateLatency, pulseOffline, setLatency } from "./helpers/network";
+import {
+  alternateLatency,
+  NetworkEmulationHandle,
+  pulseOffline,
+  setLatency,
+} from "./helpers/network";
 
 test.describe.configure({ mode: "serial" });
 
@@ -21,7 +27,9 @@ test("two independently degraded friends do not stall three healthy players and 
 }) => {
   test.setTimeout(120_000);
   const room = await createRoomClients(browser, 5);
-  let stopJitter: (() => Promise<void>) | undefined;
+  let slowNetwork: NetworkEmulationHandle | undefined;
+  let jitterNetwork: NetworkEmulationHandle | undefined;
+  let stopHealthyFloorMonitor: (() => Promise<void>) | undefined;
 
   try {
     await addDeterministicMedia(room.clients[0]);
@@ -38,8 +46,11 @@ test("two independently degraded friends do not stall three healthy players and 
     const jitteringTransport = room.clients[3];
     const healthy = [room.clients[0], room.clients[1], room.clients[4]];
 
-    await setLatency(slowProvider.page, 1_500);
-    stopJitter = await alternateLatency(jitteringTransport.page, [200, 1_200]);
+    slowNetwork = await setLatency(slowProvider.page, 1_500);
+    jitterNetwork = await alternateLatency(
+      jitteringTransport.page,
+      [200, 1_200],
+    );
     slowProvider.media.stall();
 
     const offlinePulse = pulseOffline(jitteringTransport.context, 1_800);
@@ -64,17 +75,29 @@ test("two independently degraded friends do not stall three healthy players and 
           .toBeGreaterThan(healthyBefore[index] + 1);
       }),
     );
+    const healthyFloors = await Promise.all(
+      healthy.map(({ page }) => mediaPosition(page)),
+    );
+    stopHealthyFloorMonitor = monitorPlaybackFloors(healthy, healthyFloors);
 
     await offlinePulse;
-    await expectReconnected(jitteringTransport.page);
+    await expectReconnected(jitteringTransport.page, async () => {
+      await renameParticipantAndExpect(
+        jitteringTransport,
+        healthy[0].page,
+        "Friend 4 Reconnected",
+      );
+    });
+    await expectHealthyFloors(healthy, healthyFloors);
     await expectPeopleCount(jitteringTransport.page, 5);
     await expectCanonicalStatus(jitteringTransport.page, "playing");
 
     slowProvider.media.resume();
-    await stopJitter();
-    stopJitter = undefined;
-    await setLatency(slowProvider.page, 0);
-    await setLatency(jitteringTransport.page, 0);
+    await jitterNetwork.resetAndDispose();
+    jitterNetwork = undefined;
+    await slowNetwork.resetAndDispose();
+    slowNetwork = undefined;
+    await expectHealthyFloors(healthy, healthyFloors);
 
     await expect(
       slowProvider.page.getByRole("status", {
@@ -96,9 +119,20 @@ test("two independently degraded friends do not stall three healthy players and 
     await Promise.all(
       room.clients.map(({ page }) => expectCanonicalStatus(page, "playing")),
     );
+    await expectHealthyFloors(healthy, healthyFloors);
+    await Promise.all(
+      [slowProvider, jitteringTransport].map(({ page }) =>
+        expectAdvancing(page, 0.6),
+      ),
+    );
+    const stopFloorMonitor = stopHealthyFloorMonitor;
+    stopHealthyFloorMonitor = undefined;
+    await stopFloorMonitor();
   } finally {
+    await stopHealthyFloorMonitor?.();
     slowResume(room.clients);
-    if (stopJitter) await stopJitter();
+    await jitterNetwork?.resetAndDispose();
+    await slowNetwork?.resetAndDispose();
     await closeRoomClients(room.clients);
   }
 });
@@ -107,4 +141,45 @@ function slowResume(
   clients: Awaited<ReturnType<typeof createRoomClients>>["clients"],
 ) {
   for (const client of clients) client.media.resume();
+}
+
+async function expectHealthyFloors(
+  clients: Awaited<ReturnType<typeof createRoomClients>>["clients"],
+  floors: number[],
+) {
+  await Promise.all(
+    clients.map(async ({ page }, index) => {
+      const position = await mediaPosition(page);
+      expect(position).toBeGreaterThanOrEqual(floors[index] - 0.5);
+    }),
+  );
+}
+
+function monitorPlaybackFloors(
+  clients: Awaited<ReturnType<typeof createRoomClients>>["clients"],
+  floors: number[],
+) {
+  let stopped = false;
+  const violations: string[] = [];
+  const monitoring = (async () => {
+    while (!stopped) {
+      const positions = await Promise.all(
+        clients.map(({ page }) => mediaPosition(page)),
+      );
+      positions.forEach((position, index) => {
+        if (position < floors[index] - 0.5) {
+          violations.push(
+            `${clients[index].nickname}: ${position.toFixed(2)} < ${floors[index].toFixed(2)}`,
+          );
+        }
+      });
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  })();
+
+  return async () => {
+    stopped = true;
+    await monitoring;
+    expect(violations, "healthy playback rewound during recovery").toEqual([]);
+  };
 }

@@ -14,6 +14,7 @@ import {
   openPeople,
   participantCard,
   playbackControl,
+  renameParticipantAndExpect,
   seekToFraction,
   sendCommandViaSession,
 } from "./helpers/room";
@@ -93,6 +94,16 @@ test.describe("deterministic friend rooms", () => {
         room.clients.map(({ page }) => expectCanonicalStatus(page, "paused")),
       );
 
+      // The room owner retains playback authority while Friend 2 is leader.
+      await playbackControl(room.clients[0].page, "Play").click();
+      await Promise.all(
+        room.clients.map(({ page }) => expectCanonicalStatus(page, "playing")),
+      );
+      await playbackControl(room.clients[0].page, "Pause").click();
+      await Promise.all(
+        room.clients.map(({ page }) => expectCanonicalStatus(page, "paused")),
+      );
+
       // A moderator may also control while another participant is leader.
       await playbackControl(room.clients[2].page, "Play").click();
       await Promise.all(
@@ -122,27 +133,47 @@ test.describe("deterministic friend rooms", () => {
       await room.clients[1].page
         .getByRole("button", { name: "Request leader" })
         .click();
+      await Promise.all(
+        room.clients.map(async ({ page }) => {
+          await openPeople(page);
+          await expect(participantCard(page, "Friend 2")).toContainText(
+            "LEADER",
+          );
+        }),
+      );
 
       await pulseOffline(room.clients[0].context, 800);
-      await expectReconnected(room.clients[0].page);
+      await expectReconnected(room.clients[0].page, async () => {
+        await renameParticipantAndExpect(
+          room.clients[0],
+          room.clients[2].page,
+          "Friend 1 Reconnected",
+        );
+      });
       await Promise.all(
         room.clients.map(({ page }) => expectPeopleCount(page, 3)),
       );
       await openPeople(room.clients[0].page);
       await expect(
-        participantCard(room.clients[0].page, "Friend 1"),
+        participantCard(room.clients[0].page, "Friend 1 Reconnected"),
       ).toContainText("owner");
 
       // This exceeds the client's first clock heartbeat while remaining inside
       // the 15-second participant grace window.
       await pulseOffline(room.clients[1].context, 3_500);
-      await expectReconnected(room.clients[1].page);
+      await expectReconnected(room.clients[1].page, async () => {
+        await renameParticipantAndExpect(
+          room.clients[1],
+          room.clients[2].page,
+          "Friend 2 Reconnected",
+        );
+      });
       await Promise.all(
         room.clients.map(({ page }) => expectPeopleCount(page, 3)),
       );
       await openPeople(room.clients[1].page);
       await expect(
-        participantCard(room.clients[1].page, "Friend 2"),
+        participantCard(room.clients[1].page, "Friend 2 Reconnected"),
       ).toContainText("LEADER");
 
       const lateContext = await browser.newContext();
@@ -161,10 +192,16 @@ test.describe("deterministic friend rooms", () => {
         room.clients.map(({ page }) => expectPeopleCount(page, 4)),
       );
       await expectCanonicalStatus(latePage, "playing");
-      const reference = await mediaPosition(room.clients[2].page);
       await expect
-        .poll(() => mediaPosition(latePage), { timeout: 15_000 })
-        .toBeGreaterThan(reference - 4);
+        .poll(
+          async () =>
+            Math.abs(
+              (await mediaPosition(latePage)) -
+                (await mediaPosition(room.clients[2].page)),
+            ),
+          { timeout: 15_000 },
+        )
+        .toBeLessThan(4);
 
       await openPeople(room.clients[1].page);
       await room.clients[1].page
@@ -174,6 +211,14 @@ test.describe("deterministic friend rooms", () => {
       await room.clients[0].page
         .getByRole("button", { name: "Request leader" })
         .click();
+      await Promise.all(
+        room.clients.map(async ({ page }) => {
+          await openPeople(page);
+          await expect(
+            participantCard(page, "Friend 1 Reconnected"),
+          ).toContainText("LEADER");
+        }),
+      );
 
       const beforeDeparture = await mediaPosition(room.clients[2].page);
       await room.clients[0].context.close();
@@ -182,13 +227,20 @@ test.describe("deterministic friend rooms", () => {
       await Promise.all(
         room.clients.map(({ page }) => expectPeopleCount(page, 3, 25_000)),
       );
-      await openPeople(room.clients[0].page);
-      await expect(
-        participantCard(room.clients[0].page, "Friend 2"),
-      ).toContainText("owner");
-      await expect(
-        room.clients[0].page.getByText("No active leader", { exact: true }),
-      ).toBeVisible();
+      await Promise.all(
+        room.clients.map(async ({ page }) => {
+          await openPeople(page);
+          await expect(
+            page.locator(".participant-item").filter({ hasText: /owner/i }),
+          ).toHaveCount(1);
+          await expect(page.getByText("LEADER", { exact: true })).toHaveCount(
+            0,
+          );
+          await expect(
+            page.getByText("No active leader", { exact: true }),
+          ).toBeVisible();
+        }),
+      );
       await expectCanonicalStatus(room.clients[1].page, "playing");
       await expect
         .poll(() => mediaPosition(room.clients[1].page), { timeout: 10_000 })

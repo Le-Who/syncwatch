@@ -136,11 +136,17 @@ export async function createRoomClients(
   try {
     for (let index = 0; index < count; index += 1) {
       const context = await browser.newContext();
-      const page = await context.newPage();
-      const media = await installDeterministicMedia(page);
-      const nickname = `Friend ${index + 1}`;
-      await joinRoom(page, roomId, nickname);
-      clients.push({ context, page, nickname, media });
+      try {
+        const page = await context.newPage();
+        const media = await installDeterministicMedia(page);
+        const nickname = `Friend ${index + 1}`;
+        const client = { context, page, nickname, media };
+        await joinRoom(page, roomId, nickname);
+        clients.push(client);
+      } catch (error) {
+        await context.close().catch(() => {});
+        throw error;
+      }
     }
     return { roomId, clients };
   } catch (error) {
@@ -189,10 +195,31 @@ export function participantCard(page: Page, nickname: string): Locator {
   });
 }
 
-export async function expectReconnected(page: Page, timeout = 15_000) {
+export async function expectReconnected(
+  page: Page,
+  proveServerRoundTrip: () => Promise<void>,
+  timeout = 15_000,
+) {
   await expect(page.getByRole("button", { name: "Retry Now" })).toBeHidden({
     timeout,
   });
+  await proveServerRoundTrip();
+}
+
+export async function renameParticipantAndExpect(
+  client: RoomClient,
+  observerPage: Page,
+  nickname: string,
+) {
+  await openPeople(client.page);
+  await client.page
+    .getByRole("textbox", { name: "Your nickname" })
+    .fill(nickname);
+  await openPeople(observerPage);
+  await expect(participantCard(observerPage, nickname)).toBeVisible({
+    timeout: 15_000,
+  });
+  client.nickname = nickname;
 }
 
 export async function addDeterministicMedia(client: RoomClient) {

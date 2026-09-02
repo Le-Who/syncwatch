@@ -7,8 +7,13 @@ import {
   initializeProviderGesture,
   installDeterministicMedia,
   joinRoom,
+  renameParticipantAndExpect,
 } from "./helpers/room";
-import { pulseOffline, setLatency } from "./helpers/network";
+import {
+  NetworkEmulationHandle,
+  pulseOffline,
+  setLatency,
+} from "./helpers/network";
 
 const LIVE_YOUTUBE_URL = "https://www.youtube.com/watch?v=M7lc1UVf-VE";
 
@@ -24,6 +29,7 @@ test.describe("live YouTube provider smoke", () => {
   }) => {
     test.setTimeout(180_000);
     const room = await createRoomClients(browser, 3);
+    let degradedNetwork: NetworkEmulationHandle | undefined;
 
     try {
       const owner = room.clients[0].page;
@@ -62,14 +68,16 @@ test.describe("live YouTube provider smoke", () => {
 
       await youtubeControl(owner, /^Play/).click();
       const beforeSeek = await youtubePosition(owner);
-      await owner
+      const moviePlayer = owner
         .frameLocator("iframe")
         .first()
-        .locator("#movie_player")
-        .press("ArrowRight");
+        .locator("#movie_player");
+      for (let step = 0; step < 10; step += 1) {
+        await moviePlayer.press("ArrowRight");
+      }
       await expect
         .poll(() => youtubePosition(owner), { timeout: 30_000 })
-        .toBeGreaterThan(beforeSeek + 3);
+        .toBeGreaterThan(beforeSeek + 40);
       const ownerAfterSeek = await youtubePosition(owner);
       await Promise.all(
         room.clients.slice(1).map(async ({ page }) => {
@@ -115,16 +123,43 @@ test.describe("live YouTube provider smoke", () => {
         )
         .toBeLessThan(6);
 
-      await setLatency(room.clients[1].page, 1_500);
+      degradedNetwork = await setLatency(room.clients[1].page, 1_500);
       const healthyBefore = await youtubePosition(owner);
       await pulseOffline(room.clients[2].context, 1_500);
-      await expectReconnected(room.clients[2].page, 30_000);
+      await expectReconnected(
+        room.clients[2].page,
+        async () => {
+          await renameParticipantAndExpect(
+            room.clients[2],
+            owner,
+            "Friend 3 Reconnected",
+          );
+        },
+        30_000,
+      );
       await expect(youtubeControl(owner, /^Pause/)).toBeVisible();
       await expect(youtubeControl(latePage, /^Pause/)).toBeVisible();
+      await expect
+        .poll(
+          async () =>
+            Math.abs(
+              (await youtubePosition(room.clients[2].page)) -
+                (await youtubePosition(owner)),
+            ),
+          { timeout: 45_000 },
+        )
+        .toBeLessThan(6);
+      const recoveredBefore = await youtubePosition(room.clients[2].page);
+      await expect
+        .poll(() => youtubePosition(room.clients[2].page), {
+          timeout: 30_000,
+        })
+        .toBeGreaterThan(recoveredBefore + 1);
       await expect
         .poll(() => youtubePosition(owner), { timeout: 30_000 })
         .toBeGreaterThan(healthyBefore + 1);
     } finally {
+      await degradedNetwork?.resetAndDispose();
       await closeRoomClients(room.clients);
     }
   });
