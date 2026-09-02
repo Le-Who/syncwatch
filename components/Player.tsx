@@ -55,6 +55,21 @@ const ReactPlayer = dynamic(() => import("react-player"), {
   ssr: false,
 }) as any;
 
+import { PlaylistItem } from "@/lib/types";
+
+// ⚡ Bolt Optimization: Cache O(N) playlist lookups using a WeakMap tied to the immutable array reference.
+// This prevents widespread re-renders caused by frequent `.find()` and `.findIndex()` calls during playback ticks.
+// The cache is keyed on the `playlist` array itself because it remains referentially stable during playback ticks.
+const playlistIndexCache = new WeakMap<PlaylistItem[], Map<string, number>>();
+
+function getPlaylistIndexMap(playlist: PlaylistItem[]) {
+  if (playlistIndexCache.has(playlist)) return playlistIndexCache.get(playlist)!;
+  const map = new Map<string, number>();
+  playlist.forEach((item, idx) => map.set(item.id, idx));
+  playlistIndexCache.set(playlist, map);
+  return map;
+}
+
 export default function Player() {
   const participantId = useStore((s) => s.participantId);
   const sendCommand = useStore((s) => s.sendCommand);
@@ -70,9 +85,12 @@ export default function Player() {
   );
 
   const currentMedia = useStore(
-    useShallow((s) =>
-      s.room?.playlist.find((item) => item.id === s.room?.currentMediaId),
-    ),
+    useShallow((s) => {
+      if (!s.room || !s.room.currentMediaId) return null;
+      const indexMap = getPlaylistIndexMap(s.room.playlist);
+      const idx = indexMap.get(s.room.currentMediaId);
+      return idx !== undefined ? s.room.playlist[idx] : null;
+    }),
   );
 
   const playback = useStore(useShallow((s) => s.room?.playback));
@@ -542,11 +560,12 @@ export default function Player() {
 
   const nextItem = useStore(
     useShallow((s) => {
-      if (!s.room || !currentMediaId) return null;
-      const idx = s.room.playlist.findIndex((i) => i.id === currentMediaId);
-      if (idx === -1) return null;
-      let n = s.room.playlist[idx + 1];
-      if (!n && s.room.settings.looping) n = s.room.playlist[0];
+      if (!s.room || !s.room.currentMediaId) return null;
+      const indexMap = getPlaylistIndexMap(s.room.playlist);
+      const idx = indexMap.get(s.room.currentMediaId);
+      if (idx === undefined) return null;
+      let n = s.room.playlist[idx + 1] || null;
+      if (!n && s.room.settings.looping) n = s.room.playlist[0] || null;
       return n;
     }),
   );
