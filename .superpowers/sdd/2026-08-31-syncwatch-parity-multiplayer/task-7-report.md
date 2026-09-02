@@ -199,3 +199,147 @@ advancement, recovery tolerance, cardinality, role visibility, and cleanup.
   stale `caniuse-lite`. They did not produce test failures.
 - The live YouTube smoke is implemented but unexecuted, so external provider
   availability and current iframe labels are not claimed as verified here.
+
+## Round 1: Discriminating recovery evidence
+
+Baseline: `13db5b3`. Final implementation commit: `2ac4a6b` (`test: harden
+multiplayer recovery assertions`). No production code or production test hook
+changed.
+
+### RED and root-cause evidence
+
+The first reconnect correction deliberately required the recovered owner to
+pause the room after the offline pulse, with another context expected to see
+`paused`:
+
+```powershell
+pnpm exec playwright test e2e/multiplayer-room.spec.ts --workers=1 --grep "reconnects without"
+```
+
+```text
+1 failed
+expectCanonicalStatus(..., "paused") timed out after 15000 ms waiting for the
+Play control
+```
+
+The old hidden-`Retry Now` condition had passed immediately, but this server
+round trip did not. That demonstrated that stale local UI was not reconnect
+proof. After the reconnect helper accepted an explicit observed round trip, the
+same command passed (`1 passed (45.3s)`).
+
+An initial degraded-network GREEN attempt then failed its final `< 4` second
+spread assertion with an approximately 29-second spread. Root-cause tracing
+showed that the test itself used the recovered, stale-position client to issue
+Pause/Play as its reconnect proof, legitimately making that stale position
+canonical and rewinding the healthy clients. The correction uses a permitted
+nickname update observed by another browser context. It proves a fresh server
+round trip without perturbing playback state.
+
+Focused final results:
+
+```text
+pnpm exec playwright test e2e/multiplayer-room.spec.ts --workers=1 --grep "five independent"
+1 passed (30.5s)
+
+pnpm exec playwright test e2e/multiplayer-room.spec.ts --workers=1 --grep "reconnects without"
+1 passed (41.4s)
+
+pnpm exec playwright test e2e/degraded-network.spec.ts --workers=1
+1 passed (26.6s)
+```
+
+### Corrected matrix evidence
+
+| Correction              | Observable evidence                                                                                                                                                                      | Regression made discriminating                                                                                                    |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Healthy playback floors | Three healthy media elements are sampled continuously every 100 ms from pre-recovery floors through reconnect, network reset, convergence, and recovered advancement; tolerance is 0.5 s | Any transient or sustained rewind below a recorded floor is retained as a violation and fails even if the player later catches up |
+| Recovered playback      | Both formerly degraded media elements must physically advance by more than 0.6 s after convergence                                                                                       | A client that only receives a `playing` label or stale canonical event fails                                                      |
+| Positive reconnect      | Recovered clients rename themselves and a separate live context must observe the exact new participant card                                                                              | Hidden retry UI, cached presence, or disconnected local state cannot satisfy the assertion                                        |
+| Owner/leader handoff    | All contexts first observe the departing owner as `LEADER`; after grace, every survivor observes exactly one owner, zero `LEADER` badges, and `No active leader`                         | A pre-existing empty-leader label alone cannot pass; duplicate ownership or retained leadership fails                             |
+| Symmetric late join     | Absolute position delta between the late joiner and an existing player must be below 4 s                                                                                                 | A late joiner arbitrarily far behind or ahead fails                                                                               |
+| Post-leader permissions | While Friend 2 is leader, the owner plays and pauses and all five contexts observe both transitions                                                                                      | A regression that accidentally restricts owner playback once another leader exists fails                                          |
+| Live provider smoke     | Seek uses ten YouTube ArrowRight steps and requires a >40 s jump; reconnect requires an observer-confirmed rename, <6 s absolute convergence, and >1 s advancement                       | Natural playback cannot satisfy the seek; stale UI or a frozen recovered iframe cannot satisfy reconnect                          |
+
+The deterministic media/provider boundary remains the test-owned metadata and
+byte-range adapter described above. Round 1 did not add state injection or a
+browser production global. The live smoke continues to use the real YouTube
+iframe provider.
+
+### Harness cleanup and network lifecycle
+
+`createRoomClients()` now closes a newly created context in the same iteration
+if page creation, adapter install, or room join fails, while the outer cleanup
+closes all already joined clients. Network emulation now returns an idempotent
+handle: one CDP session is enabled per lifecycle, latency can change on that
+session, and `resetAndDispose()` resets to zero and detaches exactly once. The
+deterministic degraded test and live smoke call it from `finally`; the
+alternating-latency timer is stopped and its active update awaited before
+disposal. No redundant reset session is created.
+
+### Required deterministic and static verification
+
+The required product command was run once after focused iteration:
+
+```powershell
+pnpm exec playwright test e2e/multiplayer-room.spec.ts e2e/degraded-network.spec.ts --workers=1
+```
+
+```text
+Running 5 tests using 1 worker
+5 passed (1.5m)
+```
+
+The opt-in external smoke was discovered, not executed:
+
+```text
+pnpm exec playwright test e2e/live-youtube-smoke.spec.ts --list
+Total: 1 test in 1 file
+```
+
+Static checks:
+
+```text
+pnpm lint
+exit 0, no findings
+
+pnpm typecheck
+tsc --noEmit; exit 0, no findings
+
+pnpm exec prettier --check playwright.config.ts e2e
+All matched files use Prettier code style!
+
+git diff --check
+exit 0; only Git's repository LF-to-CRLF checkout notices were printed
+```
+
+The missing project `typecheck` script was added so the required command maps
+directly to `tsc --noEmit`. Framework-generated `next-env.d.ts` noise was
+restored before committing.
+
+### Warning-noise diagnosis
+
+This diagnosis supersedes the project-controllable warning concern in the
+original Task 7 section above.
+
+Three project-controlled warning sources were removed without suppressing
+runtime failures:
+
+- the Playwright server command now uses `pnpm exec tsx server.ts`, avoiding
+  nested npm interpreting pnpm-only `.npmrc` keys;
+- the inherited host `NO_COLOR=1` is removed before Playwright installs its
+  `FORCE_COLOR` setting, eliminating the conflicting-color warning; and
+- the dedicated test server receives `BROWSERSLIST_IGNORE_OLD_DATA=true`,
+  removing the stale `caniuse-lite` advisory from deterministic output.
+
+The remaining server messages are intentional and material: the deterministic
+run states that it is using ephemeral memory because
+`SUPABASE_SERVICE_ROLE_KEY` is absent and operating without Redis because no
+Redis URL is configured. Those are environment-state warnings, not hidden test
+errors. Redis/live-environment execution remains Task 9.
+
+### Round 1 concerns
+
+- The external YouTube smoke was not run and is not claimed as passed; Task 9
+  owns its opt-in execution.
+- Deterministic recovery passed in the documented ephemeral no-Redis mode;
+  Redis parity is outside this correction round.
