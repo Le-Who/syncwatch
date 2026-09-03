@@ -3,6 +3,7 @@ import { SupabaseClient } from "@supabase/supabase-js";
 import { jwtVerify } from "jose";
 import { commandSchema } from "../zod-schemas";
 import { checkRedisRateLimit } from "../redis-rate-limit";
+import { getClientIp } from "../ip";
 import {
   getRedisRoom,
   setRedisRoomCAS,
@@ -37,10 +38,7 @@ export function handleCommandEvents(
 
     if (!rawCommand || typeof rawCommand !== "object") return;
 
-    const ip =
-      socket.handshake.headers["x-forwarded-for"] ||
-      socket.handshake.address ||
-      "unknown";
+    const ip = getClientIp(socket);
     if (!(await checkRedisRateLimit(`ws:command:${ip}`, 60, 10000))) {
       socket.emit("error", { message: "Rate limit exceeded" });
       return;

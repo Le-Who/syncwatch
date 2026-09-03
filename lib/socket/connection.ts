@@ -1,6 +1,7 @@
 import { Server, Socket } from "socket.io";
 import { SupabaseClient } from "@supabase/supabase-js";
 import { checkRedisRateLimit, getRedisClient } from "../redis-rate-limit";
+import { getClientIp } from "../ip";
 import {
   getRedisRoom,
   setRedisRoomCAS,
@@ -42,10 +43,7 @@ export function handleConnectionEvents(
       return;
     }
 
-    const ip =
-      socket.handshake.headers["x-forwarded-for"] ||
-      socket.handshake.address ||
-      "unknown";
+    const ip = getClientIp(socket);
     if (!(await checkRedisRateLimit(`ws:join:${ip}`, 50, 60000))) {
       socket.emit("error", { message: "Too many join requests" });
       return;
