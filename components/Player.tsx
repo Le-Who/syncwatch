@@ -40,6 +40,7 @@ import { applyTwitchEventProxy } from "@/lib/player-adapters";
 import { PAUSE_DEBOUNCE_MS } from "@/lib/sync-config";
 import { AwaitingSignal } from "./AwaitingSignal";
 import { UpNextOverlay } from "./UpNextOverlay";
+import { getPlaylistIndexMap } from "@/lib/playlist-cache";
 import { SyncStatusBadge } from "./SyncStatusBadge";
 import { PlayerControlBar } from "./PlayerControlBar";
 import { PlaybackIntentManager } from "@/lib/playback-intent-manager";
@@ -70,9 +71,12 @@ export default function Player() {
   );
 
   const currentMedia = useStore(
-    useShallow((s) =>
-      s.room?.playlist.find((item) => item.id === s.room?.currentMediaId),
-    ),
+    useShallow((s) => {
+      if (!s.room || !s.room.currentMediaId) return undefined;
+      const indexMap = getPlaylistIndexMap(s.room.playlist);
+      const idx = indexMap.get(s.room.currentMediaId);
+      return idx !== undefined ? s.room.playlist[idx] : undefined;
+    }),
   );
 
   const playback = useStore(useShallow((s) => s.room?.playback));
@@ -543,8 +547,9 @@ export default function Player() {
   const nextItem = useStore(
     useShallow((s) => {
       if (!s.room || !currentMediaId) return null;
-      const idx = s.room.playlist.findIndex((i) => i.id === currentMediaId);
-      if (idx === -1) return null;
+      const indexMap = getPlaylistIndexMap(s.room.playlist);
+      const idx = indexMap.get(currentMediaId);
+      if (idx === undefined) return null;
       let n = s.room.playlist[idx + 1];
       if (!n && s.room.settings.looping) n = s.room.playlist[0];
       return n;
