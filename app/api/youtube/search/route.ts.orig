@@ -57,7 +57,7 @@ const ytSearchBreaker = new CircuitBreaker(5, 60000); // 1 minute lockout after 
 const workerCode = `
   const { parentPort, workerData } = require('worker_threads');
   const yts = require('yt-search');
-  
+
   yts(workerData.query).then((res) => {
     parentPort.postMessage({ success: true, data: res });
   }).catch((err) => {
@@ -130,7 +130,7 @@ async function searchWithGoogleApi(query: string, apiKey: string) {
 }
 
 export async function GET(request: Request) {
-  const ip = getClientIp(request);
+  const ip = request.headers.get("x-forwarded-for") || "unknown";
   const allowed = await checkRedisRateLimit(ip, 20, 60);
   if (!allowed) {
     return NextResponse.json({ error: "Too many requests" }, { status: 429 });
