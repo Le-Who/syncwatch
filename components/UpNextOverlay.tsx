@@ -17,11 +17,12 @@ export function UpNextOverlay({
     <div className="bg-theme-bg/95 border-theme-border/50 rounded-theme animate-in fade-in slide-in-from-right-8 pointer-events-auto absolute right-4 bottom-24 z-40 flex items-center space-x-4 border p-4 shadow-[0_10px_40px_rgba(0,0,0,0.5)] backdrop-blur-md">
       {/* Dismiss button */}
       <button
+        aria-label="Dismiss"
         onClick={(e) => {
           e.stopPropagation();
           onDismiss();
         }}
-        className="text-theme-muted hover:text-theme-text absolute top-1.5 right-1.5 rounded-full p-1 transition-colors"
+        className="text-theme-muted hover:text-theme-text ring-theme-accent absolute top-1.5 right-1.5 rounded-full p-1 transition-colors outline-none focus-visible:ring-2"
         title="Dismiss"
       >
         <X className="h-3.5 w-3.5" />
@@ -67,7 +68,7 @@ export function UpNextOverlay({
           e.stopPropagation();
           onSkip();
         }}
-        className="text-theme-bg bg-theme-accent rounded-theme px-3 py-1.5 text-xs font-bold tracking-widest uppercase transition-all hover:brightness-110 hover:filter"
+        className="text-theme-bg bg-theme-accent rounded-theme ring-theme-accent px-3 py-1.5 text-xs font-bold tracking-widest uppercase transition-all outline-none hover:brightness-110 hover:filter focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-theme-bg"
       >
         Skip
       </button>
