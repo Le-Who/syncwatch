@@ -13,6 +13,7 @@ import {
   PARTICIPANT_GRACE_MS,
   removeParticipantAfterGrace,
 } from "../participant-lifecycle";
+import { getClientIp } from "../rate-limit";
 
 export function handleConnectionEvents(
   io: Server,
@@ -88,11 +89,11 @@ export function handleConnectionEvents(
       return;
     }
 
-    const ip =
-      socket.handshake.headers["x-forwarded-for"] ||
-      socket.handshake.address ||
-      "unknown";
-    if (!(await checkRedisRateLimit(`ws:join:${ip}`, 50, 60000))) {
+    const ip = getClientIp(
+      socket.handshake.headers,
+      socket.handshake.address || "unknown",
+    );
+    if (!(await checkRedisRateLimit(`ws:join:${ip}`, 50, 60_000))) {
       socket.emit("error", { message: "Too many join requests" });
       return;
     }

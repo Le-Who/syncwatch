@@ -1,6 +1,7 @@
 import { expect, Page, test } from "@playwright/test";
 import {
   closeRoomClients,
+  createIsolatedBrowserContext,
   createRoomClients,
   expectPeopleCount,
   expectReconnected,
@@ -96,7 +97,7 @@ test.describe("live YouTube provider smoke", () => {
         }),
       );
 
-      const lateContext = await browser.newContext();
+      const lateContext = await createIsolatedBrowserContext(browser);
       const latePage = await lateContext.newPage();
       const lateMedia = await installDeterministicMedia(latePage);
       const lateClient = {

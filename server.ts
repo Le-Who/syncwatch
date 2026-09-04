@@ -9,6 +9,10 @@ import { setupPubSubListeners } from "./lib/socket/pubsub";
 import { RoomEventBus } from "./lib/room-event-bus";
 import { emitRoomEventToSocketIo } from "./lib/room-events";
 import { pubClient } from "./lib/redis-actor";
+import {
+  isSocketOriginAllowed,
+  normalizeAppOrigin,
+} from "./lib/server-config";
 
 // Load environment variables manually for the custom server
 import { loadEnvConfig } from "@next/env";
@@ -68,10 +72,7 @@ process.on("SIGINT", gracefulShutdown);
 app.prepare().then(() => {
   const server = createServer((req, res) => {
     try {
-      // Use WHATWG URL API instead of deprecated url.parse
-      const protocol = req.headers["x-forwarded-proto"] || "http";
-      const host = req.headers.host || "localhost";
-      const parsedUrl = new URL(req.url!, `${protocol}://${host}`);
+      const parsedUrl = new URL(req.url || "/", "http://localhost");
 
       // Next.js expects { pathname, query } shape originally from url.parse
       const query = Object.fromEntries(parsedUrl.searchParams.entries());
@@ -86,23 +87,22 @@ app.prepare().then(() => {
   });
 
   const isProduction = process.env.NODE_ENV === "production";
-  let corsOrigin = "*";
-  if (isProduction && process.env.NEXT_PUBLIC_APP_URL) {
-    try {
-      const urlString = process.env.NEXT_PUBLIC_APP_URL.startsWith("http")
-        ? process.env.NEXT_PUBLIC_APP_URL
-        : `https://${process.env.NEXT_PUBLIC_APP_URL}`;
-      corsOrigin = new URL(urlString).origin;
-    } catch {
-      corsOrigin = process.env.NEXT_PUBLIC_APP_URL;
-    }
-  }
+  const allowedOrigin = isProduction
+    ? normalizeAppOrigin(process.env.NEXT_PUBLIC_APP_URL)
+    : null;
 
   const io = new SocketIOServer(server, {
     cors: {
-      origin: corsOrigin,
+      origin: allowedOrigin ?? true,
       methods: ["GET", "POST"],
       credentials: true,
+    },
+    allowRequest: (request, callback) => {
+      callback(
+        null,
+        !allowedOrigin ||
+          isSocketOriginAllowed(request.headers.origin, allowedOrigin),
+      );
     },
     pingTimeout: 60000,
     pingInterval: 25000,

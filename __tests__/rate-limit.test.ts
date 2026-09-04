@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { checkRateLimit } from "../lib/rate-limit";
+import { checkRateLimit, getClientIp } from "../lib/rate-limit";
+import { createRateLimiter } from "../lib/redis-rate-limit";
 
 describe("rate-limit", () => {
   beforeEach(() => {
@@ -79,5 +80,65 @@ describe("rate-limit", () => {
 
     // Trigger one more check which should trigger the cleanup
     expect(checkRateLimit("10.0.0.99999", 1, 1000)).toBe(true);
+  });
+});
+
+describe("Redis/local rate-limit adapter", () => {
+  it("allows exactly the configured number of events without Redis", async () => {
+    const limiter = createRateLimiter({ redis: null, now: () => 1_000 });
+
+    for (let index = 0; index < 20; index++) {
+      await expect(limiter.check("ip", 20, 60_000)).resolves.toBe(true);
+    }
+    await expect(limiter.check("ip", 20, 60_000)).resolves.toBe(false);
+  });
+
+  it("falls back to the bounded local limit when Redis becomes unavailable", async () => {
+    const redis = {
+      eval: vi.fn().mockRejectedValue(new Error("redis unavailable")),
+    };
+    const limiter = createRateLimiter({ redis, now: () => 1_000 });
+
+    await expect(limiter.check("ip", 2, 60_000)).resolves.toBe(true);
+    await expect(limiter.check("ip", 2, 60_000)).resolves.toBe(true);
+    await expect(limiter.check("ip", 2, 60_000)).resolves.toBe(false);
+  });
+
+  it("uses distinct sorted-set members for simultaneous events", async () => {
+    const redis = { eval: vi.fn().mockResolvedValue(1) };
+    let nonce = 0;
+    const limiter = createRateLimiter({
+      redis,
+      now: () => 1_000,
+      randomUUID: () => `event-${++nonce}`,
+    });
+
+    await limiter.check("ip", 20, 60_000);
+    await limiter.check("ip", 20, 60_000);
+
+    expect(redis.eval.mock.calls[0]?.[7]).toBe("1000:event-1");
+    expect(redis.eval.mock.calls[1]?.[7]).toBe("1000:event-2");
+  });
+});
+
+describe("trusted proxy client addresses", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("ignores forwarded addresses unless trusted forwarding is enabled", () => {
+    const headers = new Headers({ "x-forwarded-for": "203.0.113.7" });
+    vi.stubEnv("TRUST_PROXY", "false");
+
+    expect(getClientIp(headers, "127.0.0.1")).toBe("127.0.0.1");
+  });
+
+  it("uses the first forwarded address when trusted forwarding is enabled", () => {
+    const headers = new Headers({
+      "x-forwarded-for": "203.0.113.7, 10.0.0.4",
+    });
+    vi.stubEnv("TRUST_PROXY", "true");
+
+    expect(getClientIp(headers, "127.0.0.1")).toBe("203.0.113.7");
   });
 });

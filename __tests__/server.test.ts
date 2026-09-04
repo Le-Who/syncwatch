@@ -92,6 +92,14 @@ const waitForCondition = async (
 const delay = (durationMs: number) =>
   new Promise((resolve) => setTimeout(resolve, durationMs));
 
+const TEST_JWT_SECRET = new TextEncoder().encode(
+  "default_local_secret_dont_use_in_prod",
+);
+const tokenFor = (participantId: string) =>
+  new SignJWT({ participantId })
+    .setProtectedHeader({ alg: "HS256" })
+    .sign(TEST_JWT_SECRET);
+
 describe("server.ts Real Socket.IO Integration", () => {
   let clientSocket: ClientSocket;
   let viewerSocket: ClientSocket;
@@ -131,6 +139,28 @@ describe("server.ts Real Socket.IO Integration", () => {
     if (recoverySocket) recoverySocket.close();
     presenceSockets.forEach((socket) => socket.close());
     if (httpServer) httpServer.close();
+  });
+
+  it("normalizes the configured production origin and rejects other origins", async () => {
+    const { normalizeAppOrigin, isSocketOriginAllowed } =
+      await import("../lib/server-config");
+
+    expect(normalizeAppOrigin("localhost:3000")).toBe("http://localhost:3000");
+    expect(normalizeAppOrigin("https://watch.example.com/path")).toBe(
+      "https://watch.example.com",
+    );
+    expect(
+      isSocketOriginAllowed(
+        "https://watch.example.com",
+        "https://watch.example.com",
+      ),
+    ).toBe(true);
+    expect(
+      isSocketOriginAllowed(
+        "https://evil.example.com",
+        "https://watch.example.com",
+      ),
+    ).toBe(false);
   });
 
   it("TC-01: Connects and joins a room, establishing owner role", async () => {
@@ -177,44 +207,39 @@ describe("server.ts Real Socket.IO Integration", () => {
     expect(participant.nickname).toBe("OwnerUser");
   });
 
-  it("TC-02: Fallback UUID users can mutate state (Guest concept removed)", async () => {
-    // Arrange: Create Socket connection without a token
+  it("TC-02: Rejects a socket that has no server-issued session", async () => {
     viewerSocket = Client(ioServerPath, {
       path: "/socket.io",
       transports: ["websocket"],
       forceNew: true,
-      auth: { participantId: "fallback_123" },
     });
 
-    await waitForSocketEvent(viewerSocket, "connect");
+    const error = await waitForSocketEvent(viewerSocket, "connect_error");
 
-    // Arrange: Join the room (Precondition)
-    const roomStatePromise = waitForSocketEvent(viewerSocket, "room_state");
-    viewerSocket.emit("join_room", {
-      roomId: "test-room-2",
-      nickname: "FallbackUser",
-      participantId: "fallback_123",
+    expect(error.message).toMatch(/session|authentication/i);
+  });
+
+  it("rejects a malformed handshake without logging its auth payload", async () => {
+    const loggedError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const rejectedToken = "malformed-handshake-token";
+    const socket = Client(ioServerPath, {
+      path: "/socket.io",
+      transports: ["websocket"],
+      forceNew: true,
+      auth: {
+        token: rejectedToken,
+        participantId: "claimed-owner-id",
+      },
     });
-    await roomStatePromise;
+    presenceSockets.push(socket);
 
-    // Act: Attempt to mutate state via command
-    // We shouldn't get an error, but instead a room_state or state update via redis.
-    // For this test, just ensuring the command doesn't emit an error is enough to prove the firewall is gone.
-    const errorPromise = waitForSocketEvent(viewerSocket, "error", 500).catch(
-      () => "NO_ERROR_THROWN",
-    );
+    const error = await waitForSocketEvent(socket, "connect_error");
 
-    viewerSocket.emit("command", {
-      roomId: "test-room-2",
-      type: "play",
-      payload: { position: 10 },
-      sequence: 1,
-    });
-
-    const errResult = await errorPromise;
-
-    // Assert: We expect NO_ERROR_THROWN, meaning the command was accepted and processed or queued.
-    expect(errResult).toBe("NO_ERROR_THROWN");
+    expect(error.message).toMatch(/session|authentication/i);
+    const logged = JSON.stringify(loggedError.mock.calls);
+    expect(logged).not.toContain(rejectedToken);
+    expect(logged).not.toContain("claimed-owner-id");
+    loggedError.mockRestore();
   });
 
   it("TC-03: Invalid Zod command payload types are rejected immediately", async () => {
@@ -310,13 +335,13 @@ describe("server.ts Real Socket.IO Integration", () => {
       path: "/socket.io",
       transports: ["websocket"],
       forceNew: true,
-      auth: { participantId: "health-sender" },
+      auth: { token: await tokenFor("health-sender") },
     });
     const observer = Client(ioServerPath, {
       path: "/socket.io",
       transports: ["websocket"],
       forceNew: true,
-      auth: { participantId: "health-observer" },
+      auth: { token: await tokenFor("health-observer") },
     });
     presenceSockets.push(sender, observer);
     await Promise.all([
@@ -364,7 +389,7 @@ describe("server.ts Real Socket.IO Integration", () => {
         path: "/socket.io",
         transports: ["websocket"],
         forceNew: true,
-        auth: { participantId: `friend-${index}` },
+        auth: { token: await tokenFor(`friend-${index}`) },
       });
       presenceSockets.push(socket);
       socket.on("room_state", ({ room }) => {
@@ -411,7 +436,7 @@ describe("server.ts Real Socket.IO Integration", () => {
           path: "/socket.io",
           transports: ["websocket"],
           forceNew: true,
-          auth: { participantId: id },
+          auth: { token: await tokenFor(id) },
         });
         presenceSockets.push(socket);
         await waitForSocketEvent(socket, "connect");

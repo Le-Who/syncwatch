@@ -3,6 +3,7 @@ import { z } from "zod";
 import { checkRedisRateLimit } from "@/lib/redis-rate-limit";
 import { Worker } from "worker_threads";
 import { LRUCache } from "@/lib/lru-cache";
+import { getClientIp } from "@/lib/rate-limit";
 
 const ytSearchQuerySchema = z.string().min(1);
 
@@ -72,7 +73,7 @@ function searchYoutubeWithWorker(
     // Generate a Data URI to avoid eval: true which is insecure and flagged by SAST tools
     const workerScript = `data:text/javascript;base64,${Buffer.from(workerCode).toString("base64")}`;
 
-    const worker = new Worker(workerScript, {
+    const worker = new Worker(new URL(workerScript), {
       workerData: { query },
     });
 
@@ -129,8 +130,8 @@ async function searchWithGoogleApi(query: string, apiKey: string) {
 }
 
 export async function GET(request: Request) {
-  const ip = request.headers.get("x-forwarded-for") || "unknown";
-  const allowed = await checkRedisRateLimit(ip, 20, 60000);
+  const ip = getClientIp(request.headers);
+  const allowed = await checkRedisRateLimit(ip, 20, 60_000);
   if (!allowed) {
     return NextResponse.json({ error: "Too many requests" }, { status: 429 });
   }

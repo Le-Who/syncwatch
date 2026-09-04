@@ -28,6 +28,7 @@ export const COMMAND_REJECTION_MESSAGES: Record<CommandRejectionCode, string> =
     NO_CHANGE: "The room is already in that playback state.",
     CONTENTION: "The room is busy. Please retry this action.",
     QUEUE_FULL: "The queue already contains 500 items.",
+    RATE_LIMITED: "Too many commands. Please wait before trying again.",
   };
 
 type Dependencies = {

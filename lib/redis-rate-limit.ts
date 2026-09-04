@@ -1,7 +1,12 @@
+import { randomUUID } from "node:crypto";
 import { Redis } from "ioredis";
+import {
+  createInMemoryRateLimiter,
+  type InMemoryRateLimiter,
+} from "./rate-limit";
 
 const globalForRedis = globalThis as unknown as {
-  redisClient: Redis | null | undefined; // Changed to undefined to differentiate between not initialized and explicitly null
+  redisClient: Redis | null | undefined;
 };
 
 export const getRedisClient = (): Redis | null => {
@@ -9,14 +14,13 @@ export const getRedisClient = (): Redis | null => {
     return globalForRedis.redisClient;
   }
 
-  // Read directly from process.env at runtime to ensure Next/Server .env loaders have completed
   const redisUrl = process.env.REDIS_URL || process.env.UPSTASH_REDIS_REST_URL;
 
   if (!redisUrl) {
     console.warn(
-      "⚠️ REDIS_URL or UPSTASH_REDIS_REST_URL is missing. Operating without Redis.",
+      "REDIS_URL or UPSTASH_REDIS_REST_URL is missing. Using bounded in-memory rate limits.",
     );
-    globalForRedis.redisClient = null; // Assign null to global to remember it's not available
+    globalForRedis.redisClient = null;
     return null;
   }
 
@@ -24,60 +28,102 @@ export const getRedisClient = (): Redis | null => {
     const client = new Redis(redisUrl, {
       maxRetriesPerRequest: 3,
       retryStrategy(times) {
-        if (times > 3) return null; // Stop retrying
+        if (times > 3) return null;
         return Math.min(times * 100, 3000);
       },
     });
-    console.log("✅ IORedis initialized");
-    globalForRedis.redisClient = client; // Assign client to global
+    console.log("IORedis initialized");
+    globalForRedis.redisClient = client;
     return client;
-  } catch (e) {
-    console.error("IORedis initialization failed:", e);
-    globalForRedis.redisClient = null; // Assign null to global on error
+  } catch (error) {
+    console.error(
+      "IORedis initialization failed; using bounded local limits:",
+      error instanceof Error ? error.message : "unknown error",
+    );
+    globalForRedis.redisClient = null;
     return null;
   }
 };
 
-// The previous global assignment logic is now handled within getRedisClient
-// if (process.env.NODE_ENV !== "production" || redisClient) {
-//   globalForRedis.redisClient = redisClient;
-// }
+interface RedisEvalClient {
+  eval(
+    script: string,
+    numberOfKeys: number,
+    ...args: Array<string | number>
+  ): Promise<unknown>;
+}
+
+interface CreateRateLimiterOptions {
+  redis: RedisEvalClient | null;
+  now?: () => number;
+  randomUUID?: () => string;
+  local?: InMemoryRateLimiter;
+}
+
+const CHECK_AND_ADD = `
+local key = KEYS[1]
+local now = tonumber(ARGV[1])
+local window_start = tonumber(ARGV[2])
+local limit = tonumber(ARGV[3])
+local ttl_ms = tonumber(ARGV[4])
+local member = ARGV[5]
+
+redis.call("ZREMRANGEBYSCORE", key, 0, window_start)
+local count = redis.call("ZCARD", key)
+if count >= limit then
+  return 0
+end
+redis.call("ZADD", key, now, member)
+redis.call("PEXPIRE", key, ttl_ms)
+return 1
+`;
+
+export function createRateLimiter(options: CreateRateLimiterOptions) {
+  const now = options.now ?? (() => Date.now());
+  const createMemberId = options.randomUUID ?? randomUUID;
+  const local =
+    options.local ?? createInMemoryRateLimiter({ now, maxKeys: 10_000 });
+
+  return {
+    async check(identifier: string, limit: number, windowMs: number) {
+      if (!options.redis) {
+        return local.check(identifier, limit, windowMs);
+      }
+
+      const currentTime = now();
+      const member = `${currentTime}:${createMemberId()}`;
+      try {
+        const result = await options.redis.eval(
+          CHECK_AND_ADD,
+          1,
+          `ratelimit:${identifier}`,
+          currentTime,
+          currentTime - windowMs,
+          limit,
+          windowMs,
+          member,
+        );
+        return Number(result) === 1;
+      } catch (error) {
+        console.error(
+          "Redis rate limit unavailable; using bounded local limit:",
+          error instanceof Error ? error.message : "unknown error",
+        );
+        return local.check(identifier, limit, windowMs);
+      }
+    },
+  };
+}
+
+const localFallback = createInMemoryRateLimiter({ maxKeys: 10_000 });
 
 export async function checkRedisRateLimit(
   identifier: string,
   limit: number,
   windowMs: number,
 ): Promise<boolean> {
-  const client = getRedisClient();
-  if (!client) {
-    return true; // Fail open if Redis is not configured
-  }
-
-  const now = Date.now();
-  const windowStart = now - windowMs;
-  const key = `ratelimit:${identifier}`;
-  try {
-    const multi = client.multi();
-    // Remove old events
-    multi.zremrangebyscore(key, 0, windowStart);
-    // Count events in the window
-    multi.zcard(key);
-    // Add current event
-    multi.zadd(key, now, now.toString());
-    // Set expiry to clean up keys
-    multi.expire(key, Math.ceil(windowMs / 1000));
-
-    const results = await multi.exec();
-
-    if (results && results[1] && results[1][1] !== null) {
-      const count = results[1][1] as number;
-      if (count > limit) {
-        return false;
-      }
-    }
-    return true;
-  } catch (error) {
-    console.error("Redis rate limit error:", error);
-    return true; // Fail open
-  }
+  return createRateLimiter({
+    redis: getRedisClient(),
+    local: localFallback,
+  }).check(identifier, limit, windowMs);
 }

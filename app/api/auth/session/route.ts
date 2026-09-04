@@ -1,45 +1,53 @@
 import { NextResponse } from "next/server";
-import { SignJWT } from "jose";
+import { randomUUID } from "node:crypto";
+import * as cookie from "cookie";
+import { jwtVerify, SignJWT } from "jose";
 import { checkRedisRateLimit } from "@/lib/redis-rate-limit";
 
 import { getJwtSecret } from "@/lib/jwt-config";
+import { getClientIp } from "@/lib/rate-limit";
 
-const secret = getJwtSecret();
+const SESSION_COOKIE = "syncwatch_session";
+
+function sessionResponse(participantId: string, token: string) {
+  return NextResponse.json(
+    { success: true, participantId, token },
+    { headers: { "cache-control": "no-store" } },
+  );
+}
 
 export async function POST(request: Request) {
-  const ip = request.headers.get("x-forwarded-for") || "unknown";
-
-  // Bypass rate limiting in testing environments or when requested from localhost
-  if (
-    process.env.NODE_ENV !== "test" &&
-    process.env.NODE_ENV !== "development" &&
-    ip !== "::1" &&
-    ip !== "127.0.0.1"
-  ) {
-    if (!(await checkRedisRateLimit(`api:auth:${ip}`, 10, 60000))) {
-      return NextResponse.json({ error: "Too many requests" }, { status: 429 });
-    }
+  const ip = getClientIp(request.headers);
+  if (!(await checkRedisRateLimit(`api:auth:${ip}`, 10, 60_000))) {
+    return NextResponse.json({ error: "Too many requests" }, { status: 429 });
   }
 
   try {
-    const { participantId } = await request.json();
-    if (!participantId || typeof participantId !== "string") {
-      return NextResponse.json(
-        { error: "participantId required" },
-        { status: 400 },
-      );
+    const secret = getJwtSecret();
+    const cookies = cookie.parse(request.headers.get("cookie") ?? "");
+    const existingToken = cookies[SESSION_COOKIE];
+    if (existingToken) {
+      try {
+        const { payload } = await jwtVerify(existingToken, secret);
+        if (typeof payload.participantId === "string") {
+          return sessionResponse(payload.participantId, existingToken);
+        }
+      } catch {
+        // Invalid session material is replaced without logging its contents.
+      }
     }
 
+    const participantId = randomUUID();
     const token = await new SignJWT({ participantId })
       .setProtectedHeader({ alg: "HS256" })
       .setIssuedAt()
       .setExpirationTime("30d")
       .sign(secret);
 
-    const response = NextResponse.json({ success: true, participantId, token });
+    const response = sessionResponse(participantId, token);
 
     response.cookies.set({
-      name: "syncwatch_session",
+      name: SESSION_COOKIE,
       value: token,
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",

@@ -3,6 +3,7 @@ import type { Server, Socket } from "socket.io";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { jwtVerify } from "jose";
 import { isSystemDegraded } from "../db-sync";
+import { checkRedisRateLimit } from "../redis-rate-limit";
 import { getJwtSecret } from "../jwt-config";
 import {
   COMMAND_REJECTION_MESSAGES,
@@ -200,6 +201,29 @@ export function handleCommandEvents(
       let fallbackNonce = "invalid";
       try {
         fallbackNonce = extractRequestNonce(rawCommand);
+        const authenticatedParticipantId = socket.data.participantId;
+        if (typeof authenticatedParticipantId !== "string") {
+          emitAcknowledgement(
+            socket,
+            rejected(fallbackNonce, "NOT_JOINED"),
+            callback,
+          );
+          return;
+        }
+        if (
+          !(await checkRedisRateLimit(
+            `ws:command:${authenticatedParticipantId}`,
+            60,
+            10_000,
+          ))
+        ) {
+          emitAcknowledgement(
+            socket,
+            rejected(fallbackNonce, "RATE_LIMITED"),
+            callback,
+          );
+          return;
+        }
         if (await isSystemDegraded()) {
           const ack = rejected(fallbackNonce, "INVALID_COMMAND");
           ack.message = "System is degraded, try again later.";

@@ -103,6 +103,9 @@ function handleClockSync({ offset }: { offset: number }) {
 
 function handleSessionUpgraded({ participantId }: { participantId: string }) {
   useStore.setState({ participantId });
+  if (typeof window !== "undefined") {
+    localStorage.setItem("participantId", participantId);
+  }
 }
 
 function handleCommandAcknowledgement(acknowledgement: CommandAcknowledgement) {
@@ -119,6 +122,7 @@ function handleCommandAcknowledgement(acknowledgement: CommandAcknowledgement) {
   const state = useStore.getState();
   if (
     acknowledgement.status === "rejected" &&
+    acknowledgement.code !== "RATE_LIMITED" &&
     state.isConnected &&
     state.room &&
     state.participantId &&
@@ -347,6 +351,10 @@ export const useStore = create<AppState>((set, get) => ({
         });
         if (res.ok) {
           const data = await res.json();
+          if (typeof data.participantId === "string") {
+            set({ participantId: data.participantId });
+            localStorage.setItem("participantId", data.participantId);
+          }
           if (data.token) {
             set({ sessionToken: data.token });
             roomSocketService.upgradeSession(
@@ -390,9 +398,10 @@ export const useStore = create<AppState>((set, get) => ({
         sessionToken: storedToken,
       });
 
-      // Expose to window for Playwright E2E introspection
-      (window as any).useRoomStore = { getState: get, setState: set };
-      (window as any).__roomSocketService = roomSocketService;
+      if (process.env.NODE_ENV !== "production") {
+        (window as any).useRoomStore = { getState: get, setState: set };
+        (window as any).__roomSocketService = roomSocketService;
+      }
 
       roomSocketService.on("connected", handleConnected);
       roomSocketService.on("disconnected", handleDisconnected);
@@ -448,6 +457,15 @@ export const useStore = create<AppState>((set, get) => ({
         toast.error("Handshake failed. Features may be restricted.");
       } else {
         const data = await res.json();
+        const serverParticipantId =
+          typeof data.participantId === "string" ? data.participantId : pId;
+        if (serverParticipantId) {
+          pId = serverParticipantId;
+          set({ participantId: serverParticipantId });
+          if (typeof window !== "undefined") {
+            localStorage.setItem("participantId", serverParticipantId);
+          }
+        }
         if (data.token) {
           set({ sessionToken: data.token });
           if (get().room?.id === roomId) {
@@ -461,7 +479,7 @@ export const useStore = create<AppState>((set, get) => ({
         roomSocketService.connect(
           roomId,
           nickname,
-          pId as string,
+          serverParticipantId as string,
           data.token || sToken,
         );
       }

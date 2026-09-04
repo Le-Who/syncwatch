@@ -34,14 +34,27 @@ export default defineConfig({
       },
     },
   ],
-  webServer: {
-    command: "pnpm exec tsx server.ts",
-    port: 3001,
-    env: {
-      PORT: "3001",
-      BROWSERSLIST_IGNORE_OLD_DATA: "true",
+  webServer: [
+    {
+      command: "pnpm exec tsx server.ts",
+      port: 3002,
+      env: {
+        PORT: "3002",
+        TRUST_PROXY: "true",
+        BROWSERSLIST_IGNORE_OLD_DATA: "true",
+      },
+      reuseExistingServer: false,
+      timeout: 120 * 1000,
     },
-    reuseExistingServer: false,
-    timeout: 120 * 1000,
-  },
+    {
+      command: "pnpm exec tsx e2e/trusted-proxy.ts",
+      port: 3001,
+      env: {
+        PORT: "3001",
+        TARGET_PORT: "3002",
+      },
+      reuseExistingServer: false,
+      timeout: 120 * 1000,
+    },
+  ],
 });

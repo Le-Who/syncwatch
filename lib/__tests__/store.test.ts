@@ -604,6 +604,66 @@ describe("useStore", () => {
     expect(result.current.connectionDeliveryFloor).toBe(9);
   });
 
+  it("does not refresh the room after a rate-limited command acknowledgement", () => {
+    const { result } = renderHook(() => useStore());
+    const room = roomWithParticipants(2);
+    act(() => {
+      result.current.init();
+      useStore.setState({ room, isConnected: true, participantId: "p0" });
+    });
+    const onAck = vi
+      .mocked(roomSocketService.on)
+      .mock.calls.find(([event]) => event === "command_ack")?.[1];
+
+    act(() => {
+      onAck?.({
+        nonce: "00000000-0000-4000-8000-000000000199",
+        status: "rejected",
+        code: "RATE_LIMITED",
+        message: "Too many commands. Please wait before trying again.",
+      });
+    });
+
+    expect(result.current.lastCommandAcknowledgement).toMatchObject({
+      nonce: "00000000-0000-4000-8000-000000000199",
+      code: "RATE_LIMITED",
+    });
+    expect(roomSocketService.requestRoomState).not.toHaveBeenCalled();
+  });
+
+  it("adopts the server-issued participant id before joining", async () => {
+    const { result } = renderHook(() => useStore());
+    const serverParticipantId = "01890f3e-4c4d-7cc2-8d8c-123456789398";
+    localStorage.setItem("participantId", "stale-local-participant");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            participantId: serverParticipantId,
+            token: "server-session-token",
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+    act(() => result.current.init());
+
+    await act(async () => {
+      await result.current.connect("room-a", "Friend");
+    });
+
+    expect(result.current.participantId).toBe(serverParticipantId);
+    expect(localStorage.getItem("participantId")).toBe(serverParticipantId);
+    expect(roomSocketService.connect).toHaveBeenCalledWith(
+      "room-a",
+      "Friend",
+      serverParticipantId,
+      "server-session-token",
+    );
+    vi.unstubAllGlobals();
+  });
+
   it("does not request a snapshot for rejected acknowledgements without a live room", () => {
     const { result } = renderHook(() => useStore());
     act(() => {

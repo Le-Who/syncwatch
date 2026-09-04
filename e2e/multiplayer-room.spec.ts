@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import {
   addDeterministicMedia,
   closeRoomClients,
+  createIsolatedBrowserContext,
   createRoomClients,
   expectAdvancing,
   expectCanonicalStatus,
@@ -176,7 +177,7 @@ test.describe("deterministic friend rooms", () => {
         participantCard(room.clients[1].page, "Friend 2 Reconnected"),
       ).toContainText("LEADER");
 
-      const lateContext = await browser.newContext();
+      const lateContext = await createIsolatedBrowserContext(browser);
       const latePage = await lateContext.newPage();
       const lateMedia = await installDeterministicMedia(latePage);
       const lateClient = {
@@ -257,7 +258,7 @@ test.describe("deterministic friend rooms", () => {
     test(`${viewport.name} mounts exactly one composer before and after media is added`, async ({
       browser,
     }) => {
-      const context = await browser.newContext({ viewport });
+      const context = await createIsolatedBrowserContext(browser, { viewport });
       const page = await context.newPage();
       const media = await installDeterministicMedia(page);
       const client = { context, page, nickname: "Composer", media };

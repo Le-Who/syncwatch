@@ -1,6 +1,7 @@
 import {
   Browser,
   BrowserContext,
+  BrowserContextOptions,
   expect,
   Locator,
   Page,
@@ -29,6 +30,19 @@ export interface RoomClient {
   page: Page;
   nickname: string;
   media: DeterministicMediaAdapter;
+}
+
+export function createIsolatedBrowserContext(
+  browser: Browser,
+  options: BrowserContextOptions = {},
+) {
+  return browser.newContext({
+    ...options,
+    extraHTTPHeaders: {
+      ...options.extraHTTPHeaders,
+      "x-syncwatch-e2e-client": randomUUID(),
+    },
+  });
 }
 
 export function getTestRoomUrl(roomId = `e2e-${randomUUID()}`) {
@@ -135,7 +149,7 @@ export async function createRoomClients(
   const clients: RoomClient[] = [];
   try {
     for (let index = 0; index < count; index += 1) {
-      const context = await browser.newContext();
+      const context = await createIsolatedBrowserContext(browser);
       try {
         const page = await context.newPage();
         const media = await installDeterministicMedia(page);

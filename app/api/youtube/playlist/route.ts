@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import yts from "yt-search";
 import { z } from "zod";
 import { checkRedisRateLimit } from "@/lib/redis-rate-limit";
+import { getClientIp } from "@/lib/rate-limit";
 
 const ytPlaylistQuerySchema = z.string().min(1);
 
@@ -63,10 +64,7 @@ function bestThumbnail(sources: any): string {
 
 function findFirstDurationText(node: any): string {
   if (!node || typeof node !== "object") return "";
-  if (
-    typeof node.text === "string" &&
-    parseDurationSeconds(node.text) > 0
-  ) {
+  if (typeof node.text === "string" && parseDurationSeconds(node.text) > 0) {
     return node.text;
   }
   for (const value of Object.values(node)) {
@@ -125,7 +123,10 @@ function playlistTitleFromHtml(html: string, data: any): string {
 }
 
 function mapLockupVideo(lockup: any): PlaylistVideo | null {
-  if (lockup?.contentType && lockup.contentType !== "LOCKUP_CONTENT_TYPE_VIDEO") {
+  if (
+    lockup?.contentType &&
+    lockup.contentType !== "LOCKUP_CONTENT_TYPE_VIDEO"
+  ) {
     return null;
   }
 
@@ -205,7 +206,9 @@ export function parseYouTubePlaylistHtml(html: string): PlaylistResult {
   };
 }
 
-async function fetchPlaylistWithYtSearch(listId: string): Promise<PlaylistResult> {
+async function fetchPlaylistWithYtSearch(
+  listId: string,
+): Promise<PlaylistResult> {
   const searchPromise = yts({ listId });
   const timeoutPromise = new Promise<never>((_, reject) => {
     setTimeout(() => reject(new Error("Timeout")), 5000);
@@ -233,8 +236,7 @@ async function fetchPlaylistWithHtmlFallback(
     headers: {
       "user-agent":
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36",
-      accept:
-        "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
       "accept-language": "en-US,en;q=0.9",
     },
   });
@@ -257,8 +259,8 @@ function mapApiVideos(result: PlaylistResult) {
 }
 
 export async function GET(request: Request) {
-  const ip = request.headers.get("x-forwarded-for") || "unknown";
-  const allowed = await checkRedisRateLimit(ip, 10, 60000);
+  const ip = getClientIp(request.headers);
+  const allowed = await checkRedisRateLimit(ip, 10, 60_000);
   if (!allowed) {
     return NextResponse.json({ error: "Too many requests" }, { status: 429 });
   }
@@ -280,7 +282,10 @@ export async function GET(request: Request) {
     try {
       result = await fetchPlaylistWithYtSearch(listId);
     } catch (primaryError) {
-      console.warn("yt-search playlist failed, using HTML fallback:", primaryError);
+      console.warn(
+        "yt-search playlist failed, using HTML fallback:",
+        primaryError,
+      );
       result = await fetchPlaylistWithHtmlFallback(listId);
     }
 

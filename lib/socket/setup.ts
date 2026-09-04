@@ -12,39 +12,21 @@ export function setupSocketAuth(io: Server) {
       const cookies = cookie.parse(socket.request.headers.cookie || "");
       const token = cookies.syncwatch_session || socket.handshake.auth?.token;
 
-      if (token) {
-        try {
-          const { payload } = await jwtVerify(token, JWT_SECRET);
-          if (payload.participantId) {
-            socket.data.participantId = payload.participantId;
-            return next();
-          }
-        } catch (jwtErr) {
-          console.error(
-            "JWT VERIFY FAILED in io.use! Token:",
-            token,
-            "Error:",
-            jwtErr,
-          );
-        }
-      } else {
-        console.warn(
-          "NO TOKEN PROVIDED or VERIFY FAILED. Using client-provided UUID.",
-          "auth:",
-          socket.handshake.auth,
-        );
+      if (!token || typeof token !== "string") {
+        return next(new Error("Authentication requires a valid session."));
       }
 
-      const clientParticipantId =
-        socket.handshake.auth?.participantId || socket.id;
-      socket.data.participantId = clientParticipantId;
-      next();
-    } catch (err) {
-      console.error("UNKNOWN ERROR IN IO.USE FAILED!", err);
-      // Even on error, allow connection but mark with client ID to prevent UI freezes
-      const fallbackId = socket.handshake.auth?.participantId || socket.id;
-      socket.data.participantId = fallbackId;
-      next();
+      const { payload } = await jwtVerify(token, JWT_SECRET);
+      if (
+        typeof payload.participantId !== "string" ||
+        payload.participantId.length === 0
+      ) {
+        return next(new Error("Authentication requires a valid session."));
+      }
+      socket.data.participantId = payload.participantId;
+      return next();
+    } catch {
+      return next(new Error("Authentication requires a valid session."));
     }
   });
 }

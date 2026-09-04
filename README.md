@@ -13,7 +13,7 @@ The system is designed for low-latency synchronization with eventual durability.
 - **Frontend**: Next.js App Router, React 19, TailwindCSS v4, Zustand.
 - **Backend (Gateway)**: A custom Node.js `server.ts` process hosts both the Next.js handler and Socket.IO.
 - **Data Stores**:
-  - _Redis_: The primary source of truth for high-frequency state. Used for Pub/Sub broadcasting, atomic server-ordered state mutations (via Lua scripts), and distributed locking.
+  - _Redis_: The primary source of truth for high-frequency state. Used for Pub/Sub broadcasting, atomic server-ordered state mutations (via Lua scripts), distributed locking, and shared rate limits. When Redis is unavailable, SyncWatch uses bounded process-local rate limits and in-memory room state; that mode is suitable for development or degraded single-process operation, not consistent multi-instance enforcement.
   - _Supabase (PostgreSQL)_: Long-term durable storage of room configurations, playlists, and state snapshots.
 
 ### Synchronization Subsystem (The "Fast Path")
@@ -65,8 +65,8 @@ The drift correction system (`lib/drift-math.ts`) uses hysteresis to prevent aud
 
 ### Prerequisites
 
-- Node.js 20+
-- Redis (Local or Upstash)
+- Node.js 24+
+- Redis (Local or Upstash; optional for local/degraded single-process operation)
 - Supabase instance
 
 ### Running the System
@@ -85,14 +85,15 @@ pnpm start
 
 ### Configuration Environment Variables
 
-| Variable                    | Required | Description                                                  |
-| --------------------------- | -------- | ------------------------------------------------------------ |
-| `NEXT_PUBLIC_SUPABASE_URL`  | Yes      | URL of the Supabase instance.                                |
-| `SUPABASE_SERVICE_ROLE_KEY` | Yes      | Admin key for server components to bypass RLS.               |
-| `JWT_SECRET`                | Yes      | Cryptographic secret for signing session JWTs.               |
-| `NEXT_PUBLIC_APP_URL`       | Yes      | Public bounds for CORS and YouTube origin.                   |
-| `REDIS_URL`                 | No       | URI for Redis. System degrades gracefully to memory without. |
-| `YOUTUBE_API_KEY`           | No       | Enables stable YouTube searches (bypasses scraper worker).   |
+| Variable                    | Required   | Description                                                                                                                     |
+| --------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `NEXT_PUBLIC_SUPABASE_URL`  | Yes        | URL of the Supabase instance.                                                                                                   |
+| `SUPABASE_SERVICE_ROLE_KEY` | Yes        | Admin key for server components to bypass RLS.                                                                                  |
+| `JWT_SECRET`                | Production | Cryptographic secret for signing session JWTs; startup fails in production when absent.                                         |
+| `NEXT_PUBLIC_APP_URL`       | Production | Canonical HTTP(S) origin used for Socket.IO CORS/origin enforcement and YouTube origin.                                         |
+| `REDIS_URL`                 | No         | URI for Redis. Without it, limits and room state are bounded and process-local; deploy Redis for shared production enforcement. |
+| `TRUST_PROXY`               | No         | Set to `true` only when a trusted proxy overwrites forwarded headers; otherwise direct peer addresses are used.                 |
+| `YOUTUBE_API_KEY`           | No         | Enables stable YouTube searches (bypasses scraper worker).                                                                      |
 
 ## Operational Notes & Limitations
 
@@ -101,6 +102,9 @@ pnpm start
 - **Provider API Quotas**: The system uses a headless worker script to scrape YouTube if the `YOUTUBE_API_KEY` quota exhausts. However, Twitch metadata entirely lacks an oEmbed fallback and relies on raw HTML parsing, which is brittle.
 - **Browser Autoplay Policies**: Modern browsers aggressively block autoplay without user interaction. SyncWatch forces a "Initialize Stream Sync" confirmation click before mounting `react-player`.
 - **Twitch Native Seek Quirks**: Due to an explicit constraint in the Twitch Embed API v1, scrubbing the native Twitch player timeline _always_ forces a `PAUSE` event. SyncWatch implements a multi-layered guard: the `PlaybackIntentManager` detects recent programmatic seeks via a 500ms `isRecentSeek` window and blocks these phantom pauses before they corrupt sync state.
+- **Session and origin boundary**: The server issues a random participant identity and signs it into a 30-day HttpOnly, `SameSite=Lax` cookie. The client adopts that server-issued identity before joining or reconnecting, so a stale local browser identity cannot claim an existing room role. In production Socket.IO accepts only the normalized `NEXT_PUBLIC_APP_URL`; deploy TLS at the proxy and configure `TRUST_PROXY=true` only when that proxy sanitizes forwarding headers.
+- **Rate-limit behavior**: Auth/session is limited to 10 requests per 60 seconds, metadata/search to 20 per 60 seconds, playlists to 10 per 60 seconds, room joins to 50 per 60 seconds, and commands to 60 per 10 seconds. Rejected commands receive a nonce-correlated `RATE_LIMITED` acknowledgement and are not retried or snapshot-refreshed automatically.
+- **Dependency boundary**: YouTube fallback searches execute in a worker with a timeout to contain failed or slow scraping. That boundary limits one request's work but is not a blanket security guarantee; keep `yt-search` and its dependency tree under audit and prefer the YouTube API key path for production traffic.
 
 ## Testing Strategy
 

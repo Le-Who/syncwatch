@@ -21,7 +21,8 @@ export type CommandRejectionCode =
   | "DUPLICATE"
   | "NO_CHANGE"
   | "CONTENTION"
-  | "QUEUE_FULL";
+  | "QUEUE_FULL"
+  | "RATE_LIMITED";
 
 export interface CommandAcknowledgement {
   nonce: string;

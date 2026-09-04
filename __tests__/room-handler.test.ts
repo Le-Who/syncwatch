@@ -707,7 +707,7 @@ describe("Room Handler Security & Auth Boundary", () => {
     );
   });
 
-  it("does not reject playback commands through the global websocket command rate limit", async () => {
+  it("rate-limits commands with a nonce-correlated acknowledgement", async () => {
     const roomId = "test-room-playback-rate-limit";
     const participantId = "mod-123";
 
@@ -742,21 +742,30 @@ describe("Room Handler Security & Auth Boundary", () => {
     mockSocket.data.participantId = participantId;
     await socketEventHandlers["join_room"]({ roomId, nickname: "Mod" });
     mockSocket.emit.mockClear();
+    (redisRateLimit.checkRedisRateLimit as any).mockClear();
+    (redisRateLimit.checkRedisRateLimit as any).mockResolvedValueOnce(false);
+
+    const nonce = "01890f3e-4c4d-7cc2-8d8c-123456789399";
 
     await socketEventHandlers["command"]({
       roomId,
-      type: "pause",
-      payload: { position: 10 },
-      sequence: 2,
+      nonce,
+      clientSequence: 2,
+      command: { type: "pause", payload: { position: 10 } },
     });
 
-    expect(mockSocket.emit).not.toHaveBeenCalledWith("error", {
-      message: "Rate limit exceeded",
-    });
-    expect(redisRateLimit.checkRedisRateLimit).not.toHaveBeenCalledWith(
-      expect.stringContaining("ws:command:"),
-      expect.any(Number),
-      expect.any(Number),
+    expect(redisRateLimit.checkRedisRateLimit).toHaveBeenCalledWith(
+      `ws:command:${participantId}`,
+      60,
+      10_000,
+    );
+    expect(mockSocket.emit).toHaveBeenCalledWith(
+      "command_ack",
+      expect.objectContaining({
+        nonce,
+        status: "rejected",
+        code: "RATE_LIMITED",
+      }),
     );
   });
 
