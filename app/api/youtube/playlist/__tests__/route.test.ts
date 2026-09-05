@@ -55,7 +55,11 @@ describe("GET /api/youtube/playlist", () => {
     const response = await GET(req);
 
     expect(response.status).toBe(200);
-    expect(checkRedisRateLimit).toHaveBeenCalledWith("unknown", 10, 60000);
+    expect(checkRedisRateLimit).toHaveBeenCalledWith(
+      "api:youtube-playlist:unknown",
+      10,
+      60000,
+    );
     const data = await response.json();
 
     expect(data.title).toBe("My Awesome Playlist");

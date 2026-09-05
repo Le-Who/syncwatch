@@ -3,7 +3,7 @@ import { z } from "zod";
 import { checkRedisRateLimit } from "@/lib/redis-rate-limit";
 import { Worker } from "worker_threads";
 import { LRUCache } from "@/lib/lru-cache";
-import { getClientIp } from "@/lib/rate-limit";
+import { getAppRouteClientIp } from "@/lib/rate-limit";
 
 const ytSearchQuerySchema = z.string().min(1);
 
@@ -55,26 +55,37 @@ const ytSearchBreaker = new CircuitBreaker(5, 60000); // 1 minute lockout after 
 
 // Worker Thread isolation for yt-search to prevent unbounded lingering promises
 const workerCode = `
-  const { parentPort, workerData } = require('worker_threads');
+  import { parentPort, workerData } from 'node:worker_threads';
+  import { createRequire } from 'node:module';
+  import { join } from 'node:path';
+  import { pathToFileURL } from 'node:url';
+  const require = createRequire(pathToFileURL(join(workerData.moduleRoot, 'package.json')));
   const yts = require('yt-search');
-  
-  yts(workerData.query).then((res) => {
-    parentPort.postMessage({ success: true, data: res });
-  }).catch((err) => {
-    parentPort.postMessage({ success: false, error: err.message });
-  });
+
+  if (workerData.probe === true) {
+    parentPort.postMessage({ ready: true });
+  } else {
+    yts(workerData.query).then((res) => {
+      parentPort.postMessage({ success: true, data: res });
+    }).catch((err) => {
+      parentPort.postMessage({ success: false, error: err.message });
+    });
+  }
 `;
+
+export function createYoutubeSearchWorkerModuleUrl(): URL {
+  return new URL(
+    `data:text/javascript;base64,${Buffer.from(workerCode).toString("base64")}`,
+  );
+}
 
 function searchYoutubeWithWorker(
   query: string,
   timeoutMs: number,
 ): Promise<any> {
   return new Promise((resolve, reject) => {
-    // Generate a Data URI to avoid eval: true which is insecure and flagged by SAST tools
-    const workerScript = `data:text/javascript;base64,${Buffer.from(workerCode).toString("base64")}`;
-
-    const worker = new Worker(new URL(workerScript), {
-      workerData: { query },
+    const worker = new Worker(createYoutubeSearchWorkerModuleUrl(), {
+      workerData: { query, moduleRoot: process.cwd() },
     });
 
     const timeout = setTimeout(() => {
@@ -130,8 +141,12 @@ async function searchWithGoogleApi(query: string, apiKey: string) {
 }
 
 export async function GET(request: Request) {
-  const ip = getClientIp(request.headers);
-  const allowed = await checkRedisRateLimit(ip, 20, 60_000);
+  const ip = getAppRouteClientIp(request.headers);
+  const allowed = await checkRedisRateLimit(
+    `api:youtube-search:${ip}`,
+    20,
+    60_000,
+  );
   if (!allowed) {
     return NextResponse.json({ error: "Too many requests" }, { status: 429 });
   }

@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { checkRateLimit, getClientIp } from "../lib/rate-limit";
+import {
+  checkRateLimit,
+  getAppRouteClientIp,
+  getClientIp,
+} from "../lib/rate-limit";
+import { applyAuthoritativeClientIp } from "../lib/server-config";
 import { createRateLimiter } from "../lib/redis-rate-limit";
 
 describe("rate-limit", () => {
@@ -140,5 +145,38 @@ describe("trusted proxy client addresses", () => {
     vi.stubEnv("TRUST_PROXY", "true");
 
     expect(getClientIp(headers, "127.0.0.1")).toBe("203.0.113.7");
+  });
+
+  it("uses the custom server's authoritative direct peer address by default", () => {
+    vi.stubEnv("TRUST_PROXY", "false");
+
+    expect(
+      getAppRouteClientIp(
+        new Headers({
+          "x-syncwatch-client-ip": "198.51.100.8",
+          "x-forwarded-for": "203.0.113.7",
+        }),
+      ),
+    ).toBe("198.51.100.8");
+  });
+
+  it("replaces a spoofed internal address before an App Route receives it", () => {
+    const headers: Record<string, string | undefined> = {
+      "x-syncwatch-client-ip": "203.0.113.7",
+    };
+
+    applyAuthoritativeClientIp(headers, "198.51.100.8");
+
+    expect(getAppRouteClientIp(headers)).toBe("198.51.100.8");
+  });
+
+  it("does not let a Socket.IO request spoof the App-Route-only peer header", () => {
+    vi.stubEnv("TRUST_PROXY", "false");
+    expect(
+      getClientIp(
+        new Headers({ "x-syncwatch-client-ip": "203.0.113.7" }),
+        "198.51.100.8",
+      ),
+    ).toBe("198.51.100.8");
   });
 });

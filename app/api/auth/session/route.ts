@@ -5,7 +5,7 @@ import { jwtVerify, SignJWT } from "jose";
 import { checkRedisRateLimit } from "@/lib/redis-rate-limit";
 
 import { getJwtSecret } from "@/lib/jwt-config";
-import { getClientIp } from "@/lib/rate-limit";
+import { getAppRouteClientIp } from "@/lib/rate-limit";
 
 const SESSION_COOKIE = "syncwatch_session";
 
@@ -17,7 +17,7 @@ function sessionResponse(participantId: string, token: string) {
 }
 
 export async function POST(request: Request) {
-  const ip = getClientIp(request.headers);
+  const ip = getAppRouteClientIp(request.headers);
   if (!(await checkRedisRateLimit(`api:auth:${ip}`, 10, 60_000))) {
     return NextResponse.json({ error: "Too many requests" }, { status: 429 });
   }

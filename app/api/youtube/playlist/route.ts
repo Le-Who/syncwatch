@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import yts from "yt-search";
 import { z } from "zod";
 import { checkRedisRateLimit } from "@/lib/redis-rate-limit";
-import { getClientIp } from "@/lib/rate-limit";
+import { getAppRouteClientIp } from "@/lib/rate-limit";
 
 const ytPlaylistQuerySchema = z.string().min(1);
 
@@ -259,8 +259,12 @@ function mapApiVideos(result: PlaylistResult) {
 }
 
 export async function GET(request: Request) {
-  const ip = getClientIp(request.headers);
-  const allowed = await checkRedisRateLimit(ip, 10, 60_000);
+  const ip = getAppRouteClientIp(request.headers);
+  const allowed = await checkRedisRateLimit(
+    `api:youtube-playlist:${ip}`,
+    10,
+    60_000,
+  );
   if (!allowed) {
     return NextResponse.json({ error: "Too many requests" }, { status: 429 });
   }

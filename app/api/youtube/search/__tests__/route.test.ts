@@ -69,6 +69,11 @@ describe("GET /api/youtube/search", () => {
     expect(response.status).toBe(429);
     const data = await response.json();
     expect(data.error).toBe("Too many requests");
+    expect(rateLimit.checkRedisRateLimit).toHaveBeenCalledWith(
+      "api:youtube-search:unknown",
+      20,
+      60_000,
+    );
   });
 
   it("should return 400 Bad Request if query is missing", async () => {

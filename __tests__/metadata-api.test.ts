@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
 import { GET } from "../app/api/metadata/route";
 import { isBogon } from "../lib/ip";
 import { NextRequest } from "next/server";
+import { checkRedisRateLimit } from "../lib/redis-rate-limit";
 
 // Mock the rate limiter so our tests don't randomly fail
 vi.mock("../lib/redis-rate-limit", () => ({
@@ -123,6 +124,11 @@ describe("/api/metadata SSRF Protection", () => {
 
     const data = await res.json();
     expect(data.error).toBe("Invalid URL");
+    expect(checkRedisRateLimit).toHaveBeenCalledWith(
+      "api:metadata:unknown",
+      20,
+      60_000,
+    );
   });
 
   it("TC-API-02: Blocks local / bogon IPs (SSRF Attempt 1: 127.0.0.1)", async () => {

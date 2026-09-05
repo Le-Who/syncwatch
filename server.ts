@@ -10,6 +10,7 @@ import { RoomEventBus } from "./lib/room-event-bus";
 import { emitRoomEventToSocketIo } from "./lib/room-events";
 import { pubClient } from "./lib/redis-actor";
 import {
+  applyAuthoritativeClientIp,
   isSocketOriginAllowed,
   normalizeAppOrigin,
 } from "./lib/server-config";
@@ -72,6 +73,7 @@ process.on("SIGINT", gracefulShutdown);
 app.prepare().then(() => {
   const server = createServer((req, res) => {
     try {
+      applyAuthoritativeClientIp(req.headers, req.socket.remoteAddress);
       const parsedUrl = new URL(req.url || "/", "http://localhost");
 
       // Next.js expects { pathname, query } shape originally from url.parse

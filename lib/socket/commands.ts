@@ -22,7 +22,6 @@ import { sanitizeRoom } from "../room-handler";
 import type { SocketContext } from "./context";
 import type { RoomEventBus } from "../room-event-bus";
 
-const JWT_SECRET = getJwtSecret();
 const MAX_COMMAND_BYTES = 50_000;
 const MAX_UPGRADE_RETRIES = 10;
 
@@ -99,6 +98,7 @@ async function handleSessionUpgrade(
   socket: Socket,
   context: SocketContext,
   envelope: RoomCommandEnvelope,
+  jwtSecret: ReturnType<typeof getJwtSecret>,
   eventBus?: RoomEventBus,
 ): Promise<CommandAcknowledgement> {
   if (!context.currentRoomId || !context.currentParticipantId) {
@@ -116,7 +116,7 @@ async function handleSessionUpgrade(
   try {
     const { payload } = await jwtVerify(
       envelope.command.payload.token,
-      JWT_SECRET,
+      jwtSecret,
     );
     if (typeof payload.participantId !== "string") {
       return rejected(envelope.nonce, "INVALID_COMMAND");
@@ -195,6 +195,9 @@ export function handleCommandEvents(
   commandService: RoomCommandService,
   eventBus?: RoomEventBus,
 ) {
+  // Read the configured secret at handler setup, after server bootstrap. Keep
+  // it in this socket's closure so ordinary commands do not reparse it.
+  const jwtSecret = getJwtSecret();
   socket.on(
     "command",
     async (rawCommand: unknown, callback?: AcknowledgementCallback) => {
@@ -271,6 +274,7 @@ export function handleCommandEvents(
                 socket,
                 context,
                 envelope,
+                jwtSecret,
                 eventBus,
               )
             : await commandService.execute(context, envelope);

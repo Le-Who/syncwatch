@@ -14,7 +14,27 @@ vi.mock("next", () => {
   return {
     default: () => ({
       prepare: vi.fn().mockResolvedValue(true),
-      getRequestHandler: vi.fn().mockReturnValue(vi.fn()),
+      getRequestHandler: vi.fn().mockReturnValue(async (req: any, res: any) => {
+        if (req.method === "POST" && req.url?.startsWith("/api/auth/session")) {
+          const { POST } = await import("../app/api/auth/session/route");
+          const request = new Request(`http://localhost${req.url}`, {
+            method: req.method,
+            headers: new Headers(req.headers as Record<string, string>),
+            body: req,
+            // Node request streams require this for a streamed body.
+            duplex: "half",
+          } as RequestInit);
+          const response = await POST(request);
+          res.statusCode = response.status;
+          response.headers.forEach((value: string, name: string) =>
+            res.setHeader(name, value),
+          );
+          res.end(await response.text());
+          return;
+        }
+        res.statusCode = 404;
+        res.end();
+      }),
     }),
   };
 });
@@ -95,6 +115,7 @@ const delay = (durationMs: number) =>
 const TEST_JWT_SECRET = new TextEncoder().encode(
   "default_local_secret_dont_use_in_prod",
 );
+const TEST_ORIGIN = "https://watch.test.example";
 const tokenFor = (participantId: string) =>
   new SignJWT({ participantId })
     .setProtectedHeader({ alg: "HS256" })
@@ -108,6 +129,9 @@ describe("server.ts Real Socket.IO Integration", () => {
   const presenceSockets: ClientSocket[] = [];
 
   beforeAll(async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("JWT_SECRET", "default_local_secret_dont_use_in_prod");
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", TEST_ORIGIN);
     // Import server.ts to trigger app.prepare().then(...)
     await import("../server");
 
@@ -139,6 +163,7 @@ describe("server.ts Real Socket.IO Integration", () => {
     if (recoverySocket) recoverySocket.close();
     presenceSockets.forEach((socket) => socket.close());
     if (httpServer) httpServer.close();
+    vi.unstubAllEnvs();
   });
 
   it("normalizes the configured production origin and rejects other origins", async () => {
@@ -163,6 +188,120 @@ describe("server.ts Real Socket.IO Integration", () => {
     ).toBe(false);
   });
 
+  it("issues an HTTP session through the production server, strips spoofed direct identity, and admits its cookie", async () => {
+    const { checkRedisRateLimit } = await import("../lib/redis-rate-limit");
+    vi.mocked(checkRedisRateLimit).mockClear();
+    const response = await fetch(`${ioServerPath}/api/auth/session`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: TEST_ORIGIN,
+        "x-syncwatch-client-ip": "203.0.113.77",
+      },
+      body: "{}",
+    });
+    const body = await response.json();
+    const issuedCookie = response.headers.get("set-cookie")!.split(";", 1)[0];
+
+    expect(response.status).toBe(200);
+    expect(body.participantId).toMatch(/^[0-9a-f-]{36}$/i);
+    expect(checkRedisRateLimit).toHaveBeenCalledWith(
+      expect.stringMatching(
+        /^api:auth:(?!203\.0\.113\.77)(?:127\.0\.0\.1|::1)$/,
+      ),
+      10,
+      60_000,
+    );
+
+    const issuedSessionSocket = Client(ioServerPath, {
+      path: "/socket.io",
+      transports: ["websocket"],
+      forceNew: true,
+      extraHeaders: { cookie: issuedCookie, origin: TEST_ORIGIN },
+    });
+    presenceSockets.push(issuedSessionSocket);
+    await waitForSocketEvent(issuedSessionSocket, "connect");
+    expect(issuedSessionSocket.connected).toBe(true);
+  });
+
+  it("enforces production origin admission for polling and WebSocket handshakes", async () => {
+    const validToken = await tokenFor("production-origin-client");
+    const accepted = Client(ioServerPath, {
+      path: "/socket.io",
+      transports: ["polling"],
+      forceNew: true,
+      extraHeaders: {
+        cookie: `syncwatch_session=${validToken}`,
+        origin: TEST_ORIGIN,
+      },
+    });
+    presenceSockets.push(accepted);
+    await waitForSocketEvent(accepted, "connect");
+    expect(accepted.connected).toBe(true);
+
+    for (const [transport, origin] of [
+      ["polling", undefined],
+      ["websocket", undefined],
+      ["polling", "https://evil.example"],
+      ["websocket", "not an origin"],
+    ] as const) {
+      const rejected = Client(ioServerPath, {
+        path: "/socket.io",
+        transports: [transport],
+        forceNew: true,
+        extraHeaders: {
+          cookie: `syncwatch_session=${validToken}`,
+          ...(origin ? { origin } : {}),
+        },
+      });
+      presenceSockets.push(rejected);
+      await expect(
+        waitForSocketEvent(rejected, "connect_error"),
+      ).resolves.toBeDefined();
+    }
+  });
+
+  it("admits 25 independently issued production sessions through the server path", async () => {
+    vi.stubEnv("TRUST_PROXY", "true");
+    const identities = new Set<string>();
+    const sessions: ClientSocket[] = [];
+
+    try {
+      for (let index = 1; index <= 25; index++) {
+        const response = await fetch(`${ioServerPath}/api/auth/session`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            origin: TEST_ORIGIN,
+            "x-forwarded-for": `198.51.100.${index}`,
+          },
+          body: "{}",
+        });
+        const body = await response.json();
+        const cookie = response.headers.get("set-cookie")!.split(";", 1)[0];
+        identities.add(body.participantId);
+
+        const session = Client(ioServerPath, {
+          path: "/socket.io",
+          transports: ["websocket"],
+          forceNew: true,
+          extraHeaders: {
+            cookie,
+            origin: TEST_ORIGIN,
+            "x-forwarded-for": `198.51.100.${index}`,
+          },
+        });
+        sessions.push(session);
+        await waitForSocketEvent(session, "connect");
+        expect(session.connected).toBe(true);
+      }
+      expect(identities.size).toBe(25);
+    } finally {
+      sessions.forEach((session) => session.close());
+      vi.stubEnv("TRUST_PROXY", "false");
+    }
+  });
+
   it("TC-01: Connects and joins a room, establishing owner role", async () => {
     // Arrange
     const JWT_SECRET = new TextEncoder().encode(
@@ -178,6 +317,7 @@ describe("server.ts Real Socket.IO Integration", () => {
       forceNew: true,
       extraHeaders: {
         cookie: `syncwatch_session=${token}`,
+        origin: TEST_ORIGIN,
       },
     });
 
@@ -212,6 +352,7 @@ describe("server.ts Real Socket.IO Integration", () => {
       path: "/socket.io",
       transports: ["websocket"],
       forceNew: true,
+      extraHeaders: { origin: TEST_ORIGIN },
     });
 
     const error = await waitForSocketEvent(viewerSocket, "connect_error");
@@ -230,6 +371,7 @@ describe("server.ts Real Socket.IO Integration", () => {
         token: rejectedToken,
         participantId: "claimed-owner-id",
       },
+      extraHeaders: { origin: TEST_ORIGIN },
     });
     presenceSockets.push(socket);
 
@@ -257,6 +399,7 @@ describe("server.ts Real Socket.IO Integration", () => {
       forceNew: true,
       extraHeaders: {
         cookie: `syncwatch_session=${token}`,
+        origin: TEST_ORIGIN,
       },
     });
 
@@ -305,6 +448,7 @@ describe("server.ts Real Socket.IO Integration", () => {
       forceNew: true,
       extraHeaders: {
         cookie: `syncwatch_session=${token}`,
+        origin: TEST_ORIGIN,
       },
     });
 
@@ -336,12 +480,14 @@ describe("server.ts Real Socket.IO Integration", () => {
       transports: ["websocket"],
       forceNew: true,
       auth: { token: await tokenFor("health-sender") },
+      extraHeaders: { origin: TEST_ORIGIN },
     });
     const observer = Client(ioServerPath, {
       path: "/socket.io",
       transports: ["websocket"],
       forceNew: true,
       auth: { token: await tokenFor("health-observer") },
+      extraHeaders: { origin: TEST_ORIGIN },
     });
     presenceSockets.push(sender, observer);
     await Promise.all([
@@ -390,6 +536,7 @@ describe("server.ts Real Socket.IO Integration", () => {
         transports: ["websocket"],
         forceNew: true,
         auth: { token: await tokenFor(`friend-${index}`) },
+        extraHeaders: { origin: TEST_ORIGIN },
       });
       presenceSockets.push(socket);
       socket.on("room_state", ({ room }) => {
@@ -437,6 +584,7 @@ describe("server.ts Real Socket.IO Integration", () => {
           transports: ["websocket"],
           forceNew: true,
           auth: { token: await tokenFor(id) },
+          extraHeaders: { origin: TEST_ORIGIN },
         });
         presenceSockets.push(socket);
         await waitForSocketEvent(socket, "connect");

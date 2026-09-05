@@ -81,3 +81,19 @@ export function getClientIp(
   }
   return directAddress || "unknown";
 }
+
+/**
+ * App Routes do not expose a peer address. The custom server sets this private
+ * header immediately before delegating to Next; Socket.IO must instead pass its
+ * peer address directly to `getClientIp` and never consume this header.
+ */
+export function getAppRouteClientIp(headers: HeaderSource): string {
+  const directAddress =
+    readHeader(headers, "x-syncwatch-client-ip") || "unknown";
+  if (process.env.TRUST_PROXY === "true") {
+    const forwardedFor = readHeader(headers, "x-forwarded-for");
+    const firstAddress = forwardedFor?.split(",", 1)[0]?.trim();
+    if (firstAddress) return firstAddress;
+  }
+  return directAddress;
+}

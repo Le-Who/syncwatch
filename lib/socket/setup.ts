@@ -4,9 +4,10 @@ import { jwtVerify } from "jose";
 
 import { getJwtSecret } from "../jwt-config";
 
-const JWT_SECRET = getJwtSecret();
-
 export function setupSocketAuth(io: Server) {
+  // This runs after the custom server has loaded `.env*`, rather than during
+  // module evaluation while the custom server is still bootstrapping.
+  const jwtSecret = getJwtSecret();
   io.use(async (socket, next) => {
     try {
       const cookies = cookie.parse(socket.request.headers.cookie || "");
@@ -16,7 +17,7 @@ export function setupSocketAuth(io: Server) {
         return next(new Error("Authentication requires a valid session."));
       }
 
-      const { payload } = await jwtVerify(token, JWT_SECRET);
+      const { payload } = await jwtVerify(token, jwtSecret);
       if (
         typeof payload.participantId !== "string" ||
         payload.participantId.length === 0
