@@ -3,8 +3,10 @@ import Player from "../Player";
 import { vi, describe, beforeEach, it, expect } from "vitest";
 
 // Mock Zustand store hooks
-vi.mock("@/lib/store", () => {
+vi.mock("@/lib/store", async (importOriginal) => {
+  const actual = await importOriginal();
   return {
+    ...actual,
     useStore: vi.fn(),
     useSettingsStore: vi.fn(),
   };
