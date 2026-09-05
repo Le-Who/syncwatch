@@ -199,6 +199,46 @@ describe("Player Component", () => {
     expect(player).toHaveAttribute("data-youtube-disablekb", "0");
   });
 
+  it("exposes the paused YouTube overlay as an accessible play control", () => {
+    mockStoreState({
+      room: {
+        currentMediaId: "1",
+        leaderId: null,
+        playlist: [
+          {
+            id: "1",
+            url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+            provider: "youtube",
+            title: "Test Video",
+          },
+        ],
+        settings: { autoplayNext: true, looping: false },
+        playback: {
+          status: "paused",
+          basePosition: 0,
+          baseTimestamp: 0,
+          rate: 1,
+        },
+        participants: {
+          user1: { role: "owner" },
+        },
+      },
+      participantId: "user1",
+      sendCommand: mockSendCommand,
+      serverClockOffset: 0,
+      isConnected: true,
+    });
+
+    render(<Player />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Initialize Stream Sync" }),
+    );
+    fireEvent.click(screen.getByTestId("loadedmetadata-event"));
+    fireEvent.click(screen.getByTestId("waiting-event"));
+
+    expect(screen.getByRole("button", { name: "Play" })).toBeEnabled();
+  });
+
   it("keeps a provider error local and exposes retry", () => {
     mockStoreState({
       room: {
@@ -849,6 +889,53 @@ describe("Player Component", () => {
 
     view.unmount();
     expect(vi.getTimerCount()).toBe(timerCountBeforeSeek);
+    intentManager.dispose();
+    healthController.dispose();
+  });
+
+  it("allows current-provider native play to recover from local buffering", () => {
+    const mediaId = "00000000-0000-4000-8000-000000000001";
+    mockStoreState({
+      room: {
+        currentMediaId: mediaId,
+        sequence: 4,
+        playlist: [{ id: mediaId, provider: "youtube" }],
+      },
+    });
+    const intentManager = new PlaybackIntentManager();
+    const healthController = new PlaybackHealthController();
+    healthController.set("buffering");
+    const handleNativePlay = vi.fn();
+    let handlers: PlayerEventHandlers | null = null;
+    const view = render(
+      <PlayerTestHarness
+        options={{
+          intentManager,
+          healthController,
+          currentMediaId: mediaId,
+          canonicalSequence: 4,
+          canControl: true,
+          playing: false,
+          setIsReady: vi.fn(),
+          setError: vi.fn(),
+          setPlaying: vi.fn(),
+          setDuration: vi.fn(),
+          emitCommand: vi.fn(),
+          handleNativePlay,
+          handleNativePause: vi.fn(),
+        }}
+        onHandlers={(next) => {
+          handlers = next;
+        }}
+      />,
+    );
+
+    act(() => {
+      (handlers as PlayerEventHandlers | null)?.handleNativePlay();
+    });
+
+    expect(handleNativePlay).toHaveBeenCalledOnce();
+    view.unmount();
     intentManager.dispose();
     healthController.dispose();
   });

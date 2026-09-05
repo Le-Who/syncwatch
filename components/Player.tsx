@@ -872,7 +872,7 @@ export default function Player() {
         {isBuffering && playing && !error && <BufferingOverlay />}
 
         {/* PAUSED Overlay */}
-        {!playing && !isBuffering && isReady && !error && userJoined && (
+        {!playing && isReady && !error && userJoined && (
           <PausedOverlay canControl={canControl} onPlay={handlePlay} />
         )}
 

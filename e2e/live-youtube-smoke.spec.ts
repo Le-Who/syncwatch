@@ -49,7 +49,7 @@ test.describe("live YouTube provider smoke", () => {
         }),
       );
 
-      await youtubeControl(owner, /^Play/).click();
+      await playYouTube(owner);
       await Promise.all(
         room.clients.map(({ page }) =>
           expect(youtubeControl(page, /^Pause/)).toBeVisible({
@@ -61,13 +61,20 @@ test.describe("live YouTube provider smoke", () => {
       await youtubeControl(room.clients[1].page, /^Pause/).click();
       await Promise.all(
         room.clients.map(({ page }) =>
-          expect(youtubeControl(page, /^Play/)).toBeVisible({
+          expect(syncwatchPlayControl(page)).toBeVisible({
             timeout: 30_000,
           }),
         ),
       );
 
-      await youtubeControl(owner, /^Play/).click();
+      await playYouTube(owner);
+      await Promise.all(
+        room.clients.map(({ page }) =>
+          expect(youtubeControl(page, /^Pause/)).toBeVisible({
+            timeout: 30_000,
+          }),
+        ),
+      );
       const beforeSeek = await youtubePosition(owner);
       const moviePlayer = owner
         .frameLocator("iframe")
@@ -170,14 +177,32 @@ function youtubeControl(page: Page, name: RegExp) {
   return page.frameLocator("iframe").first().getByRole("button", { name });
 }
 
+function syncwatchPlayControl(page: Page) {
+  return page
+    .getByTestId("player-interaction-layer")
+    .getByRole("button", { name: "Play", exact: true });
+}
+
+async function playYouTube(page: Page) {
+  await syncwatchPlayControl(page).click();
+}
+
 async function youtubePosition(page: Page) {
-  const value =
-    (await page
-      .frameLocator("iframe")
-      .first()
-      .locator(".ytp-time-current")
-      .textContent()) ?? "0:00";
-  return value
-    .split(":")
-    .reduce((seconds, segment) => seconds * 60 + Number(segment), 0);
+  const moviePlayer = page
+    .frameLocator("iframe")
+    .first()
+    .locator("#movie_player");
+  await expect(moviePlayer).toBeAttached({ timeout: 30_000 });
+  return moviePlayer.evaluate((element) => {
+    const player = element as HTMLElement & {
+      getCurrentTime?: () => number;
+    };
+    const position = player.getCurrentTime?.();
+    if (typeof position !== "number" || !Number.isFinite(position)) {
+      throw new Error(
+        "YouTube player API did not expose a finite current time",
+      );
+    }
+    return position;
+  });
 }

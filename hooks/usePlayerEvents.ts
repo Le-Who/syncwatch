@@ -217,8 +217,8 @@ export function usePlayerEvents({
   }, [isCurrentProviderEpoch]);
 
   const guardedNativePlay = useCallback(() => {
-    if (canAcceptProviderEvent()) handleNativePlay();
-  }, [canAcceptProviderEvent, handleNativePlay]);
+    if (isCurrentProviderEpoch()) handleNativePlay();
+  }, [handleNativePlay, isCurrentProviderEpoch]);
 
   const guardedNativePause = useCallback(() => {
     if (canAcceptProviderEvent()) handleNativePause();

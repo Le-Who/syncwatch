@@ -7,6 +7,8 @@ import {
   setRedisRoom,
 } from "../../lib/redis-actor";
 import { applyAddItem } from "../../lib/room-logic";
+import { RoomEventBus } from "../../lib/room-event-bus";
+import { setupPubSubListeners } from "../../lib/socket/pubsub";
 import { RoomState } from "../../lib/types";
 import { randomUUID } from "node:crypto";
 
@@ -69,11 +71,31 @@ describe("Redis Actor & Queue Integration Tests", () => {
     if (!redis) return;
     const roomId = `cas_test_${TEST_RUN_ID}`;
 
-    const initialState = { id: roomId, version: 1, data: "initial" };
+    const initialState = {
+      id: roomId,
+      name: "Initial CAS room",
+      settings: { controlMode: "open", autoplayNext: true, looping: false },
+      participants: {},
+      playlist: [],
+      chat: [],
+      currentMediaId: null,
+      leaderId: null,
+      playback: {
+        status: "paused" as const,
+        basePosition: 0,
+        baseTimestamp: 1,
+        rate: 1,
+        updatedBy: "system",
+      },
+      flashbacks: {},
+      version: 1,
+      sequence: 1,
+      lastActivity: 1,
+    };
     await setRedisRoom(roomId, initialState);
 
-    const v2State = { ...initialState, version: 2, data: "second" };
-    const staleState = { ...initialState, version: 3, data: "stale_attempt" };
+    const v2State = { ...initialState, version: 2, name: "Accepted CAS room" };
+    const staleState = { ...initialState, version: 3, name: "Stale CAS room" };
 
     const success1 = await setRedisRoomCAS(roomId, v2State, 1);
     const success2 = await setRedisRoomCAS(roomId, staleState, 1);
@@ -83,7 +105,7 @@ describe("Redis Actor & Queue Integration Tests", () => {
     expect(success1).toBe(true);
     expect(success2).toBe(false);
     expect(current.version).toBe(2);
-    expect(current.data).toBe("second");
+    expect(current.name).toBe("Accepted CAS room");
   });
 
   it("normalizes legacy persisted data when reading from Redis", async () => {
@@ -114,6 +136,48 @@ describe("Redis Actor & Queue Integration Tests", () => {
     expect(room.chat).toEqual([]);
     expect(room.leaderId).toBeNull();
     expect(room.flashbacks).toEqual({});
+  });
+
+  it("delivers a cross-node room event through real Redis pub/sub", async () => {
+    if (!redis) return;
+    const roomId = `pubsub_test_${TEST_RUN_ID}`;
+    const subscriber = redis.duplicate();
+    await subscriber.psubscribe("room_events:*");
+
+    try {
+      const delivered = new Promise<string>((resolve, reject) => {
+        const timeout = setTimeout(
+          () => reject(new Error("Timed out waiting for Redis pub/sub event")),
+          2_000,
+        );
+        const eventBus = new RoomEventBus((observedRoomId, event) => {
+          if (
+            observedRoomId === roomId &&
+            event.type === "participant_disconnected"
+          ) {
+            clearTimeout(timeout);
+            resolve(event.participantId);
+          }
+        });
+        setupPubSubListeners(eventBus, subscriber);
+      });
+
+      await redis.publish(
+        `room_events:${roomId}`,
+        JSON.stringify({
+          sourceNodeId: "remote-test-node",
+          roomId,
+          event: {
+            type: "participant_disconnected",
+            participantId: `user_${TEST_RUN_ID}`,
+          },
+        }),
+      );
+
+      await expect(delivered).resolves.toBe(`user_${TEST_RUN_ID}`);
+    } finally {
+      await subscriber.quit();
+    }
   });
 
   it("3. applySlowCommand + CAS: should apply and persist add_item via the new inline CAS path", async () => {
