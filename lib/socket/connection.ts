@@ -11,6 +11,7 @@ import { persistRoomState, loadRoomFromDB, isSystemDegraded } from "../db-sync";
 import { createEmptyRoom, sanitizeRoom } from "../room-handler";
 import { RoomState } from "../types";
 import { SocketContext } from "./context";
+import { getClientIp } from "../ip";
 
 export function handleConnectionEvents(
   io: Server,
@@ -42,10 +43,10 @@ export function handleConnectionEvents(
       return;
     }
 
-    const ip =
-      socket.handshake.headers["x-forwarded-for"] ||
-      socket.handshake.address ||
-      "unknown";
+    const ip = getClientIp(
+      socket.handshake.headers["x-forwarded-for"],
+      socket.handshake.address
+    );
     if (!(await checkRedisRateLimit(`ws:join:${ip}`, 50, 60000))) {
       socket.emit("error", { message: "Too many join requests" });
       return;
