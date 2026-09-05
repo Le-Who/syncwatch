@@ -10,7 +10,7 @@ import {
   useLayoutEffect,
 } from "react";
 import dynamic from "next/dynamic";
-import { useStore, useSettingsStore } from "@/lib/store";
+import { useStore, useSettingsStore, getMediaIndexCached } from "@/lib/store";
 import { useShallow } from "zustand/react/shallow";
 
 function useEventCallback<Args extends unknown[], Return>(
@@ -70,9 +70,11 @@ export default function Player() {
   );
 
   const currentMedia = useStore(
-    useShallow((s) =>
-      s.room?.playlist.find((item) => item.id === s.room?.currentMediaId),
-    ),
+    useShallow((s) => {
+      if (!s.room?.playlist || !s.room?.currentMediaId) return undefined;
+      const idx = getMediaIndexCached(s.room.playlist, s.room.currentMediaId);
+      return idx !== -1 ? s.room.playlist[idx] : undefined;
+    }),
   );
 
   const playback = useStore(useShallow((s) => s.room?.playback));
@@ -543,7 +545,7 @@ export default function Player() {
   const nextItem = useStore(
     useShallow((s) => {
       if (!s.room || !currentMediaId) return null;
-      const idx = s.room.playlist.findIndex((i) => i.id === currentMediaId);
+      const idx = getMediaIndexCached(s.room.playlist, currentMediaId);
       if (idx === -1) return null;
       let n = s.room.playlist[idx + 1];
       if (!n && s.room.settings.looping) n = s.room.playlist[0];
