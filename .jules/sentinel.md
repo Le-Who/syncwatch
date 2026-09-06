@@ -1,0 +1,4 @@
+## 2025-02-27 - Rate Limit Bypass via IP Spoofing
+**Vulnerability:** The codebase read `request.headers.get("x-forwarded-for")` directly and implicitly trusted the leftmost value (if treating the comma-separated list as a single string, or grabbing the first IP) to apply rate limits. An attacker could bypass rate limits by spoofing `X-Forwarded-For: 127.0.0.1, <attacker-ip>` or similar.
+**Learning:** Next.js and typical Node.js environments do not automatically validate or strip bogon/private IPs from `x-forwarded-for` proxy headers. Rate limits tied to these blind trust variables fail open to abuse.
+**Prevention:** Always use a utility function (like `getClientIp` in `lib/ip.ts`) that correctly parses the comma-separated `X-Forwarded-For` list from right to left, actively skipping known bogons (private IPs) to identify the true external client IP.

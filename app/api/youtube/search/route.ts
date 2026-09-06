@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getClientIp } from "@/lib/ip";
 import { z } from "zod";
 import { checkRedisRateLimit } from "@/lib/redis-rate-limit";
 import { Worker } from "worker_threads";
@@ -129,7 +130,7 @@ async function searchWithGoogleApi(query: string, apiKey: string) {
 }
 
 export async function GET(request: Request) {
-  const ip = request.headers.get("x-forwarded-for") || "unknown";
+  const ip = getClientIp(request) || "unknown";
   const allowed = await checkRedisRateLimit(ip, 20, 60);
   if (!allowed) {
     return NextResponse.json({ error: "Too many requests" }, { status: 429 });
