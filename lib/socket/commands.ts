@@ -1,4 +1,5 @@
 import { Server, Socket } from "socket.io";
+import { getClientIp } from "@/lib/ip";
 import { SupabaseClient } from "@supabase/supabase-js";
 import { jwtVerify } from "jose";
 import { commandSchema } from "../zod-schemas";
@@ -38,7 +39,7 @@ export function handleCommandEvents(
     if (!rawCommand || typeof rawCommand !== "object") return;
 
     const ip =
-      socket.handshake.headers["x-forwarded-for"] ||
+      getClientIp(socket.handshake.headers) ||
       socket.handshake.address ||
       "unknown";
     if (!(await checkRedisRateLimit(`ws:command:${ip}`, 60, 10000))) {

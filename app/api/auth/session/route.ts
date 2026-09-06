@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { SignJWT } from "jose";
+import { getClientIp } from "@/lib/ip";
 import { checkRedisRateLimit } from "@/lib/redis-rate-limit";
 
 import { getJwtSecret } from "@/lib/jwt-config";
@@ -7,7 +8,7 @@ import { getJwtSecret } from "@/lib/jwt-config";
 const secret = getJwtSecret();
 
 export async function POST(request: Request) {
-  const ip = request.headers.get("x-forwarded-for") || "unknown";
+  const ip = getClientIp(request) || "unknown";
 
   // Bypass rate limiting in testing environments or when requested from localhost
   if (
