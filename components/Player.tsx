@@ -43,6 +43,7 @@ import { UpNextOverlay } from "./UpNextOverlay";
 import { SyncStatusBadge } from "./SyncStatusBadge";
 import { PlayerControlBar } from "./PlayerControlBar";
 import { PlaybackIntentManager } from "@/lib/playback-intent-manager";
+import { getPlaylistIndex, getPlaylistItem } from "@/lib/playlist-cache";
 import {
   SleepOverlay,
   BufferingOverlay,
@@ -70,9 +71,10 @@ export default function Player() {
   );
 
   const currentMedia = useStore(
-    useShallow((s) =>
-      s.room?.playlist.find((item) => item.id === s.room?.currentMediaId),
-    ),
+    useShallow((s) => {
+      if (!s.room || !s.room.currentMediaId) return undefined;
+      return getPlaylistItem(s.room.playlist, s.room.currentMediaId);
+    }),
   );
 
   const playback = useStore(useShallow((s) => s.room?.playback));
@@ -543,7 +545,7 @@ export default function Player() {
   const nextItem = useStore(
     useShallow((s) => {
       if (!s.room || !currentMediaId) return null;
-      const idx = s.room.playlist.findIndex((i) => i.id === currentMediaId);
+      const idx = getPlaylistIndex(s.room.playlist, currentMediaId);
       if (idx === -1) return null;
       let n = s.room.playlist[idx + 1];
       if (!n && s.room.settings.looping) n = s.room.playlist[0];
