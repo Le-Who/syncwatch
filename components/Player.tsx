@@ -23,7 +23,7 @@ function useEventCallback<Args extends unknown[], Return>(
   return useCallback((...args: Args) => ref.current(...args), []);
 }
 import fscreen from "fscreen";
-import { calculateDrift } from "@/lib/utils";
+import { calculateDrift, getPlaylistIndex } from "@/lib/utils";
 import { MediaApiService } from "@/lib/MediaApiService";
 import {
   RoomState,
@@ -70,9 +70,12 @@ export default function Player() {
   );
 
   const currentMedia = useStore(
-    useShallow((s) =>
-      s.room?.playlist.find((item) => item.id === s.room?.currentMediaId),
-    ),
+    useShallow((s) => {
+      // ⚡ Bolt Optimization: Replaced O(N) .find() with O(1) WeakMap lookup
+      if (!s.room || !s.room.currentMediaId) return undefined;
+      const idx = getPlaylistIndex(s.room.playlist, s.room.currentMediaId);
+      return idx !== -1 ? s.room.playlist[idx] : undefined;
+    }),
   );
 
   const playback = useStore(useShallow((s) => s.room?.playback));
@@ -543,7 +546,8 @@ export default function Player() {
   const nextItem = useStore(
     useShallow((s) => {
       if (!s.room || !currentMediaId) return null;
-      const idx = s.room.playlist.findIndex((i) => i.id === currentMediaId);
+      // ⚡ Bolt Optimization: Replaced O(N) .findIndex() with O(1) WeakMap lookup
+      const idx = getPlaylistIndex(s.room.playlist, currentMediaId);
       if (idx === -1) return null;
       let n = s.room.playlist[idx + 1];
       if (!n && s.room.settings.looping) n = s.room.playlist[0];

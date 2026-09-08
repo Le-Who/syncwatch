@@ -1,3 +1,25 @@
+import { PlaylistItem } from "./types";
+
+const playlistIndexCache = new WeakMap<PlaylistItem[], Map<string, number>>();
+
+/**
+ * ⚡ Bolt Optimization:
+ * O(1) lookup for playlist item indices. Uses a WeakMap keyed to the immutable
+ * array reference to cache mappings, preventing O(N) array traversals in selectors.
+ */
+export function getPlaylistIndex(playlist: PlaylistItem[], id: string): number {
+  let indexMap = playlistIndexCache.get(playlist);
+  if (!indexMap) {
+    indexMap = new Map();
+    for (let i = 0; i < playlist.length; i++) {
+      indexMap.set(playlist[i].id, i);
+    }
+    playlistIndexCache.set(playlist, indexMap);
+  }
+  const idx = indexMap.get(id);
+  return idx !== undefined ? idx : -1;
+}
+
 export const formatTime = (seconds: number | undefined | null): string => {
   if (typeof seconds !== "number" || isNaN(seconds) || seconds < 0)
     return "0:00";
