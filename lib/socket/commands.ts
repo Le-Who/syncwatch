@@ -20,6 +20,7 @@ import { sanitizeRoom } from "../room-handler";
 import { SocketContext } from "./context";
 
 import { getJwtSecret } from "../jwt-config";
+import { getClientIp } from "../ip";
 
 const JWT_SECRET = getJwtSecret();
 
@@ -38,7 +39,7 @@ export function handleCommandEvents(
     if (!rawCommand || typeof rawCommand !== "object") return;
 
     const ip =
-      socket.handshake.headers["x-forwarded-for"] ||
+      getClientIp(socket.handshake.headers["x-forwarded-for"] as string) ||
       socket.handshake.address ||
       "unknown";
     if (!(await checkRedisRateLimit(`ws:command:${ip}`, 60, 10000))) {

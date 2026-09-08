@@ -19,3 +19,22 @@ export function isBogon(ipStr: string): boolean {
     return true;
   }
 }
+
+export function getClientIp(
+  forwardedFor: string | null | undefined,
+): string | null {
+  if (!forwardedFor) return null;
+
+  const ips = forwardedFor.split(",").map((ip) => ip.trim());
+
+  // Parse from right to left (most trusted to least trusted)
+  // Skip bogons (private IPs, etc. which are often internal proxies)
+  for (let i = ips.length - 1; i >= 0; i--) {
+    const ip = ips[i];
+    if (ip && !isBogon(ip)) {
+      return ip;
+    }
+  }
+
+  return null;
+}

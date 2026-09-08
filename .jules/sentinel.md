@@ -1,0 +1,5 @@
+## 2024-05-24 - [Rate Limit Bypass via Spoofed X-Forwarded-For]
+
+**Vulnerability:** The application was directly reading the `x-forwarded-for` header (`request.headers.get("x-forwarded-for")`) to determine the client's IP address for rate-limiting. This allowed attackers to bypass rate limits by spoofing this header (e.g., `X-Forwarded-For: 1.2.3.4`).
+**Learning:** Next.js and Socket.io blindly trust the `x-forwarded-for` header unless specifically configured. In a multi-proxy environment, the header is a comma-separated list. Simply taking the whole string or the first value is insecure. The most reliable client IP is the right-most IP that is not an internal/bogon address.
+**Prevention:** Always use a utility function like `getClientIp` that parses the comma-separated list from right to left, filtering out private network IPs (bogons). Never prioritize `socket.remoteAddress` over proxy headers without verifying if the direct connection is from a trusted proxy, but for this layer, `getClientIp` is standard.
