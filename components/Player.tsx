@@ -2,6 +2,7 @@
 
 // default-passive-events removed: Global monkey-patches are dangerous for Radix UI Sliders -> Symptom Masking
 
+import type { PlaylistItem } from "@/lib/types";
 import {
   useEffect,
   useRef,
@@ -22,6 +23,26 @@ function useEventCallback<Args extends unknown[], Return>(
   });
   return useCallback((...args: Args) => ref.current(...args), []);
 }
+
+// ⚡ Bolt: WeakMap cache for O(1) playlist lookups.
+// Since Zustand returns the same array reference if the playlist hasn't changed,
+// we can cache the O(N) lookup and reuse it for any selector that needs it.
+const playlistIndexCache = new WeakMap<PlaylistItem[], Map<string, number>>();
+
+function getPlaylistIndex(playlist: PlaylistItem[], id: string | null | undefined): number {
+  if (!id || !playlist) return -1;
+  let indexMap = playlistIndexCache.get(playlist);
+  if (!indexMap) {
+    indexMap = new Map();
+    for (let i = 0; i < playlist.length; i++) {
+      indexMap.set(playlist[i].id, i);
+    }
+    playlistIndexCache.set(playlist, indexMap);
+  }
+  const idx = indexMap.get(id);
+  return idx !== undefined ? idx : -1;
+}
+
 import fscreen from "fscreen";
 import { calculateDrift } from "@/lib/utils";
 import { MediaApiService } from "@/lib/MediaApiService";
@@ -70,9 +91,11 @@ export default function Player() {
   );
 
   const currentMedia = useStore(
-    useShallow((s) =>
-      s.room?.playlist.find((item) => item.id === s.room?.currentMediaId),
-    ),
+    useShallow((s) => {
+      if (!s.room || !s.room.currentMediaId) return undefined;
+      const idx = getPlaylistIndex(s.room.playlist, s.room.currentMediaId);
+      return idx !== -1 ? s.room.playlist[idx] : undefined;
+    }),
   );
 
   const playback = useStore(useShallow((s) => s.room?.playback));
@@ -543,7 +566,7 @@ export default function Player() {
   const nextItem = useStore(
     useShallow((s) => {
       if (!s.room || !currentMediaId) return null;
-      const idx = s.room.playlist.findIndex((i) => i.id === currentMediaId);
+      const idx = getPlaylistIndex(s.room.playlist, currentMediaId);
       if (idx === -1) return null;
       let n = s.room.playlist[idx + 1];
       if (!n && s.room.settings.looping) n = s.room.playlist[0];
