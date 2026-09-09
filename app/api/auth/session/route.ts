@@ -1,20 +1,19 @@
 import { NextResponse } from "next/server";
 import { SignJWT } from "jose";
 import { checkRedisRateLimit } from "@/lib/redis-rate-limit";
+import { getClientIp } from "@/lib/ip";
 
 import { getJwtSecret } from "@/lib/jwt-config";
 
 const secret = getJwtSecret();
 
 export async function POST(request: Request) {
-  const ip = request.headers.get("x-forwarded-for") || "unknown";
+  const ip = getClientIp(request) || "unknown";
 
-  // Bypass rate limiting in testing environments or when requested from localhost
+  // Bypass rate limiting in testing environments
   if (
     process.env.NODE_ENV !== "test" &&
-    process.env.NODE_ENV !== "development" &&
-    ip !== "::1" &&
-    ip !== "127.0.0.1"
+    process.env.NODE_ENV !== "development"
   ) {
     if (!(await checkRedisRateLimit(`api:auth:${ip}`, 10, 60000))) {
       return NextResponse.json({ error: "Too many requests" }, { status: 429 });
