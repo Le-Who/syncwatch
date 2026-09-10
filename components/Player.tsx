@@ -30,6 +30,7 @@ import {
   PlaybackState,
   PlaybackStatus,
   PlayerMethods,
+  PlaylistItem,
 } from "@/lib/types";
 import { TwitchPlayer } from "./TwitchPlayer";
 import { usePlayerShortcuts } from "@/hooks/usePlayerShortcuts";
@@ -55,6 +56,25 @@ const ReactPlayer = dynamic(() => import("react-player"), {
   ssr: false,
 }) as any;
 
+// ⚡ Bolt Optimization: Cache to convert O(N) array lookups into O(1) inside Zustand selectors.
+// Keyed by the immutable playlist array reference.
+const playlistIndexMapCache = new WeakMap<
+  PlaylistItem[],
+  Map<string, number>
+>();
+
+function getPlaylistIndexMap(playlist: PlaylistItem[]): Map<string, number> {
+  let indexMap = playlistIndexMapCache.get(playlist);
+  if (!indexMap) {
+    indexMap = new Map<string, number>();
+    for (let i = 0; i < playlist.length; i++) {
+      indexMap.set(playlist[i].id, i);
+    }
+    playlistIndexMapCache.set(playlist, indexMap);
+  }
+  return indexMap;
+}
+
 export default function Player() {
   const participantId = useStore((s) => s.participantId);
   const sendCommand = useStore((s) => s.sendCommand);
@@ -70,9 +90,12 @@ export default function Player() {
   );
 
   const currentMedia = useStore(
-    useShallow((s) =>
-      s.room?.playlist.find((item) => item.id === s.room?.currentMediaId),
-    ),
+    useShallow((s) => {
+      if (!s.room || !s.room.currentMediaId) return undefined;
+      const indexMap = getPlaylistIndexMap(s.room.playlist);
+      const idx = indexMap.get(s.room.currentMediaId);
+      return idx !== undefined ? s.room.playlist[idx] : undefined;
+    }),
   );
 
   const playback = useStore(useShallow((s) => s.room?.playback));
@@ -543,7 +566,8 @@ export default function Player() {
   const nextItem = useStore(
     useShallow((s) => {
       if (!s.room || !currentMediaId) return null;
-      const idx = s.room.playlist.findIndex((i) => i.id === currentMediaId);
+      const indexMap = getPlaylistIndexMap(s.room.playlist);
+      const idx = indexMap.get(currentMediaId) ?? -1;
       if (idx === -1) return null;
       let n = s.room.playlist[idx + 1];
       if (!n && s.room.settings.looping) n = s.room.playlist[0];
