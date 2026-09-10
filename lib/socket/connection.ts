@@ -11,6 +11,7 @@ import { persistRoomState, loadRoomFromDB, isSystemDegraded } from "../db-sync";
 import { createEmptyRoom, sanitizeRoom } from "../room-handler";
 import { RoomState } from "../types";
 import { SocketContext } from "./context";
+import { getClientIp } from "../ip";
 
 export function handleConnectionEvents(
   io: Server,
@@ -43,7 +44,7 @@ export function handleConnectionEvents(
     }
 
     const ip =
-      socket.handshake.headers["x-forwarded-for"] ||
+      getClientIp(socket.handshake.headers["x-forwarded-for"]) ||
       socket.handshake.address ||
       "unknown";
     if (!(await checkRedisRateLimit(`ws:join:${ip}`, 50, 60000))) {
