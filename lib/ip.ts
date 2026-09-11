@@ -1,5 +1,27 @@
 import ipaddr from "ipaddr.js";
 
+export function getClientIp(
+  forwardedFor: string | string[] | null | undefined,
+): string | null {
+  if (!forwardedFor) return null;
+
+  const headerValue = Array.isArray(forwardedFor)
+    ? forwardedFor.join(",")
+    : forwardedFor;
+
+  const ips = headerValue.split(",").map((ip) => ip.trim());
+
+  // Parse from right to left, skipping bogons (trusted proxies)
+  for (let i = ips.length - 1; i >= 0; i--) {
+    const ip = ips[i];
+    if (ip && !isBogon(ip)) {
+      return ip;
+    }
+  }
+
+  return null;
+}
+
 export function isBogon(ipStr: string): boolean {
   try {
     const ip = ipaddr.process(ipStr);
