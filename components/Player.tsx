@@ -129,7 +129,14 @@ export default function Player() {
   }, []);
 
   useEffect(() => {
+    let lastActivity = 0;
     const handleUserActivity = () => {
+      const now = Date.now();
+      // ⚡ Bolt Optimization: Throttle continuous DOM events (like mousemove) to at most once per second
+      // to prevent excessive React state reads, DOM ref checks, and rapid clearing/setting of timeouts
+      if (now - lastActivity < 1000) return;
+      lastActivity = now;
+
       wakeUp();
       if (idleTimeoutRef.current) clearTimeout(idleTimeoutRef.current);
       idleTimeoutRef.current = setTimeout(
