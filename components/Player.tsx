@@ -129,7 +129,14 @@ export default function Player() {
   }, []);
 
   useEffect(() => {
+    let lastActivityTime = 0;
+
     const handleUserActivity = () => {
+      // Throttle activity updates to once per second to avoid excessive clearTimeout/setTimeout calls
+      const now = Date.now();
+      if (now - lastActivityTime < 1000) return;
+      lastActivityTime = now;
+
       wakeUp();
       if (idleTimeoutRef.current) clearTimeout(idleTimeoutRef.current);
       idleTimeoutRef.current = setTimeout(
