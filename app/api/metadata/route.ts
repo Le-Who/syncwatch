@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { checkRedisRateLimit } from "@/lib/redis-rate-limit";
 import dns from "dns/promises";
 import { Parser } from "htmlparser2";
-import { isBogon } from "@/lib/ip";
+import { isBogon, getClientIp } from "@/lib/ip";
 
 export async function GET(request: NextRequest) {
-  const ip = request.headers.get("x-forwarded-for") || "unknown";
+  const ip = getClientIp(request.headers.get("x-forwarded-for")) || "unknown";
   const allowed = await checkRedisRateLimit(ip, 20, 60);
   if (!allowed) {
     return NextResponse.json({ error: "Too many requests" }, { status: 429 });
