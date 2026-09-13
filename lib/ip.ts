@@ -19,3 +19,15 @@ export function isBogon(ipStr: string): boolean {
     return true;
   }
 }
+
+export function getClientIp(headerStr: string | null | undefined): string | null {
+  if (!headerStr) return null;
+  const ips = headerStr.split(',').map(s => s.trim());
+  for (let i = ips.length - 1; i >= 0; i--) {
+    const ip = ips[i];
+    if (!isBogon(ip)) {
+      return ip;
+    }
+  }
+  return null;
+}
