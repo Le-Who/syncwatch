@@ -19,3 +19,21 @@ export function isBogon(ipStr: string): boolean {
     return true;
   }
 }
+
+export function getClientIp(forwardedFor: string | string[] | null | undefined): string | null {
+  if (!forwardedFor) return null;
+  const headerStr = Array.isArray(forwardedFor) ? forwardedFor.join(',') : forwardedFor;
+  if (!headerStr) return null;
+
+  const ips = headerStr.split(',').map((ip) => ip.trim()).filter(Boolean);
+
+  // Parse from right to left (skipping bogons)
+  for (let i = ips.length - 1; i >= 0; i--) {
+    const ip = ips[i];
+    if (!isBogon(ip)) {
+      return ip;
+    }
+  }
+
+  return null;
+}
