@@ -1,3 +1,4 @@
+import { getClientIp } from "@/lib/ip";
 import { NextResponse } from "next/server";
 import yts from "yt-search";
 import { z } from "zod";
@@ -20,7 +21,11 @@ const ytPlaylistResponseSchema = z.object({
 });
 
 export async function GET(request: Request) {
-  const ip = request.headers.get("x-forwarded-for") || "unknown";
+  const ip =
+    getClientIp(
+      request.headers.get("x-forwarded-for"),
+      request.headers.get("x-real-ip"),
+    ) || "unknown";
   const allowed = await checkRedisRateLimit(ip, 10, 60);
   if (!allowed) {
     return NextResponse.json({ error: "Too many requests" }, { status: 429 });
