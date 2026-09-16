@@ -1,0 +1,4 @@
+## 2025-02-27 - Fix x-forwarded-for spoofing
+**Vulnerability:** The application was directly using the `x-forwarded-for` header from `request.headers.get("x-forwarded-for")` and `socket.handshake.headers["x-forwarded-for"]` to determine the client IP address for rate limiting. This can be easily bypassed or spoofed by sending a custom `X-Forwarded-For` header.
+**Learning:** Directly using HTTP headers like `X-Forwarded-For` without properly parsing the comma-separated list and removing bogons (private IPs) can lead to rate limiting bypasses and spoofing. Also, `socket.handshake.headers` is an object, not a `Headers` instance.
+**Prevention:** Always use a utility function like `getClientIp` that correctly parses the `X-Forwarded-For` header, iterates from right-to-left (most trusted to least trusted proxy), skips bogon IPs (private/local networks), and falls back to the socket's remote address if all else fails.
