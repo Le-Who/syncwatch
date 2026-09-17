@@ -129,7 +129,16 @@ export default function Player() {
   }, []);
 
   useEffect(() => {
+    let lastActivityTime = 0;
+
     const handleUserActivity = () => {
+      // ⚡ Bolt Performance Optimization: Throttle continuous DOM events
+      // to limit execution frequency to at most once per second.
+      // This prevents main thread blocking from rapid timeout clear/set cycles.
+      const now = Date.now();
+      if (now - lastActivityTime < 1000) return;
+      lastActivityTime = now;
+
       wakeUp();
       if (idleTimeoutRef.current) clearTimeout(idleTimeoutRef.current);
       idleTimeoutRef.current = setTimeout(
