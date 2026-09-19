@@ -55,6 +55,55 @@ const ReactPlayer = dynamic(() => import("react-player"), {
   ssr: false,
 }) as any;
 
+// ⚡ Bolt Optimization: Module-level memoized selectors to prevent O(N) evaluation on every store update
+let lastCurrentMediaPlaylistRef: any = null;
+let lastCurrentMediaIdRef: any = null;
+let cachedCurrentMedia: any = undefined;
+const selectCurrentMedia = (s: any) => {
+  const playlist = s.room?.playlist;
+  const mediaId = s.room?.currentMediaId;
+  if (playlist === lastCurrentMediaPlaylistRef && mediaId === lastCurrentMediaIdRef) {
+    return cachedCurrentMedia;
+  }
+  lastCurrentMediaPlaylistRef = playlist;
+  lastCurrentMediaIdRef = mediaId;
+  cachedCurrentMedia = playlist?.find((item: any) => item.id === mediaId);
+  return cachedCurrentMedia;
+};
+
+let lastNextItemPlaylistRef: any = null;
+let lastNextItemMediaIdRef: any = null;
+let lastNextItemLoopingRef: boolean | undefined = undefined;
+let cachedNextItem: any = null;
+const selectNextItem = (s: any) => {
+  const room = s.room;
+  if (!room || !room.currentMediaId) return null;
+
+  if (
+    room.playlist === lastNextItemPlaylistRef &&
+    room.currentMediaId === lastNextItemMediaIdRef &&
+    room.settings.looping === lastNextItemLoopingRef
+  ) {
+    return cachedNextItem;
+  }
+
+  lastNextItemPlaylistRef = room.playlist;
+  lastNextItemMediaIdRef = room.currentMediaId;
+  lastNextItemLoopingRef = room.settings.looping;
+
+  const idx = room.playlist.findIndex((i: any) => i.id === room.currentMediaId);
+  if (idx === -1) {
+    cachedNextItem = null;
+    return null;
+  }
+
+  let n = room.playlist[idx + 1];
+  if (!n && room.settings.looping) n = room.playlist[0];
+
+  cachedNextItem = n;
+  return n;
+};
+
 export default function Player() {
   const participantId = useStore((s) => s.participantId);
   const sendCommand = useStore((s) => s.sendCommand);
@@ -69,11 +118,7 @@ export default function Player() {
     (s) => s.participantId && s.room?.participants[s.participantId]?.role,
   );
 
-  const currentMedia = useStore(
-    useShallow((s) =>
-      s.room?.playlist.find((item) => item.id === s.room?.currentMediaId),
-    ),
-  );
+  const currentMedia = useStore(selectCurrentMedia);
 
   const playback = useStore(useShallow((s) => s.room?.playback));
 
@@ -540,16 +585,7 @@ export default function Player() {
 
   // formatTime is now imported from @/lib/utils
 
-  const nextItem = useStore(
-    useShallow((s) => {
-      if (!s.room || !currentMediaId) return null;
-      const idx = s.room.playlist.findIndex((i) => i.id === currentMediaId);
-      if (idx === -1) return null;
-      let n = s.room.playlist[idx + 1];
-      if (!n && s.room.settings.looping) n = s.room.playlist[0];
-      return n;
-    }),
-  );
+  const nextItem = useStore(selectNextItem);
 
   const [upNextState, setUpNextState] = useState({ show: false, remaining: 0 });
 
