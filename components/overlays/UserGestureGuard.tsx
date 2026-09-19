@@ -18,7 +18,8 @@ export function UserGestureGuard({ onActivate }: UserGestureGuardProps) {
           e.stopPropagation();
           onActivate();
         }}
-        className="bg-theme-accent text-theme-bg flex items-center gap-3 rounded-full px-8 py-4 font-bold tracking-widest uppercase shadow-[0_0_40px_var(--color-theme-accent)] transition-all hover:scale-105 active:scale-95"
+        aria-label="Initialize stream synchronization"
+        className="bg-theme-accent text-theme-bg ring-theme-accent flex items-center gap-3 rounded-full px-8 py-4 font-bold tracking-widest uppercase shadow-[0_0_40px_var(--color-theme-accent)] transition-all outline-none hover:scale-105 focus-visible:ring-4 focus-visible:ring-offset-2 focus-visible:ring-offset-black active:scale-95"
       >
         <MonitorPlay className="h-6 w-6" />
         Initialize Stream Sync

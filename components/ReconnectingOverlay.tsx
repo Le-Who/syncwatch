@@ -162,7 +162,8 @@ export function ReconnectingOverlay() {
 
         <button
           onClick={handleManualRetry}
-          className="bg-theme-accent text-theme-bg rounded-theme flex items-center space-x-2 px-6 py-3 text-xs font-bold tracking-widest uppercase shadow-lg transition-all hover:scale-105 active:scale-95"
+          aria-label="Retry connection manually"
+          className="bg-theme-accent text-theme-bg ring-theme-accent rounded-theme flex items-center space-x-2 px-6 py-3 text-xs font-bold tracking-widest uppercase shadow-lg transition-all outline-none hover:scale-105 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-black active:scale-95"
         >
           <RefreshCw className="h-4 w-4" />
           <span>Retry Now</span>
