@@ -1,0 +1,4 @@
+## 2024-05-18 - Rate Limit Bypass through Unverified X-Forwarded-For Headers
+**Vulnerability:** API and WebSocket endpoints read client IP addresses directly from `request.headers.get("x-forwarded-for")` and `socket.handshake.headers["x-forwarded-for"]` and trust the first element, which allows clients to bypass rate-limits by arbitrarily spoofing the `X-Forwarded-For` header.
+**Learning:** Next.js and Socket.io do not intrinsically parse or validate proxy headers; they just expose them. Blindly trusting proxy headers without reverse proxy validation exposes rate-limiting and IP banning mechanisms to spoofing.
+**Prevention:** Implement a robust `getClientIp` function that splits the comma-separated header, reads from right-to-left, and stops at the first non-bogon (non-private/non-local) IP address. Ensure all endpoints use this central utility rather than direct header access.
