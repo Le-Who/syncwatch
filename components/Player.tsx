@@ -50,10 +50,66 @@ import {
   UserGestureGuard,
   ErrorOverlay,
 } from "./overlays";
+import { PlaylistItem } from "@/lib/types";
 
 const ReactPlayer = dynamic(() => import("react-player"), {
   ssr: false,
 }) as any;
+
+// Module-level memoization for O(N) array lookups in Zustand selectors
+// Caches the playlist reference and search key to avoid O(N) `.find()` on every unrelated state update
+let _cachedMediaPlaylist: PlaylistItem[] | undefined;
+let _cachedMediaId: string | null | undefined;
+let _cachedMediaResult: PlaylistItem | undefined;
+
+function getMemoizedCurrentMedia(
+  playlist: PlaylistItem[] | undefined,
+  currentMediaId: string | null | undefined,
+) {
+  if (!playlist) return undefined;
+  if (_cachedMediaPlaylist === playlist && _cachedMediaId === currentMediaId) {
+    return _cachedMediaResult;
+  }
+  _cachedMediaPlaylist = playlist;
+  _cachedMediaId = currentMediaId;
+  _cachedMediaResult = playlist.find((item) => item.id === currentMediaId);
+  return _cachedMediaResult;
+}
+
+let _cachedNextItemPlaylist: PlaylistItem[] | undefined;
+let _cachedNextItemId: string | null | undefined;
+let _cachedNextItemLooping: boolean | undefined;
+let _cachedNextItemResult: PlaylistItem | null | undefined;
+
+function getMemoizedNextItem(
+  playlist: PlaylistItem[] | undefined,
+  currentMediaId: string | null | undefined,
+  looping: boolean | undefined,
+) {
+  if (!playlist || !currentMediaId) return null;
+  if (
+    _cachedNextItemPlaylist === playlist &&
+    _cachedNextItemId === currentMediaId &&
+    _cachedNextItemLooping === looping
+  ) {
+    return _cachedNextItemResult;
+  }
+
+  _cachedNextItemPlaylist = playlist;
+  _cachedNextItemId = currentMediaId;
+  _cachedNextItemLooping = looping;
+
+  const idx = playlist.findIndex((i) => i.id === currentMediaId);
+  if (idx === -1) {
+    _cachedNextItemResult = null;
+    return null;
+  }
+  let n = playlist[idx + 1];
+  if (!n && looping) n = playlist[0];
+
+  _cachedNextItemResult = n;
+  return n;
+}
 
 export default function Player() {
   const participantId = useStore((s) => s.participantId);
@@ -69,10 +125,8 @@ export default function Player() {
     (s) => s.participantId && s.room?.participants[s.participantId]?.role,
   );
 
-  const currentMedia = useStore(
-    useShallow((s) =>
-      s.room?.playlist.find((item) => item.id === s.room?.currentMediaId),
-    ),
+  const currentMedia = useStore((s) =>
+    getMemoizedCurrentMedia(s.room?.playlist, s.room?.currentMediaId),
   );
 
   const playback = useStore(useShallow((s) => s.room?.playback));
@@ -129,7 +183,14 @@ export default function Player() {
   }, []);
 
   useEffect(() => {
+    let lastActivityTime = 0;
+
     const handleUserActivity = () => {
+      const now = Date.now();
+      // Throttle continuous events (mousemove/keydown) to execute at most once per second
+      if (now - lastActivityTime < 1000) return;
+      lastActivityTime = now;
+
       wakeUp();
       if (idleTimeoutRef.current) clearTimeout(idleTimeoutRef.current);
       idleTimeoutRef.current = setTimeout(
@@ -144,18 +205,23 @@ export default function Player() {
       );
     };
 
-    window.addEventListener("mousemove", handleUserActivity);
-    window.addEventListener("keydown", handleUserActivity);
-    window.addEventListener("touchstart", handleUserActivity);
-    window.addEventListener("click", handleUserActivity);
+    const eventOptions = { passive: true };
+    window.addEventListener("mousemove", handleUserActivity, eventOptions);
+    window.addEventListener("keydown", handleUserActivity, eventOptions);
+    window.addEventListener("touchstart", handleUserActivity, eventOptions);
+    window.addEventListener("click", handleUserActivity, eventOptions);
 
-    handleUserActivity();
+    handleUserActivity(); // Initial call to setup timeout
 
     return () => {
-      window.removeEventListener("mousemove", handleUserActivity);
-      window.removeEventListener("keydown", handleUserActivity);
-      window.removeEventListener("touchstart", handleUserActivity);
-      window.removeEventListener("click", handleUserActivity);
+      window.removeEventListener("mousemove", handleUserActivity, eventOptions);
+      window.removeEventListener("keydown", handleUserActivity, eventOptions);
+      window.removeEventListener(
+        "touchstart",
+        handleUserActivity,
+        eventOptions,
+      );
+      window.removeEventListener("click", handleUserActivity, eventOptions);
       if (idleTimeoutRef.current) clearTimeout(idleTimeoutRef.current);
     };
   }, [wakeUp]);
@@ -540,15 +606,12 @@ export default function Player() {
 
   // formatTime is now imported from @/lib/utils
 
-  const nextItem = useStore(
-    useShallow((s) => {
-      if (!s.room || !currentMediaId) return null;
-      const idx = s.room.playlist.findIndex((i) => i.id === currentMediaId);
-      if (idx === -1) return null;
-      let n = s.room.playlist[idx + 1];
-      if (!n && s.room.settings.looping) n = s.room.playlist[0];
-      return n;
-    }),
+  const nextItem = useStore((s) =>
+    getMemoizedNextItem(
+      s.room?.playlist,
+      currentMediaId,
+      s.room?.settings.looping,
+    ),
   );
 
   const [upNextState, setUpNextState] = useState({ show: false, remaining: 0 });
