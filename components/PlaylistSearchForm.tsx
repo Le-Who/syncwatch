@@ -238,7 +238,8 @@ export const PlaylistSearchForm = React.memo(function PlaylistSearchForm({
                 <button
                   type="button"
                   onClick={() => setShowDropdown(false)}
-                  className="hover:text-theme-text"
+                  aria-label="Close search results"
+                  className="hover:text-theme-text outline-none rounded-sm focus-visible:ring-2 ring-theme-accent"
                 >
                   Close
                 </button>
@@ -250,7 +251,8 @@ export const PlaylistSearchForm = React.memo(function PlaylistSearchForm({
                   onClick={() =>
                     handleAdd(undefined, v.url, v.title, v.thumbnail)
                   }
-                  className="hover:bg-theme-accent/10 border-theme-border/10 flex w-full items-center space-x-3 border-b px-3 py-3 text-left transition-colors last:border-0"
+                  aria-label={`Play ${v.title} by ${v.author}, duration ${formatTime(v.duration)}`}
+                  className="hover:bg-theme-accent/10 border-theme-border/10 flex w-full items-center space-x-3 border-b px-3 py-3 text-left transition-colors last:border-0 outline-none focus-visible:ring-2 focus-visible:ring-inset ring-theme-accent"
                 >
                   <img
                     src={v.thumbnail}
