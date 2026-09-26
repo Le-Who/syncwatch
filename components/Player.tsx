@@ -129,7 +129,13 @@ export default function Player() {
   }, []);
 
   useEffect(() => {
+    let lastActivityTime = 0;
+
     const handleUserActivity = () => {
+      const now = Date.now();
+      if (now - lastActivityTime < 1000) return;
+      lastActivityTime = now;
+
       wakeUp();
       if (idleTimeoutRef.current) clearTimeout(idleTimeoutRef.current);
       idleTimeoutRef.current = setTimeout(
@@ -144,10 +150,10 @@ export default function Player() {
       );
     };
 
-    window.addEventListener("mousemove", handleUserActivity);
-    window.addEventListener("keydown", handleUserActivity);
-    window.addEventListener("touchstart", handleUserActivity);
-    window.addEventListener("click", handleUserActivity);
+    window.addEventListener("mousemove", handleUserActivity, { passive: true });
+    window.addEventListener("keydown", handleUserActivity, { passive: true });
+    window.addEventListener("touchstart", handleUserActivity, { passive: true });
+    window.addEventListener("click", handleUserActivity, { passive: true });
 
     handleUserActivity();
 
