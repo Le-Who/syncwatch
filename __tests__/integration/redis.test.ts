@@ -173,9 +173,15 @@ describe("Redis Actor & Queue Integration Tests", () => {
         setupPubSubListeners(sourceBus, sourceSubscriber),
         setupPubSubListeners(targetBus, targetSubscriber),
       ]);
+      const sourceEchoObserved = new Promise<void>((resolve) => {
+        sourceSubscriber.on("pmessage", (_pattern, channel) => {
+          if (channel === `room_events:${roomId}`) resolve();
+        });
+      });
       await sourceBus.publish(roomId, event);
+      await sourceEchoObserved;
       await expect.poll(() => targetEvents).toEqual([event.participantId]);
-      await expect.poll(() => sourceEvents).toEqual([event.participantId]);
+      expect(sourceEvents).toEqual([event.participantId]);
     } finally {
       await Promise.all([sourceSubscriber.quit(), targetSubscriber.quit()]);
     }

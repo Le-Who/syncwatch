@@ -288,9 +288,16 @@ export class PlaybackIntentManager {
     }
   }
 
+  public isPauseDebouncePending(): boolean {
+    return this.pauseDebounce !== null;
+  }
+
   public setPauseDebounce(fn: () => void, ms: number) {
     this.clearPauseDebounce();
-    this.pauseDebounce = setTimeout(fn, ms);
+    this.pauseDebounce = setTimeout(() => {
+      this.pauseDebounce = null;
+      fn();
+    }, ms);
   }
 
   /** Release every timer/guard owned by this Player instance. */

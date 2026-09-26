@@ -83,6 +83,7 @@ vi.mock("next/dynamic", async () => {
           onLoadedMetadata: props.onLoadedMetadata,
           onWaiting: props.onWaiting,
           onPlaying: props.onPlaying,
+          onPlay: props.onPlay,
           onPause: props.onPause,
           onSeeked: props.onSeeked,
           onEnded: props.onEnded,
@@ -230,6 +231,35 @@ describe("degraded multiplayer through authoritative commands", () => {
     },
   );
 
+  it.each(["before-commit", "after-commit"] as const)(
+    "keeps the authoritative room playing when YouTube quickly resumes %s",
+    async (timing) => {
+      await runScenario(
+        "youtube",
+        "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        timing === "before-commit"
+          ? "quick-resume-before-commit"
+          : "quick-resume-after-commit",
+      );
+    },
+  );
+
+  it("keeps a YouTube native pause pending across a canonical sync tick", async () => {
+    await runScenario(
+      "youtube",
+      "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+      "canonical-echo",
+    );
+  });
+
+  it("does not restart YouTube from a stale room frame after pause is sent but before ACK", async () => {
+    await runScenario(
+      "youtube",
+      "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+      "delayed-pause-ack",
+    );
+  });
+
   it.each([
     ["youtube", "https://www.youtube.com/watch?v=dQw4w9WgXcQ"],
     ["twitch", "https://www.twitch.tv/videos/123456"],
@@ -341,7 +371,14 @@ describe("degraded multiplayer through authoritative commands", () => {
 async function runScenario(
   provider: string,
   url: string,
-  scenario: "waiting-first" | "eligible-pause-control" | "pause-before-waiting",
+  scenario:
+    | "waiting-first"
+    | "eligible-pause-control"
+    | "pause-before-waiting"
+    | "quick-resume-before-commit"
+    | "quick-resume-after-commit"
+    | "canonical-echo"
+    | "delayed-pause-ack",
 ) {
   const setMediaTransition = vi.spyOn(
     PlaybackIntentManager.prototype,
@@ -403,21 +440,30 @@ async function runScenario(
   });
   const pendingCommands: Promise<unknown>[] = [];
   const escapedPlaybackCommands: string[] = [];
+  let releaseDelayedPause: (() => void) | undefined;
+  const delayedPause = new Promise<void>((resolve) => {
+    releaseDelayedPause = resolve;
+  });
   const sendCommand = (type: string, payload: any = {}) => {
     if (["play", "pause", "seek", "video_ended"].includes(type)) {
       escapedPlaybackCommands.push(type);
     }
     const command = { type, payload } as RoomCommand;
     pendingCommands.push(
-      service.execute(
-        { currentRoomId: initial.id, currentParticipantId: "p0" },
-        {
-          roomId: initial.id,
-          clientSequence: useStore.getState().room?.sequence ?? 0,
-          nonce: payload.nonce ?? randomUUID(),
-          command,
-        },
-      ),
+      (async () => {
+        if (scenario === "delayed-pause-ack" && type === "pause") {
+          await delayedPause;
+        }
+        return service.execute(
+          { currentRoomId: initial.id, currentParticipantId: "p0" },
+          {
+            roomId: initial.id,
+            clientSequence: useStore.getState().room?.sequence ?? 0,
+            nonce: payload.nonce ?? randomUUID(),
+            command,
+          },
+        );
+      })(),
     );
   };
   useStore.setState({
@@ -444,6 +490,11 @@ async function runScenario(
 
   escapedPlaybackCommands.length = 0;
   authoritativeEvents.length = 0;
+
+  if (scenario === "canonical-echo" || scenario === "delayed-pause-ack") {
+    // The next canonical sync tick is at 14_500 ms; place it inside debounce.
+    await act(() => vi.advanceTimersByTimeAsync(1_300));
+  }
 
   const before = await repository.get(initial.id);
   expect(before).not.toBeNull();
@@ -484,10 +535,29 @@ async function runScenario(
     });
   } else {
     const deferredEpoch = intentManager.currentProviderEventEpoch();
-    act(() => callbacks.onPause?.());
-    expect(providerPlaying.get(url)).toBe(false);
+    act(() => {
+      callbacks.onPause?.();
+      if (scenario === "quick-resume-before-commit") callbacks.onPlay?.();
+    });
+    expect(providerPlaying.get(url)).toBe(
+      scenario === "quick-resume-before-commit",
+    );
     expect(pauseDebounces).toEqual([{ delayMs: 150, runs: 0 }]);
-    await act(() => vi.advanceTimersByTimeAsync(149));
+    if (scenario === "quick-resume-after-commit") {
+      act(() => callbacks.onPlay?.());
+    }
+    if (scenario === "canonical-echo" || scenario === "delayed-pause-ack") {
+      await act(() => vi.advanceTimersByTimeAsync(100));
+      expect(providerPlaying.get(url)).toBe(false);
+      expect(escapedPlaybackCommands).toEqual([]);
+    }
+    await act(() =>
+      vi.advanceTimersByTimeAsync(
+        scenario === "canonical-echo" || scenario === "delayed-pause-ack"
+          ? 49
+          : 149,
+      ),
+    );
     expect(pauseDebounces).toEqual([{ delayMs: 150, runs: 0 }]);
     expect(escapedPlaybackCommands).toEqual([]);
     expect(authoritativeEvents).toEqual([]);
@@ -509,17 +579,48 @@ async function runScenario(
     }
 
     await act(() => vi.advanceTimersByTimeAsync(1));
-    expect(pauseDebounces).toEqual([{ delayMs: 150, runs: 1 }]);
+    expect(pauseDebounces).toEqual([
+      {
+        delayMs: 150,
+        runs: scenario.startsWith("quick-resume") ? 0 : 1,
+      },
+    ]);
+  }
+  if (scenario === "delayed-pause-ack") {
+    expect(escapedPlaybackCommands).toEqual(["pause"]);
+    expect(intentManager.isAwaitingServerAck()).toBe(true);
+    expect(useStore.getState().room?.playback.status).toBe("playing");
+    // The scheduled retry reaches reconciliation while the old canonical
+    // frame is still current and RoomCommandService has not executed Pause.
+    await act(() => vi.advanceTimersByTimeAsync(300));
+    expect(providerPlaying.get(url)).toBe(false);
+    expect(escapedPlaybackCommands).toEqual(["pause"]);
+    releaseDelayedPause?.();
   }
   await act(async () => {
     await Promise.all(pendingCommands.splice(0));
     await vi.advanceTimersByTimeAsync(0);
   });
   const after = await repository.get(initial.id);
-  if (scenario === "eligible-pause-control") {
+  if (
+    scenario === "eligible-pause-control" ||
+    scenario === "canonical-echo" ||
+    scenario === "delayed-pause-ack"
+  ) {
     expect(escapedPlaybackCommands).toEqual(["pause"]);
     expect(after?.sequence).toBe((before?.sequence ?? 0) + 1);
     expect(after?.playback.status).toBe("paused");
+    view.unmount();
+    return;
+  }
+  if (scenario.startsWith("quick-resume")) {
+    expect(escapedPlaybackCommands).toEqual([]);
+    expect(authoritativeEvents).toEqual([]);
+    expect(after?.sequence).toBe(before?.sequence);
+    expect(after?.playback.status).toBe("playing");
+    for (const consumer of consumers.slice(1)) {
+      expect(consumer.room.playback.status).toBe("playing");
+    }
     view.unmount();
     return;
   }

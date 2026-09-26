@@ -151,6 +151,17 @@ export function usePlaybackSync(props: PlaybackSyncProps) {
       });
       driftRef.current = decision.drift;
 
+      // A native pause is awaiting validation. Keep this local provider
+      // paused until it is either cancelled by another native Play or sent
+      // to the room; otherwise the old canonical Play creates a false echo.
+      if (
+        current.intentManager.isPauseDebouncePending() &&
+        decision.shouldPlay
+      ) {
+        schedule(syncPlayback, 300);
+        return;
+      }
+
       if (decision.kind === "waiting") {
         if (!decision.shouldPlay && current.getPlaying()) {
           current.setPlaying(false);

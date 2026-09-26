@@ -688,7 +688,7 @@ describe("Player Component", () => {
     },
   );
 
-  it("publishes a YouTube native pause before a stale native play can cancel it", () => {
+  it("cancels a YouTube pause when native play resumes before React commits", () => {
     vi.useFakeTimers();
     vi.setSystemTime(10_000);
     const mediaId = "00000000-0000-4000-8000-000000000001";
@@ -731,9 +731,9 @@ describe("Player Component", () => {
       vi.advanceTimersByTime(200);
     });
 
-    expect(mockSendCommand).toHaveBeenCalledWith(
+    expect(mockSendCommand).not.toHaveBeenCalledWith(
       "pause",
-      expect.objectContaining({ fromNative: true }),
+      expect.anything(),
     );
     view.unmount();
   });
