@@ -1,8 +1,12 @@
 # SyncWatch parity and multiplayer verification
 
-Initial record: 2026-09-05. The sections through "Final assessment" preserve
-that initial verification snapshot. The Round 1 update at the end is the
-authoritative current-tree result.
+Current verdict (Round 1, 2026-09-26): **criterion 3 Pass** on the complete
+headed live YouTube run; **criterion 10 Partial** pending the controller's
+independent whole-branch review. Criteria 1, 2, and 4–9 are Pass. The Round 1
+update at the end is the authoritative current-tree evidence.
+
+Initial record: 2026-09-05. The sections through "Initial assessment" preserve
+that earlier verification snapshot and its failed live attempt.
 
 Initial verdict: **not fully accepted**. The deterministic, real Redis-compatible,
 security, build, and browser suites pass. Acceptance criterion 3 remains
@@ -192,7 +196,7 @@ Reachable residual risks and trade-offs remain:
 - Production must provide `JWT_SECRET`, a canonical `NEXT_PUBLIC_APP_URL`, TLS,
   and `TRUST_PROXY=true` only behind a proxy that sanitizes forwarded headers.
 
-## Acceptance-criteria mapping
+## Initial-revision acceptance-criteria mapping
 
 |   # | Criterion                                                                               | Status   | Authoritative evidence                                                                                                                                                 |
 | --: | --------------------------------------------------------------------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -207,7 +211,7 @@ Reachable residual risks and trade-offs remain:
 |   9 | Audit and accepted advisories documented                                                | Pass     | fresh audit 0 advisories / 315 dependencies; reachable non-advisory residuals and trade-offs documented above                                                          |
 |  10 | Preserve unrelated changes and independent critical/important review before integration | Partial  | isolated worktree and clean scoped diff preserve the primary checkout; controller-owned independent whole-branch review remains pending, so integration is not offered |
 
-## Final assessment
+## Initial assessment
 
 The branch has fresh deterministic, real Redis Lua/pub-sub, security audit, and
 serial browser evidence. It is not an all-criteria acceptance candidate yet:
@@ -314,13 +318,14 @@ the controller still owns the independent whole-branch review and integration
 decision. No merge, push, deployment, primary-checkout/index change, shared
 Redis flush, or system-service installation occurred.
 
-The first evidence-only commit is
-`e464c72554ba767336bb05d0a0380e0cfc371de7`. On that exact committed
-tree, `pnpm lint`, `pnpm typecheck`, `pnpm audit --prod --json` (314 production
+The evidence-only commits before this current-verdict clarification are
+`e464c72554ba767336bb05d0a0380e0cfc371de7` and
+`d08b7cc369959eb0c80d35a540285ddfadfcc908`. On both exact committed
+trees, `pnpm lint`, `pnpm typecheck`, `pnpm audit --prod --json` (314 production
 dependencies, zero advisories), the scoped audit-document Prettier check, and
 `git diff --check main...HEAD` all exited 0. `git status --short` showed only
 the preserved pre-existing untracked `output/` trace screenshots. This
-paragraph requires one final document-only commit, so its own SHA cannot be
+clarification requires one final document-only commit, so its own SHA cannot be
 written into its contents without changing that SHA. The final evidence SHA is
 the revision containing this paragraph, recorded in the ignored working
 report and handoff; lightweight clean-tree checks are repeated after it.
