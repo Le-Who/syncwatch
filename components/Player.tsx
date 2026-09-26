@@ -440,7 +440,9 @@ export default function Player() {
   };
 
   const handleNativePlay = useEventCallback(() => {
-    intentManager.clearPauseDebounce();
+    // A YouTube onPlay can echo the still-playing canonical frame after a
+    // native pause. Keep that pause pending until its debounce validates it.
+    if (providerName !== "youtube") intentManager.clearPauseDebounce();
     healthController.set("ready");
     setPlaying(true);
 

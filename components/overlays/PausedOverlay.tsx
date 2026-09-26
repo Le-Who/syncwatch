@@ -12,10 +12,16 @@ export function PausedOverlay({ canControl, onPlay }: PausedOverlayProps) {
     <div className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/40 backdrop-blur-[2px] transition-opacity duration-300">
       <button
         aria-label="Play"
-        className="bg-theme-bg/80 border-theme-accent text-theme-accent pointer-events-auto flex h-24 w-24 cursor-pointer items-center justify-center rounded-full border-4 shadow-[0_0_30px_var(--color-theme-accent)] backdrop-blur-md transition-transform hover:scale-110 active:scale-95"
+        disabled={!canControl}
+        title={
+          canControl
+            ? undefined
+            : "Only the leader, owner, or moderator can control playback"
+        }
+        className={`bg-theme-bg/80 border-theme-accent text-theme-accent pointer-events-auto flex h-24 w-24 items-center justify-center rounded-full border-4 shadow-[0_0_30px_var(--color-theme-accent)] backdrop-blur-md transition-transform ${canControl ? "cursor-pointer hover:scale-110 active:scale-95" : "cursor-not-allowed opacity-60"}`}
         onClick={(e) => {
           e.stopPropagation();
-          if (canControl) onPlay();
+          onPlay();
         }}
       >
         <Play className="ml-2 h-12 w-12" />

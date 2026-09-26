@@ -113,6 +113,59 @@ describe("RoomEventBus", () => {
     expect(localEmit).toHaveBeenCalledWith("room-a", envelope.event);
   });
 
+  it("attaches the message listener before subscribing and waits for Redis readiness", async () => {
+    const calls: string[] = [];
+    let onMessage:
+      | ((pattern: string, channel: string, message: string) => void)
+      | undefined;
+    let acknowledgeSubscription: (() => void) | undefined;
+    const subscriptionAcknowledged = new Promise<void>((resolve) => {
+      acknowledgeSubscription = resolve;
+    });
+    const localEmit = vi.fn();
+    const bus = new RoomEventBus(localEmit, null, "node-b");
+    const envelope: RoomEventEnvelope = {
+      sourceNodeId: "node-a",
+      roomId: "room-ready",
+      event: { type: "participant_disconnected", participantId: "p3" },
+    };
+    const subscriber = {
+      psubscribe: vi.fn(() => {
+        calls.push("subscribe");
+        onMessage?.(
+          "room_events:*",
+          "room_events:room-ready",
+          JSON.stringify(envelope),
+        );
+        return subscriptionAcknowledged;
+      }),
+      on: vi.fn(
+        (
+          event: string,
+          listener: (pattern: string, channel: string, message: string) => void,
+        ) => {
+          calls.push("listener");
+          if (event === "pmessage") onMessage = listener;
+        },
+      ),
+    };
+
+    let ready = false;
+    const setup = setupPubSubListeners(bus, subscriber);
+    void setup.then(() => {
+      ready = true;
+    });
+    await Promise.resolve();
+
+    expect(calls).toEqual(["listener", "subscribe"]);
+    expect(localEmit).toHaveBeenCalledWith("room-ready", envelope.event);
+    expect(ready).toBe(false);
+
+    acknowledgeSubscription?.();
+    await setup;
+    expect(ready).toBe(true);
+  });
+
   it("keeps origin-socket exclusion local while delivering owner repair to every remote member", async () => {
     const originEmit = vi.fn();
     const remoteEmit = vi.fn();

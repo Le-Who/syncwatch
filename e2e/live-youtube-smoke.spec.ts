@@ -52,13 +52,18 @@ test.describe("live YouTube provider smoke", () => {
       await playYouTube(owner);
       await Promise.all(
         room.clients.map(({ page }) =>
-          expect(youtubeControl(page, /^Pause/)).toBeVisible({
-            timeout: 30_000,
-          }),
+          expect
+            .poll(() => youtubePlayerState(page), { timeout: 30_000 })
+            .toBe(1),
         ),
       );
 
       await youtubeControl(room.clients[1].page, /^Pause/).click();
+      await expect
+        .poll(() => youtubePlayerState(room.clients[1].page), {
+          timeout: 10_000,
+        })
+        .toBe(2);
       await Promise.all(
         room.clients.map(({ page }) =>
           expect(syncwatchPlayControl(page)).toBeVisible({
@@ -70,9 +75,9 @@ test.describe("live YouTube provider smoke", () => {
       await playYouTube(owner);
       await Promise.all(
         room.clients.map(({ page }) =>
-          expect(youtubeControl(page, /^Pause/)).toBeVisible({
-            timeout: 30_000,
-          }),
+          expect
+            .poll(() => youtubePlayerState(page), { timeout: 30_000 })
+            .toBe(1),
         ),
       );
       const beforeSeek = await youtubePosition(owner);
@@ -89,9 +94,9 @@ test.describe("live YouTube provider smoke", () => {
       const ownerAfterSeek = await youtubePosition(owner);
       await Promise.all(
         room.clients.slice(1).map(async ({ page }) => {
-          await expect(youtubeControl(page, /^Pause/)).toBeVisible({
-            timeout: 30_000,
-          });
+          await expect
+            .poll(() => youtubePlayerState(page), { timeout: 30_000 })
+            .toBe(1);
           await expect
             .poll(
               async () =>
@@ -117,9 +122,9 @@ test.describe("live YouTube provider smoke", () => {
       await joinRoom(latePage, room.roomId, lateClient.nickname);
       await initializeProviderGesture(lateClient);
       await expectPeopleCount(latePage, 4);
-      await expect(youtubeControl(latePage, /^Pause/)).toBeVisible({
-        timeout: 45_000,
-      });
+      await expect
+        .poll(() => youtubePlayerState(latePage), { timeout: 45_000 })
+        .toBe(1);
       await expect
         .poll(
           async () =>
@@ -145,8 +150,8 @@ test.describe("live YouTube provider smoke", () => {
         },
         30_000,
       );
-      await expect(youtubeControl(owner, /^Pause/)).toBeVisible();
-      await expect(youtubeControl(latePage, /^Pause/)).toBeVisible();
+      await expect.poll(() => youtubePlayerState(owner)).toBe(1);
+      await expect.poll(() => youtubePlayerState(latePage)).toBe(1);
       await expect
         .poll(
           async () =>
@@ -204,5 +209,22 @@ async function youtubePosition(page: Page) {
       );
     }
     return position;
+  });
+}
+
+async function youtubePlayerState(page: Page) {
+  const moviePlayer = page
+    .frameLocator("iframe")
+    .first()
+    .locator("#movie_player");
+  await expect(moviePlayer).toBeAttached({ timeout: 30_000 });
+  return moviePlayer.evaluate((element) => {
+    const state = (
+      element as HTMLElement & { getPlayerState?: () => number }
+    ).getPlayerState?.();
+    if (typeof state !== "number") {
+      throw new Error("YouTube player API did not expose its playback state");
+    }
+    return state;
   });
 }

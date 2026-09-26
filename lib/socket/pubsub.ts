@@ -8,7 +8,7 @@ import { sanitizeRoom } from "../room-handler";
 import type { Participant } from "../types";
 
 export interface RoomEventSubscriber {
-  psubscribe(pattern: string): unknown;
+  psubscribe(pattern: string): Promise<unknown> | unknown;
   on(
     event: "pmessage",
     listener: (pattern: string, channel: string, message: string) => void,
@@ -63,10 +63,9 @@ function legacyEnvelope(roomId: string, data: any): RoomEventEnvelope | null {
 export function setupPubSubListeners(
   eventBus: RoomEventBus,
   subscriber: RoomEventSubscriber | null = subClient(),
-): void {
-  if (!subscriber) return;
+): Promise<void> {
+  if (!subscriber) return Promise.resolve();
 
-  subscriber.psubscribe("room_events:*");
   subscriber.on("pmessage", (_pattern, channel, message) => {
     if (!channel.startsWith("room_events:")) return;
 
@@ -82,4 +81,7 @@ export function setupPubSubListeners(
       console.error("PubSub parse error:", error);
     }
   });
+  return Promise.resolve(subscriber.psubscribe("room_events:*")).then(
+    () => undefined,
+  );
 }

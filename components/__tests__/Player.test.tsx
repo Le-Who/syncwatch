@@ -239,6 +239,44 @@ describe("Player Component", () => {
     expect(screen.getByRole("button", { name: "Play" })).toBeEnabled();
   });
 
+  it("disables paused Play for a viewer while another participant leads", () => {
+    mockStoreState({
+      room: {
+        currentMediaId: "1",
+        leaderId: "user2",
+        playlist: [
+          {
+            id: "1",
+            url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+            provider: "youtube",
+            title: "Test Video",
+          },
+        ],
+        settings: { autoplayNext: true, looping: false },
+        playback: {
+          status: "paused",
+          basePosition: 0,
+          baseTimestamp: 0,
+          rate: 1,
+        },
+        participants: {
+          user1: { id: "user1", role: "viewer" },
+          user2: { id: "user2", role: "viewer" },
+        },
+      },
+      participantId: "user1",
+      sendCommand: mockSendCommand,
+      serverClockOffset: 0,
+      isConnected: true,
+    });
+
+    render(<Player />);
+    fireEvent.click(screen.getByText(/Initialize Stream Sync/i));
+    fireEvent.click(screen.getByTestId("loadedmetadata-event"));
+
+    expect(screen.getByRole("button", { name: "Play" })).toBeDisabled();
+  });
+
   it("keeps a provider error local and exposes retry", () => {
     mockStoreState({
       room: {
@@ -649,6 +687,56 @@ describe("Player Component", () => {
       view.unmount();
     },
   );
+
+  it("publishes a YouTube native pause before a stale native play can cancel it", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(10_000);
+    const mediaId = "00000000-0000-4000-8000-000000000001";
+    const url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
+    mockStoreState({
+      room: {
+        currentMediaId: mediaId,
+        sequence: 41,
+        leaderId: null,
+        playlist: [
+          { id: mediaId, url, provider: "youtube", title: "Shared video" },
+        ],
+        settings: { autoplayNext: true, looping: false },
+        playback: {
+          status: "playing",
+          basePosition: 0,
+          baseTimestamp: 10_000,
+          rate: 1,
+          updatedBy: "user2",
+        },
+        participants: { user1: { id: "user1", role: "owner" } },
+      },
+      participantId: "user1",
+      sendCommand: mockSendCommand,
+      setLocalPlaybackHealth: vi.fn(),
+      serverClockOffset: 0,
+      occRollbackTick: 0,
+      isConnected: true,
+    });
+    const view = render(<Player />);
+    fireEvent.click(screen.getByText(/Initialize Stream Sync/i));
+    const callbacks = providerCallbacks.get(url);
+    act(() => callbacks?.onLoadedMetadata?.({ target: { duration: 120 } }));
+    act(() => vi.advanceTimersByTime(2_100));
+    mockSendCommand.mockClear();
+
+    act(() => {
+      callbacks?.onPause?.();
+      callbacks?.onPlay?.();
+      vi.advanceTimersByTime(200);
+    });
+
+    expect(mockSendCommand).toHaveBeenCalledWith(
+      "pause",
+      expect.objectContaining({ fromNative: true }),
+    );
+    view.unmount();
+  });
 
   it("ignores a delayed provider callback from the previous media epoch", () => {
     const mediaA = "00000000-0000-4000-8000-000000000001";

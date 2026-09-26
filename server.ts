@@ -70,7 +70,7 @@ async function gracefulShutdown() {
 process.on("SIGTERM", gracefulShutdown);
 process.on("SIGINT", gracefulShutdown);
 
-app.prepare().then(() => {
+app.prepare().then(async () => {
   const server = createServer((req, res) => {
     try {
       applyAuthoritativeClientIp(req.headers, req.socket.remoteAddress);
@@ -116,7 +116,7 @@ app.prepare().then(() => {
   );
 
   setupSocketAuth(io);
-  setupPubSubListeners(roomEventBus);
+  await setupPubSubListeners(roomEventBus);
 
   io.on("connection", (socket) => {
     registerRoomHandlers(io, socket, supabase, roomEventBus);

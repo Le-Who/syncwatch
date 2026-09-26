@@ -141,42 +141,43 @@ describe("Redis Actor & Queue Integration Tests", () => {
   it("delivers a cross-node room event through real Redis pub/sub", async () => {
     if (!redis) return;
     const roomId = `pubsub_test_${TEST_RUN_ID}`;
-    const subscriber = redis.duplicate();
-    await subscriber.psubscribe("room_events:*");
+    const sourceSubscriber = redis.duplicate();
+    const targetSubscriber = redis.duplicate();
+    const event = {
+      type: "participant_disconnected" as const,
+      participantId: `user_${TEST_RUN_ID}`,
+    };
+    const sourceEvents: string[] = [];
+    const targetEvents: string[] = [];
+    const sourceBus = new RoomEventBus(
+      (observedRoomId, observedEvent) => {
+        if (observedRoomId === roomId && observedEvent.type === event.type) {
+          sourceEvents.push(observedEvent.participantId);
+        }
+      },
+      redis,
+      "source-test-node",
+    );
+    const targetBus = new RoomEventBus(
+      (observedRoomId, observedEvent) => {
+        if (observedRoomId === roomId && observedEvent.type === event.type) {
+          targetEvents.push(observedEvent.participantId);
+        }
+      },
+      null,
+      "target-test-node",
+    );
 
     try {
-      const delivered = new Promise<string>((resolve, reject) => {
-        const timeout = setTimeout(
-          () => reject(new Error("Timed out waiting for Redis pub/sub event")),
-          2_000,
-        );
-        const eventBus = new RoomEventBus((observedRoomId, event) => {
-          if (
-            observedRoomId === roomId &&
-            event.type === "participant_disconnected"
-          ) {
-            clearTimeout(timeout);
-            resolve(event.participantId);
-          }
-        });
-        setupPubSubListeners(eventBus, subscriber);
-      });
-
-      await redis.publish(
-        `room_events:${roomId}`,
-        JSON.stringify({
-          sourceNodeId: "remote-test-node",
-          roomId,
-          event: {
-            type: "participant_disconnected",
-            participantId: `user_${TEST_RUN_ID}`,
-          },
-        }),
-      );
-
-      await expect(delivered).resolves.toBe(`user_${TEST_RUN_ID}`);
+      await Promise.all([
+        setupPubSubListeners(sourceBus, sourceSubscriber),
+        setupPubSubListeners(targetBus, targetSubscriber),
+      ]);
+      await sourceBus.publish(roomId, event);
+      await expect.poll(() => targetEvents).toEqual([event.participantId]);
+      await expect.poll(() => sourceEvents).toEqual([event.participantId]);
     } finally {
-      await subscriber.quit();
+      await Promise.all([sourceSubscriber.quit(), targetSubscriber.quit()]);
     }
   });
 
