@@ -1,7 +1,10 @@
 # SyncWatch parity and multiplayer verification
 
-Date: 2026-09-05
-Verdict: **not fully accepted**. The deterministic, real Redis-compatible,
+Initial record: 2026-09-05. The sections through "Final assessment" preserve
+that initial verification snapshot. The Round 1 update at the end is the
+authoritative current-tree result.
+
+Initial verdict: **not fully accepted**. The deterministic, real Redis-compatible,
 security, build, and browser suites pass. Acceptance criterion 3 remains
 unmet because the opt-in headed live YouTube run did not complete its full
 three-client play/pause/seek/reconnect/late-join/degraded-continuation path.
@@ -212,3 +215,103 @@ criterion 3 requires a successful complete live-provider run, and criterion 10
 requires the controller's independent review with all critical/important
 findings resolved. Those gaps are explicit stopping conditions, not waived
 risks.
+
+## Round 1 recovery update — 2026-09-26
+
+Product-code revision: `a855ff99f44c78c90999a6292b117c3454a316b2`
+(`fix: make room pause and redis startup reliable`). The prior audit revision
+was `b007ddeb8dae0a3a4ce7c085f44f42fd8ab3c28e`. This document update is a
+separate evidence-only commit, so the product-code SHA and evidence SHA are
+distinct. The initial failed live result and 441-test count above describe the
+older revisions; they are retained as history, not the current verdict.
+
+The final committed-tree checks on `b007ddeb`, previously present only in the
+ignored Task 9 report, were:
+
+| Check                                                 | Exact result on `b007ddeb`                                      |
+| ----------------------------------------------------- | --------------------------------------------------------------- |
+| `pnpm test`                                           | exit 0; 49 files / 441 tests; 32.20 s                           |
+| `pnpm lint` / `pnpm typecheck`                        | both exit 0                                                     |
+| `pnpm build`                                          | exit 0; Next.js 16.3.4 compiled and server TypeScript completed |
+| `pnpm exec playwright test --workers=1`               | exit 0; 7 passed / 1 opt-in live skip; 1.3 min                  |
+| `pnpm audit --prod --json`                            | exit 0; 315 production dependencies / 0 advisories              |
+| `git diff --check main...HEAD` / `git status --short` | exit 0 / empty after generated `next-env.d.ts` restoration      |
+
+Round 1 found and repaired three Important gaps. The preserved readiness RED
+test failed because `setupPubSubListeners` returned `undefined`, subscribed
+before attaching its message listener, and startup did not await Redis's
+subscription acknowledgement. It now attaches the listener first, returns an
+awaitable boundary, and the server awaits it before listening. The real Redis
+test now uses two production `RoomEventBus` instances, production
+`RoomEventBus.publish`, real Redis transport, production subscriber dispatch,
+and source-node echo suppression. It does not manually pre-subscribe or
+raw-publish the asserted event.
+
+The interrupted live trace showed a successful native YouTube Pause click
+without canonical room pause. In a diagnostic run, the current-provider pause
+callback entered with permission, ready health, and no transition/seek guard,
+but its 150 ms debounce callback did not run. `handleNativePlay` could clear
+that pending pause when the still-playing canonical frame echoed back to the
+local provider. A focused Player regression was RED (0 pause commands) when a
+YouTube native Play followed a valid Pause within the debounce. The fix keeps
+the YouTube pause pending while retaining the debounce and waiting-chain
+safety rules. Player plus degraded integration passed 38/38 after the fix.
+The stale native Play minor remains outside this regression's scope.
+
+The live harness now uses YouTube's documented IFrame `getPlayerState()` values
+1 (playing) and 2 (paused), plus `getCurrentTime()`, to observe real provider
+state. It still requires the canonical SyncWatch Play overlay after native
+Pause and real multi-client position convergence. [YouTube's IFrame API
+reference](https://developers.google.com/youtube/iframe_api_reference)
+documents these methods and values. The final headed run, with
+`LIVE_YOUTUBE_SMOKE=1` and `--headed --workers=1`, passed **1/1 in 34.8 s**:
+three independent real iframes initialized, all played, Friend 2 natively
+paused and all saw canonical Play, all resumed, an owner seek exceeded 40 s
+and peers converged, a fourth late client joined and converged, one client was
+delayed while another disconnected and reconnected, healthy clients continued,
+and the recovered client advanced. The separate Node metadata lookup still
+warned `queryA ECONNREFUSED www.youtube.com`; Chrome's real iframes worked.
+The original interrupted failure trace remains in
+`playwright-report/data/9171f70f219d1d891ff94bf16fe69d73cc8784b0.zip`,
+with three earlier screenshots under `output/playwright/task9-round1-trace1/`.
+
+The deferred paused-overlay UX issue was resolved in the touched Player path:
+a viewer lacking playback control now sees a disabled Play button with a
+permission explanation. The approved leaderless and leader/owner/moderator
+permissions are unchanged. A focused test was RED before the change and GREEN
+after it.
+
+Round 1 verification on product-code revision `a855ff99`:
+
+| Check                                                   | Exact result                                                  |
+| ------------------------------------------------------- | ------------------------------------------------------------- |
+| `pnpm test`                                             | exit 0; 49 files / 444 tests; 32.77 s                         |
+| `pnpm lint`                                             | exit 0                                                        |
+| `pnpm typecheck`                                        | exit 0                                                        |
+| `pnpm build`                                            | exit 0; Next.js 16.3.4 production build and server TypeScript |
+| `pnpm exec playwright test --workers=1 --reporter=line` | exit 0; 7 passed / 1 opt-in live skip; 1.4 min                |
+| headed live YouTube command above                       | exit 0; 1/1 passed; 34.8 s                                    |
+| real Redis integration                                  | exit 0; 5/5 passed; real two-bus publisher/subscriber path    |
+| real Redis Lua fast path                                | exit 0; 18/18 passed                                          |
+| Redis-backed reconnect lifecycle E2E                    | exit 0; 1/1 passed; 38.2 s                                    |
+| `pnpm audit --prod --json`                              | exit 0; 314 production dependencies; 0 advisories             |
+| scoped Prettier check / `git diff --check`              | exit 0 / exit 0                                               |
+
+The Redis checks used a new disposable Memurai Developer runtime at
+`127.0.0.1:51613`; it was stopped without a flush and the loopback port was
+confirmed closed. The initial lint rerun found 78 errors in a pre-existing
+generated `playwright-report/trace` bundle, not product source. ESLint now
+ignores only `playwright-report/**`; a later full `pnpm lint` exited 0. Audit
+initially reported one newly published moderate advisory,
+`GHSA-w5vr-8v7q-w6rv`, through `next > baseline-browser-mapping@2.10.8`
+(315 production dependencies). The scoped override to patched `2.11.26`,
+lockfile update, and `pnpm install --frozen-lockfile` succeeded; the new audit
+is zero advisories across 314 production dependencies.
+
+Current criterion 3 is **Pass** on the complete headed live run. Criteria 1,
+2, 4–9 remain Pass on the results above. Criterion 10 remains **Partial**:
+the controller still owns the independent whole-branch review and integration
+decision. No merge, push, deployment, primary-checkout/index change, shared
+Redis flush, or system-service installation occurred. A final evidence-only
+commit will be followed by lightweight clean-tree checks, with that SHA and
+results recorded below.
