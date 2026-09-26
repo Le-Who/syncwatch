@@ -1,9 +1,10 @@
 # SyncWatch parity and multiplayer verification
 
-Current verdict (Round 1, 2026-09-26): **criterion 3 Pass** on the complete
+Current verdict (Round 2, 2026-09-26): **criterion 3 Pass** on the complete
 headed live YouTube run; **criterion 10 Partial** pending the controller's
-independent whole-branch review. Criteria 1, 2, and 4–9 are Pass. The Round 1
-update at the end is the authoritative current-tree evidence.
+independent whole-branch review. Criteria 1, 2, and 4–9 are Pass. The Round 2
+update at the end is the authoritative current-tree evidence. Earlier failed
+live attempts and the Round 1 result below remain historical evidence.
 
 Initial record: 2026-09-05. The sections through "Initial assessment" preserve
 that earlier verification snapshot and its failed live attempt.
@@ -329,3 +330,52 @@ clarification requires one final document-only commit, so its own SHA cannot be
 written into its contents without changing that SHA. The final evidence SHA is
 the revision containing this paragraph, recorded in the ignored working
 report and handoff; lightweight clean-tree checks are repeated after it.
+
+## Round 2 — quick native resume and delayed-ACK verification (2026-09-26)
+
+Verified product revision: `8e82ed56384dac30c1dc09093fb33d406a3f64a0`.
+The independent scoped re-review found that Round 1 retained the 150 ms
+YouTube pause debounce across every `onPlay`, including a genuine rapid
+Pause→Play. A RED authoritative integration test reproduced an unwanted Pause
+command after quick resume both before and after React committed the pause;
+another RED scenario showed a canonical sync tick could restart the local
+provider and generate the stale Play echo. The correction keeps the local
+provider paused while its native Pause debounce is pending. A subsequent
+native Play therefore represents a fresh local resume and cancels the timer.
+It does not rely on a possibly stale React `playing` closure. After the timer
+sends Pause, the existing pending-nonce canonical-frame guard suppresses old
+playing frames until ACK; a delayed-ACK integration scenario holds the actual
+`RoomCommandService` invocation across the next 300 ms sync retry and checks
+that the provider stays paused, exactly one Pause escapes, and eventual
+canonical state is paused. The approved 150 ms debounce and YouTube/Twitch/raw
+waiting→pause suppression remain intact. The focused Player and authoritative
+degraded-integration suites passed 42/42 after this additional scenario.
+
+The real Redis source self-echo test now waits for the source subscriber's
+actual `pmessage` for its unique room channel before asserting one source
+delivery. This is an event barrier, not a delay or production hook. A fresh
+disposable Memurai Developer instance at `127.0.0.1:54763` produced 5/5 real
+Redis integration tests, 18/18 Lua fast-path tests, and 1/1 Redis-backed
+reconnect lifecycle browser test (45.4 s). It was stopped without flushing,
+and the port was verified closed.
+
+| Product-tree check                                           | Exact Round 2 result                                                                                          |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| `pnpm test`                                                  | exit 0; 49 files / 448 tests (33.05 s)                                                                        |
+| `pnpm lint` / `pnpm typecheck`                               | both exit 0                                                                                                   |
+| `pnpm build`                                                 | exit 0; Next.js 16.3.4 production build and server TypeScript                                                 |
+| `pnpm exec playwright test --workers=1 --reporter=line`      | exit 0; 7 passed / 1 intentional opt-in live skip (1.7 min)                                                   |
+| `LIVE_YOUTUBE_SMOKE=1` headed live YouTube smoke, one worker | exit 0; 1/1 passed (50.9 s); full three-client play/pause/seek/reconnect/late-join/degraded-continuation flow |
+| Real Redis integration / Lua / reconnect lifecycle           | exit 0; 5/5, 18/18, 1/1 respectively                                                                          |
+| `pnpm audit --prod --json`                                   | exit 0; 314 production dependencies, 0 advisories at every severity                                           |
+| Scoped Prettier / `git diff --check`                         | both exit 0                                                                                                   |
+
+The live run's Node metadata lookup again warned `queryA ECONNREFUSED
+www.youtube.com`, but the real Chrome iframes and complete assertion flow
+passed. Generated `next-env.d.ts` was restored after the build. Pre-existing
+untracked `output/` screenshots were preserved. No primary checkout/index,
+shared Redis data, merge, push, deployment, or system-service state was
+changed. This Round 2 evidence commit follows the product SHA above, so its
+own SHA is recorded in the ignored task report and handoff; lightweight checks
+are repeated against the final committed tree. Criterion 10 remains pending
+the controller-owned independent whole-branch review.
