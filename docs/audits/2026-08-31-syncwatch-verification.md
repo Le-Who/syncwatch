@@ -312,6 +312,15 @@ Current criterion 3 is **Pass** on the complete headed live run. Criteria 1,
 2, 4–9 remain Pass on the results above. Criterion 10 remains **Partial**:
 the controller still owns the independent whole-branch review and integration
 decision. No merge, push, deployment, primary-checkout/index change, shared
-Redis flush, or system-service installation occurred. A final evidence-only
-commit will be followed by lightweight clean-tree checks, with that SHA and
-results recorded below.
+Redis flush, or system-service installation occurred.
+
+The first evidence-only commit is
+`e464c72554ba767336bb05d0a0380e0cfc371de7`. On that exact committed
+tree, `pnpm lint`, `pnpm typecheck`, `pnpm audit --prod --json` (314 production
+dependencies, zero advisories), the scoped audit-document Prettier check, and
+`git diff --check main...HEAD` all exited 0. `git status --short` showed only
+the preserved pre-existing untracked `output/` trace screenshots. This
+paragraph requires one final document-only commit, so its own SHA cannot be
+written into its contents without changing that SHA. The final evidence SHA is
+the revision containing this paragraph, recorded in the ignored working
+report and handoff; lightweight clean-tree checks are repeated after it.
