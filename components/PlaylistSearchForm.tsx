@@ -247,10 +247,11 @@ export const PlaylistSearchForm = React.memo(function PlaylistSearchForm({
                 <button
                   key={i}
                   type="button"
+                  aria-label={`Add ${v.title} by ${v.author}, duration ${formatTime(v.duration)}`}
                   onClick={() =>
                     handleAdd(undefined, v.url, v.title, v.thumbnail)
                   }
-                  className="hover:bg-theme-accent/10 border-theme-border/10 flex w-full items-center space-x-3 border-b px-3 py-3 text-left transition-colors last:border-0"
+                  className="hover:bg-theme-accent/10 border-theme-border/10 flex w-full items-center space-x-3 border-b px-3 py-3 text-left transition-colors last:border-0 outline-none focus-visible:ring-2 focus-visible:ring-inset"
                 >
                   <img
                     src={v.thumbnail}
