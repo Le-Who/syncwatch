@@ -3,11 +3,12 @@ import { SignJWT } from "jose";
 import { checkRedisRateLimit } from "@/lib/redis-rate-limit";
 
 import { getJwtSecret } from "@/lib/jwt-config";
+import { getClientIp } from "@/lib/ip";
 
 const secret = getJwtSecret();
 
 export async function POST(request: Request) {
-  const ip = request.headers.get("x-forwarded-for") || "unknown";
+  const ip = getClientIp(request.headers) || "unknown";
 
   // Bypass rate limiting in testing environments or when requested from localhost
   if (
