@@ -379,3 +379,92 @@ changed. This Round 2 evidence commit follows the product SHA above, so its
 own SHA is recorded in the ignored task report and handoff; lightweight checks
 are repeated against the final committed tree. Criterion 10 remains pending
 the controller-owned independent whole-branch review.
+
+## Final correction wave — current evidence (2026-10-02)
+
+Product revision: `4d8773391ebfabe237802564ddfbb5f9b75a9bf4`. This section supersedes the
+earlier verification verdicts for the corrected product. The controller-owned
+single scoped re-review remains pending; no merge, push, deployment, primary
+checkout/index mutation, live Supabase change, or shared Redis flush occurred.
+
+### Correction and regression matrix
+
+| Finding        | Implemented boundary and evidence                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| F1             | Required generation + media-run binding at schemas, client emission, every local CAS attempt and atomic Redis Lua; stale exact nonce rejects. A→B→A, same-item new run, atomic switch race and same-run arrival-LWW covered.                                                                                                                                                                                                                       |
+| F2             | Independent full-state watermark and compact playback merge; highest unknown-media compact requests one bounded read-only snapshot. Real Zustand/two service instances and real Redis pub/sub prove metadata convergence without timeline rollback.                                                                                                                                                                                                |
+| F2/F6 recovery | Cache-lifetime generation changes only on creation/hydration; stable `legacy` normalization across nodes. Current room/transport/request-correlated snapshots authorize seq100→restored seq12; retired full/compact/commands and old request responses reject. Player coordinator and provider key include generation/run, restoring same-media lower sequence and causing fresh metadata/readiness events.                                        |
+| F3             | Valid JWT reuse precedes creation quota. New identity/coarse IP joins: 1000/minute; participant joins: 50/minute; commands unchanged at 60/10 seconds. Real route, local limiter and actual Socket.IO server admit 25 same-NAT sessions and 100 group joins; one noisy identity does not block the other 24. Separate three-context browser test checks nonempty distinct identity preconditions and four reload rounds.                           |
+| F4             | Shared explicit Next/natural-end traversal implements shuffle cycles, one-use next override, temporary consumption, natural autoplay-off stop even with loop, explicit Next precedence and valid selection pointers. Thirteen policy regressions cover hand-derived queue results.                                                                                                                                                                 |
+| F5             | Semantic rename and focus return, visible tab focus, keyboard slider with permission-disabled policy; focused interactive controls retain Space. Actual-room keyboard-only workflow exercises rename, tabs and media seeking.                                                                                                                                                                                                                      |
+| F6             | Forward JSONB snapshot migration/backfill, real writer/reloader and synchronized relational compatibility rows preserve promised queue/settings/chat/playback fields and clear empty media. Durable participant identity/role history excludes connection IDs, readiness and health; hydration has no active leader/socket and uses existing 15-second grace/handoff. Viewer-first and moderator-return tests prevent escalation/duplicate owners. |
+| F7             | OS lookup validates every IPv4/IPv6 candidate as public unicast, native HTTP pins the selected address while preserving hostname/SNI, rejects credentials/redirects and bounds response to 5 seconds/50 KiB. Dial-boundary regressions and a final public native YouTube/Example Domain probe pass.                                                                                                                                                |
+| F8             | Exact `public.sync_room_state(uuid, uuid, jsonb)` ACL revokes PUBLIC/anon/authenticated after function replacement and grants service_role; hardened search_path retained, no callable old overload. Actual applied PostgreSQL SQL verifies privileges and role calls, not only string assertions.                                                                                                                                                 |
+| M1–M5          | Old provider-epoch native Play callbacks covered; duplicate-permitting listener fake proves exact cleanup; clipboard rejection offers manual-copy fallback; player error names the failed item; pure-mutation viewer fixture follows owner/mod queue policy.                                                                                                                                                                                       |
+
+The Supabase/Postgres skills informed migration creation through CLI, explicit
+function ACLs after replacement, schema-faithful round-trip tests and preserving
+durable roles separately from live connections. Current references used:
+[Supabase database functions](https://supabase.com/docs/guides/database/functions),
+[table privileges](https://supabase.com/docs/guides/database/tables), and
+[PGlite API](https://pglite.dev/docs/api). Pinned dev-only PGlite 0.5.8 runs all
+checked-in migrations and the real RPC; it is not a deployed Supabase/PostgREST
+stack and no live database evidence is claimed.
+
+### Final-source verification
+
+All final-source commands below run in the isolated correction worktree. Redis
+commands target only the owned disposable instance at `127.0.0.1:54950`; the
+integration tests clean their unique keys, never shared Redis data.
+
+| Command / evidence                                                                                                                                                                                              | Result                                                                                                                        |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm test`                                                                                                                                                                                                     | exit 0; 58 files / 501 tests passed, 1 opt-in Redis file / 9 tests skipped; 33.58 s. The nine execute in the real Redis gate. |
+| `pnpm lint`; `pnpm typecheck`; `pnpm build`                                                                                                                                                                     | each exit 0; Next.js 16.3.8 production build and server TypeScript.                                                           |
+| `REDIS_URL=redis://127.0.0.1:54950 pnpm exec vitest run __tests__/integration/final-wave-redis.test.ts __tests__/integration/redis.test.ts __tests__/fast_path.test.ts __tests__/participant-lifecycle.test.ts` | exit 0; 4 files / 49 tests (32 Redis/Lua, 17 pure lifecycle), 1.63 s.                                                         |
+| `pnpm exec vitest run __tests__/persistence-migrations.test.ts`                                                                                                                                                 | exit 0; 3 actual-SQL migration/RPC/backfill/ACL/production round-trip tests, 1.68 s.                                          |
+| `pnpm exec playwright test e2e/final-wave.spec.ts --workers=1 --reporter=line`                                                                                                                                  | exit 0; 3 tests, 24.1 s; same-item provider readiness/seek, keyboard flow, three-context same-NAT retention.                  |
+| `pnpm exec playwright test --workers=1 --reporter=line`                                                                                                                                                         | exit 0; 10 passed / 1 intentional live opt-in skip, 1.9 min.                                                                  |
+| `LIVE_YOUTUBE_SMOKE=1 pnpm exec playwright test e2e/live-youtube-smoke.spec.ts --headed --workers=1 --reporter=line`                                                                                            | exit 0; 1 passed, 37.9 s; complete add/play/pause/seek/reconnect/late-join/degraded-continuation live flow.                   |
+| `REDIS_URL=redis://127.0.0.1:54950 pnpm exec playwright test e2e/multiplayer-room.spec.ts -g "reconnects without duplicates" --workers=1 --reporter=line`                                                       | exit 0; 1 passed, 44.8 s; actual Redis-backed reconnect, late join and departed-owner handoff.                                |
+| Scoped Prettier and `git diff --check`                                                                                                                                                                          | exit 0; Next-generated declaration noise restored after browser shutdown.                                                     |
+| `pnpm audit --prod --json`                                                                                                                                                                                      | exit 0; 312 production dependencies, zero advisories at every severity.                                                       |
+| Final native metadata probe                                                                                                                                                                                     | exit 0; public YouTube oEmbed title (862 bytes) and Example Domain HTML (713 bytes), using the production pinned HTTP helper. |
+
+Fresh registry evidence found 15 advisories (3 low, 6 moderate, 5 high, 1 critical),
+so historical zero-advisory results above were not reused. Compatible maintained
+patch updates set Next/@next/env/eslint-config-next floor 16.3.6 (resolved 16.3.8)
+and engine.io 6.6.10, undici 7.29.1, brace-expansion 1.1.21 overrides. The
+[before summary](2026-10-02-final-wave-audit-before.json) preserves actual audit
+IDs, severity, installed/fixed ranges and URLs; the
+[after artifact](2026-10-02-final-wave-audit-after.json) retains exact final JSON.
+Primary range checks used the [Next advisory](https://github.com/vercel/next.js/security/advisories/GHSA-vcvr-r3jv-pc5j),
+[Socket.IO advisory](https://github.com/socketio/socket.io/security/advisories/GHSA-2gc4-cqfq-p2gv),
+[brace-expansion advisory](https://github.com/juliangruber/brace-expansion/security/advisories/GHSA-q2hr-2g5m-vwhr),
+and [Undici release](https://github.com/nodejs/undici/releases/tag/v7.29.1).
+Engine.IO is reachable through Socket.IO; no application next/og or ImageResponse
+use was found, but the affected package was patched regardless. No major framework
+migration or unrelated lockfile churn was introduced.
+
+### Self-review and limits
+
+Focused RED→GREEN evidence is preserved in the ignored final-correction-wave
+report. Self-review additionally found and repaired direct selection retaining a
+next pointer, special-use IPv6 destinations, hydrated owner grace expiry, compact
+metadata advancing the reconnect floor, and the downstream Player's media-ID-only
+sequence/readiness epoch. Final regression coverage follows those failures.
+
+Legacy storage cannot recover historical queue metadata/moderator roles it never
+recorded; only reconstructable owner_id is backfilled. Durable role records now
+retain friend IDs/nicknames/roles with the room snapshot (privacy/storage cost),
+not active sockets. Write-behind still permits loss of unflushed changes on crash;
+generation recovery makes that lower durable authority usable without accepting
+retired frames. Old clients missing required generation/run bindings must refresh.
+For M1, a same-provider native Play arriving 200 ms after Pause is intentionally
+treated as a fresh local resume; provider events do not expose enough provenance
+to distinguish that from a delayed echo. Old media/retry epochs are rejected.
+External providers, actual deployed PostgREST, inherited npm configuration warnings,
+and deferred reduced-motion/skip-navigation/dark-color-scheme polish retain their
+documented limits. Existing output screenshots and ignored runtime evidence are
+preserved. The owned Redis runtime was stopped (SIGINT), and port 54950 was
+confirmed closed. The independent final acceptance decision belongs to the controller.
