@@ -1,10 +1,18 @@
 # SyncWatch parity and multiplayer verification
 
-Current verdict (Round 2, 2026-09-26): **criterion 3 Pass** on the complete
-headed live YouTube run; **criterion 10 Partial** pending the controller's
-independent whole-branch review. Criteria 1, 2, and 4–9 are Pass. The Round 2
-update at the end is the authoritative current-tree evidence. Earlier failed
-live attempts and the Round 1 result below remain historical evidence.
+Current controller verdict (2026-10-02): **not ready for integration or full-goal
+acceptance**. The whole-branch review, one final correction wave and its single
+scoped re-review are complete. F1/F2/F3/F5/F6/F7/F8, M1–M5 and the cache-lifetime,
+role and Player recovery refinements are addressed, but **F4/N1 remains one
+Important queue UX defect**: removal-driven selection leaves the fulfilled
+Set-as-next target scheduled and a later Next/end replays it. The final-wave
+evidence and controller disposition at the end are authoritative for product
+`4d8773391ebfabe237802564ddfbb5f9b75a9bf4` / evidence `e05f6b6`.
+
+All recorded latest-source automated gates pass, including the complete headed
+YouTube flow; that does not waive this reproduced queue defect. Primary main
+and its user-owned staged deletion remain untouched. Earlier Round 1/Round 2
+passes and failures below are dated historical evidence, not current acceptance.
 
 Initial record: 2026-09-05. The sections through "Initial assessment" preserve
 that earlier verification snapshot and its failed live attempt.
@@ -468,3 +476,127 @@ and deferred reduced-motion/skip-navigation/dark-color-scheme polish retain thei
 documented limits. Existing output screenshots and ignored runtime evidence are
 preserved. The owned Redis runtime was stopped (SIGINT), and port 54950 was
 confirmed closed. The independent final acceptance decision belongs to the controller.
+
+## Controller scoped-review disposition — 2026-10-02
+
+The completed correction package spans `49b3558..e05f6b6`, both product and
+evidence commits. The sole scoped reviewer examined that fix diff, the covering
+test/evidence reports, SQL/role boundaries and dependency ranges. It did not
+rerun broad suites, alter source/index/HEAD or spawn reviewers.
+
+| Finding | Scoped verdict |
+| --- | --- |
+| F1 delayed wrong-video playback commands | ADDRESSED |
+| F2 full/compact event reordering and read-only recovery | ADDRESSED |
+| F3 shared-NAT admission/reconnect | ADDRESSED |
+| F4 advertised queue advancement | NOT ADDRESSED — one Important residual, N1 |
+| F5 keyboard workflow | ADDRESSED |
+| F6 migration-backed persistence/hydration | ADDRESSED, local-engine boundary retained |
+| F7 pinned metadata egress | ADDRESSED |
+| F8 exact persistence RPC execution privileges | ADDRESSED, not a deployed-ACL claim |
+| M1–M5 useful UX/test-fidelity minors | ADDRESSED, provider provenance limit retained |
+| Lifetime/role/coordinator/provider recovery refinement | ADDRESSED |
+
+### The one remaining defect
+
+With queue A/B/C and current A, Set as next B then remove A. Removal selects
+B but retains `nextMediaId=B` (`lib/room-logic.ts:331`, `:337`). The subsequent
+bound Next accepts that pointer before ordinary/shuffled traversal (`:440`),
+acknowledges applied, keeps B and increments mediaRun from 1 to 2 despite C
+being available. Natural end uses the same branch. The scoped reviewer
+reproduced this through production RoomCommandService/InMemoryRoomRepository
+with shuffle enabled, in-process state only, without persistence/publication
+or filesystem writes. Controller read the full report and the exact affected
+code. F4 and N1 describe this same issue, not two independent blockers.
+
+The smallest proposed follow-up is to consume an override fulfilled by
+removal-driven selection and cover subsequent Next/natural end through the
+authoritative service, preserving the existing one-use queue policy. This
+has **not** been implemented after the final-wave cap. Integration/full-goal
+acceptance is withheld and further direction is requested from the user.
+
+### Independent controller evidence and preserved state
+
+At unchanged `e05f6b64113643e5eccc102cc85c5833a07da889`, controller ran:
+
+```powershell
+pnpm test --reporter=json --outputFile=.superpowers/sdd/2026-08-31-syncwatch-parity-multiplayer/controller-final-unit.json
+```
+
+Exit 0. The complete retained JSON was parsed, not an incomplete console
+headline: success true, 510 total tests, 501 passed, zero failed, nine pending,
+zero todo, 59 file results and no failed file. All nine non-passed assertions
+are intentional opt-in skips in `__tests__/integration/final-wave-redis.test.ts`;
+the implementer's real owned Redis gate executed those tests separately.
+Controller also reran `pnpm audit --prod --json`: exit 0, 312 production
+dependencies and zero advisories in every severity; the complete output was read.
+The other complete final-source browser/build/Redis/SQL gates above were inspected as implementer
+evidence and checked against changed tests by the scoped reviewer; they are
+not claimed as a second controller/reviewer execution.
+
+Controller confirmed the owned Redis port54950 had zero listening sockets,
+integration status contained only preserved pre-existing `output/`, and the
+primary main/index still contained its original staged deletion. No merge,
+push, deployment, live Supabase mutation or plan-workspace cleanup occurred.
+The ignored ledger/review/evidence workspace remains preserved while the
+Important residual is open. The goal is not marked complete.
+
+### Rulings I made — chronological controller record
+
+1. Reuse Task 1's existing plan commit `a01ded3`, not a duplicate checkpoint.
+   Why: the step was already satisfied. Cost if wrong: a redundant commit is
+   absent, but no implementation/history is lost.
+2. Introduce canonical playing/paused/ended in Task 2 while temporarily keeping
+   separately named legacy buffering input until Task 5 removed its mutation
+   path. Why: preserve integration and meaningful RED coverage. Cost if wrong:
+   temporary type/compatibility complexity.
+3. Initially retain Task 8 auth10/60s and distributed-context browser fixtures
+   through the trusted proxy, with no limiter bypass. Why: follow the plan's
+   then-binding numbers and verify integration. Cost if wrong: fixture
+   complexity and underrepresentation of same-NAT bursts. This was superseded
+   by ruling 5 when the final review confirmed the actual shared-IP defect.
+4. Accept N25 real server/unit/integration plus five browser contexts, not 25
+   simultaneous Chromium contexts. Why: that is the approved matrix. Cost if
+   wrong: browser-only scale interactions above five are not directly observed.
+5. Replace the old IP policy with valid-session reuse outside creation charging,
+   coarse IP creation/join1000/60000ms, participant join50/60000ms and unchanged
+   command60/10000ms. Why: arbitrary-N/reconnect UX outranks contradicted old
+   plan numbers. Cost if wrong: more anonymous/shared-IP traffic before
+   throttling; public deployment may need a different abuse policy.
+6. Keep and implement advertised Shuffle/Temporary behavior: explicit Next
+   overrides autoplay; autoplay-off natural end never loops; shuffled cycles
+   avoid immediate repeats; Set as next wins once; temporary entries are
+   consumed on Next/end and never resurrected by looping. Why: controls need
+   coherent behavior. Cost if wrong: users may prefer other precedence; the
+   policy is reversible. The remaining F4 defect violates, not waives, it.
+7. Retain durable Supabase restore and align schema/write/read with a forward
+   snapshot migration and meaningful applied-SQL round trip. Why: disabling it
+   would narrow an existing product claim. Cost if wrong: storage/compatibility
+   cost; fields that old versions never stored cannot be reconstructed.
+8. Declare the exact persistence RPC service-only via explicit EXECUTE revocation
+   for PUBLIC/anon/authenticated and service_role grant, not Supabase end-user
+   auth.uid(). Why: this app uses independent friend JWTs and a server writer.
+   No live mutation authorized. Cost if wrong: an undocumented browser RPC
+   caller loses access.
+9. Distinguish cache lifetimes by generation, accept lower-sequence restore only
+   through current room/transport/request correlation, and reject retired
+   frames/commands, with stable legacy normalization across nodes. Why:
+   write-behind/ephemeral restart can reset sequence/mediaRun. Preserve friend
+   identity, valid roles and same-generation/run arrival-LWW. Cost if wrong:
+   wire/recovery complexity and older-client reload.
+10. Persist durable identity/role records separately from ephemeral presence;
+    restore no sockets/health/readiness/active leader and preserve grace/handoff.
+    Why: an empty restored participant map let the first viewer replace a valid
+    owner. Preserve reconstructable owner_id, not invented historic moderator
+    roles. Cost if wrong: retained friend IDs/nicknames and storage/compatibility.
+11. Accept F4/N1 as real and load-bearing; withhold merge-ready/full-goal
+    acceptance and surface it at the final-wave cap. Why: fulfilled forced-next
+    state is retained and the production reproduction confirms unintended
+    replay. Proposed smallest follow-up consumes that override and tests both
+    Next/end. Cost if wrong: integration is delayed for an edge case.
+12. Retain provider-provenance, write-behind, legacy reconstruction, old-client
+    reload and local-engine/not-live-REST boundaries as explicit limitations,
+    not repaired/deployed guarantees. Why: no additional current Important
+    defect was established and live deployment was not authorized. Cost if
+    wrong: stronger provider/flush/staging verification work will be needed.
+    None of these boundaries waives the concrete F4 defect.
