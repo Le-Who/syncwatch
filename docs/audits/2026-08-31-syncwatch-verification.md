@@ -6,8 +6,11 @@ acceptance or integration**. The human-authorized targeted queue follow-up at
 regressions and an independent focused PASS. All original final-review findings
 are addressed. However, fresh live verification subsequently exposed a separate
 **native YouTube Pause intent loss**: an actual click pauses the actor's iframe,
-but no Pause command leaves that browser and reconciliation resumes it. The
-final follow-up section and native-pause boundary summary below are current.
+but no Pause command leaves that browser and reconciliation resumes it. A
+subsequent read-only guard trace identifies the rejecting recent-programmatic-
+seek guard: the genuine Pause arrived 1308 ms after a programmatic seek, inside
+the 1500 ms suppression window. The final follow-up section and native-pause
+boundary summary below are current. No native-intent correction is implemented.
 
 Fresh full unit, lint, typecheck, production build, dependency audit and serial
 browser gates pass. A complete live attempt failed at pause propagation, a
@@ -636,6 +639,7 @@ Controller independently verified the committed product tree:
 | Headed complete live YouTube, first fresh run | exit1; native actor reaches paused but Play overlay does not converge within30s; 45.840s total |
 | Same complete live spec, unchanged code, `--trace=on` | exit0; entire add/play/pause/seek/late/reconnect/degraded flow passes; 46.048s |
 | Bounded read-only real-YouTube/socket pause diagnostic | exit1; first two native pause cycles converge, third loses the intent before transmission; 34.759s |
+| Same bounded diagnostic with read-only guard logpoints | exit1; third cycle lost again; current hook accepts, Player rejects at recent-seek guard (1308 ms < 1500 ms); 34.072s |
 
 The default nine opt-in Redis cases previously ran against the owned real Redis
 instance in the final-wave gate. That adapter/Lua/persistence/provider source is
@@ -665,13 +669,34 @@ missing test button or a server-rejected command. The capture had also observed
 unrequested `fromNative` Seek emissions after owner Play, before this pause.
 
 The [boundary summary](2026-10-02-native-pause-boundary.json) preserves literal
-states/times/counts. Full filtered events, screenshots and trace remain in the
-ignored plan/output evidence workspace. Candidate client boundaries are the
-epoch/health check in `hooks/usePlayerEvents.ts:228`, the recent-programmatic-seek
-guard in `components/Player.tsx:488`, and the deferred health/epoch/sequence guard
-at `:517`. The exact rejecting branch has **not** been established and no fix is
-guessed. Same-WAN timing may influence provider ordering, but this evidence does
-not establish shared IP as the root cause; the command did not leave the browser.
+states/times/counts from this initial boundary capture and the later guard trace.
+Full filtered events, screenshots and traces remain in the ignored plan/output
+evidence workspace. The initial capture identified candidate epoch/health,
+recent-programmatic-seek and deferred-validation boundaries, but did not yet
+identify which rejected the intent.
+
+One subsequent bounded observation installed always-false conditional logpoints
+on the actual loaded local browser script, without replacing product source or
+intentionally pausing execution. The first two native Pause cycles again passed;
+cycle3 again lost the intent. Client2's hook accepted Pause with ready health,
+no pending reconciliation and the current provider epoch4/sequence21. At the
+Player hard guard, YouTube control permission was true, media transition was
+null, scrubber dragging was false, and the programmatic-seek age was **1308 ms**.
+The sole true rejecting condition was
+`intentManager.isRecentProgrammaticSeek(1500)` in `components/Player.tsx:488`;
+its predicate in `lib/playback-intent-manager.ts:269` is a simple elapsed-time
+comparison. No deferred-Pause callback or outgoing Pause followed. The actor
+then resumed while canonical sequence21 remained playing.
+
+All four observation points were installed for each of the three clients;
+there were zero observer scope errors and zero actual debugger pauses. This
+establishes the rejecting branch for this observed failure, not a deterministic
+regression or a correction. Debugger instrumentation can still affect timing;
+the unchanged initial boundary capture independently established the same lost
+intent without these logpoints. Same-WAN timing may influence provider ordering,
+but this is client-side user intent filtered before transmission, not an observed
+shared-IP quota or server-permission rejection. No fix is guessed, and the
+buffering/stale-event safeguards remain unchanged.
 
 F4/N1 is closed; this separate live UX finding keeps the goal and full acceptance
 open. The agreed post-cap queue iteration is complete. A new production change

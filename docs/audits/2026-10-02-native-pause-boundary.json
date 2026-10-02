@@ -76,17 +76,88 @@
     },
     "finding": "a genuine native Pause intent did not leave the browser; canonical playback remained playing and reconciliation resumed the actor",
     "exactGuardRootCauseEstablished": false,
+    "rootCauseStatusScope": "initial boundary capture only; the subsequent guard observation below establishes the rejecting branch",
     "candidateBoundaries": [
       "hooks/usePlayerEvents.ts:228 provider epoch/health gate",
       "components/Player.tsx:488 recent programmatic-seek gate",
       "components/Player.tsx:517 deferred health/epoch/sequence gate"
     ]
   },
+  "guardObservationDiagnostic": {
+    "startTime": "2026-10-02T11:54:46.516Z",
+    "exitCode": 1,
+    "durationMs": 34072.228,
+    "maxRounds": 5,
+    "completedRounds": 2,
+    "failedRoundIndex": 2,
+    "method": "always-false conditional logpoints on actual loaded browser script; read-only flags; no source replacement or intentional debugger pause",
+    "loadedScript": "http://localhost:3001/_next/static/chunks/_0e5y1pc._.js",
+    "installedPoints": 12,
+    "pointsPerClient": 4,
+    "observerScopeErrors": 0,
+    "unexpectedDebuggerPauses": 0,
+    "actorHookObservation": {
+      "client": 2,
+      "now": 1790942108914,
+      "roundIndex": 2,
+      "accepted": true,
+      "health": "ready",
+      "awaitingReconciliation": false,
+      "currentProviderEpoch": 4,
+      "capturedProviderEpoch": 4,
+      "epochAccepted": true,
+      "capturedSequence": 21
+    },
+    "actorHardGuardObservation": {
+      "now": 1790942108914,
+      "provider": "youtube",
+      "canControl": true,
+      "roomStatus": "playing",
+      "roomSequence": 21,
+      "mediaTransition": null,
+      "userDragging": false,
+      "pausePending": false,
+      "lastProgrammaticSeekAgeMs": 1308,
+      "recentSeekThresholdMs": 1500
+    },
+    "failedRound": {
+      "beforeNativePause": {
+        "ms": 16957,
+        "nativeStates": [1, 1, 1],
+        "positions": [4.876552, 4.814994, 4.200901],
+        "overlayPlayVisible": [false, false, false]
+      },
+      "afterActorPause": {
+        "ms": 17393,
+        "nativeStates": [1, 2, 1],
+        "positions": [5.304567, 5.168648, 4.636202],
+        "overlayPlayVisible": [false, false, false]
+      },
+      "afterFailureWait": {
+        "ms": 25471,
+        "nativeStates": [1, 1, 1],
+        "positions": [12.998978, 12.291193, 12.708025],
+        "overlayPlayVisible": [false, false, false]
+      },
+      "deferredNativePauseEntries": 0,
+      "outboundPauseCommands": 0,
+      "lastCanonicalSequence": 21,
+      "lastCanonicalStatus": "playing"
+    },
+    "exactGuardRootCauseEstablished": true,
+    "rejectingBranch": "components/Player.tsx:485-490; recent programmatic seek at line488",
+    "predicate": "lib/playback-intent-manager.ts:269-270; Date.now() - lastProgrammaticSeek < thresholdMs",
+    "finding": "the current ready permitted native Pause passed hook eligibility but was discarded by the 1500 ms programmatic-seek suppression window at age1308 ms",
+    "deterministicRegressionAdded": false,
+    "productionCorrectionImplemented": false
+  },
   "disposition": "F4/N1 queue fix accepted; full UX acceptance and integration withheld pending a separately authorized native-intent correction",
   "limits": [
     "relative event times are controller observations, not synchronized provider clocks",
     "the focused diagnostic is not a committed production E2E replacement",
     "the successful complete replay does not erase the failed complete attempt",
+    "always-false debugger logpoints caused no actual debugger pauses but can still affect execution timing",
+    "the exact rejecting branch is established for the observed failure, not an automated deterministic regression or a verified correction",
     "this does not demonstrate distinct physical WANs or deployed Supabase behavior"
   ]
 }
