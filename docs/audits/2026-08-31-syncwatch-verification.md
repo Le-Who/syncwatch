@@ -1,18 +1,20 @@
 # SyncWatch parity and multiplayer verification
 
-Current controller verdict (2026-10-02): **not ready for integration or full-goal
-acceptance**. The whole-branch review, one final correction wave and its single
-scoped re-review are complete. F1/F2/F3/F5/F6/F7/F8, M1–M5 and the cache-lifetime,
-role and Player recovery refinements are addressed, but **F4/N1 remains one
-Important queue UX defect**: removal-driven selection leaves the fulfilled
-Set-as-next target scheduled and a later Next/end replays it. The final-wave
-evidence and controller disposition at the end are authoritative for product
-`4d8773391ebfabe237802564ddfbb5f9b75a9bf4` / evidence `e05f6b6`.
+Current controller verdict (2026-10-02): **not ready for unconditional UX
+acceptance or integration**. The human-authorized targeted queue follow-up at
+`95520786a37a7d6adeb229e5481d2f8910e8e5a6` closes F4/N1 with six real-service
+regressions and an independent focused PASS. All original final-review findings
+are addressed. However, fresh live verification subsequently exposed a separate
+**native YouTube Pause intent loss**: an actual click pauses the actor's iframe,
+but no Pause command leaves that browser and reconciliation resumes it. The
+final follow-up section and native-pause boundary summary below are current.
 
-All recorded latest-source automated gates pass, including the complete headed
-YouTube flow; that does not waive this reproduced queue defect. Primary main
-and its user-owned staged deletion remain untouched. Earlier Round 1/Round 2
-passes and failures below are dated historical evidence, not current acceptance.
+Fresh full unit, lint, typecheck, production build, dependency audit and serial
+browser gates pass. A complete live attempt failed at pause propagation, a
+trace-enabled complete replay passed unchanged, and a bounded socket diagnostic
+reproduced the real intent loss. A passing replay does not erase that failure.
+Primary main and its user-owned staged deletion remain untouched. Earlier
+Round 1/Round 2/final-wave passes and failures are dated historical evidence.
 
 Initial record: 2026-09-05. The sections through "Initial assessment" preserve
 that earlier verification snapshot and its failed live attempt.
@@ -388,7 +390,7 @@ own SHA is recorded in the ignored task report and handoff; lightweight checks
 are repeated against the final committed tree. Criterion 10 remains pending
 the controller-owned independent whole-branch review.
 
-## Final correction wave — current evidence (2026-10-02)
+## Final correction wave — evidence before queue follow-up (2026-10-02)
 
 Product revision: `4d8773391ebfabe237802564ddfbb5f9b75a9bf4`. This section supersedes the
 earlier verification verdicts for the corrected product. The controller-owned
@@ -477,7 +479,7 @@ documented limits. Existing output screenshots and ignored runtime evidence are
 preserved. The owned Redis runtime was stopped (SIGINT), and port 54950 was
 confirmed closed. The independent final acceptance decision belongs to the controller.
 
-## Controller scoped-review disposition — 2026-10-02
+## Controller prior final-wave scoped-review disposition — 2026-10-02
 
 The completed correction package spans `49b3558..e05f6b6`, both product and
 evidence commits. The sole scoped reviewer examined that fix diff, the covering
@@ -600,3 +602,80 @@ Important residual is open. The goal is not marked complete.
     defect was established and live deployment was not authorized. Cost if
     wrong: stronger provider/flush/staging verification work will be needed.
     None of these boundaries waives the concrete F4 defect.
+13. After the authorized queue correction, withhold unconditional UX acceptance
+    for the newly observed native-Pause intent loss; do not relabel the failed
+    complete live attempt as success because a traced replay passed. Why:
+    browser/provider state and filtered socket traffic establish a real lost
+    user intent, not only a brittle overlay assertion. The approved extra
+    iteration was limited to the queue defect, so preserve the result and ask
+    for a separately scoped native-intent correction. Cost if wrong: integration
+    is delayed for a provider/timing edge; the exact rejecting guard still needs
+    a deterministic regression. No source fix is guessed or started.
+
+## Human-authorized queue follow-up and current controller verification
+
+The human explicitly authorized one extra targeted iteration after the preceding
+final-wave cap. Product commit `9552078` changes one line in `applyRemoveItem`:
+an override fulfilled by the newly selected current item is consumed. It adds
+six tests through real RoomCommandService/InMemoryRoomRepository/EventBus:
+Next/end × shuffle on/off, unrelated future target preservation, and scheduled
+target removal. Existing queue policy/direct-selection cases remain intact.
+The focused implementer reported RED4/15 then GREEN19/19. The independent scoped
+review accepted F4/N1, spec compliance and task quality, and found no introduced
+Critical/Important breakage. Historical RED execution is reported evidence;
+baseline logic and literal null-pointer assertions corroborate sensitivity.
+
+Controller independently verified the committed product tree:
+
+| Gate | Current result |
+| --- | --- |
+| Full unit with retained JSON | exit0; 507 passed, 0 failed, 9 intentionally skipped Redis cases; 59 actual test-file results, queue19/19 |
+| `pnpm lint`; `pnpm typecheck`; `pnpm build` | each exit0; Next16.3.8 and custom-server TypeScript |
+| `pnpm audit --prod --json` | exit0; 312 production dependencies, zero all severities |
+| Serial `pnpm exec playwright test --workers=1 --reporter=line,json` | exit0; 10 passed, 1 gated live skip, zero unexpected/flaky/global errors; 90.658s |
+| Headed complete live YouTube, first fresh run | exit1; native actor reaches paused but Play overlay does not converge within30s; 45.840s total |
+| Same complete live spec, unchanged code, `--trace=on` | exit0; entire add/play/pause/seek/late/reconnect/degraded flow passes; 46.048s |
+| Bounded read-only real-YouTube/socket pause diagnostic | exit1; first two native pause cycles converge, third loses the intent before transmission; 34.759s |
+
+The default nine opt-in Redis cases previously ran against the owned real Redis
+instance in the final-wave gate. That adapter/Lua/persistence/provider source is
+unchanged by the one-line queue correction; this follow-up did not claim a new
+real-Redis execution. The full current unit run includes the actual-SQL migration
+tests. Local PostgreSQL-engine proof remains distinct from a deployed Supabase
+or PostgREST check.
+
+### New remaining UX finding: native Pause never reaches the room
+
+The failed complete live test and passing traced replay used the same product
+revision and physical WAN. Neither failed at auth, metadata, video initialization
+or an observed quota rejection. Because the first run had no trace, controller
+ran one bounded diagnostic with a filtered Socket.IO event capture, real three
+browser contexts and real YouTube controls. It recorded no authentication
+packets/tokens, changed no checked-in product/test source, and made no external writes
+beyond the owned local test rooms and ordinary provider requests.
+
+Positive controls captured native Pause commands from client2 in the first two
+cycles and verified all three iframe states become paused. In cycle3 all three
+iframes were playing. Client2 clicked native Pause and reached YouTube state2 at
+position5.124, while clients1/3 remained playing. No outgoing Pause or subsequent
+native Play command was recorded in that failed cycle; the room's last canonical
+frame remained playing at sequence21. Eight seconds later client2 had resumed
+itself and all three players advanced. This is lost user intent, not only a
+missing test button or a server-rejected command. The capture had also observed
+unrequested `fromNative` Seek emissions after owner Play, before this pause.
+
+The [boundary summary](2026-10-02-native-pause-boundary.json) preserves literal
+states/times/counts. Full filtered events, screenshots and trace remain in the
+ignored plan/output evidence workspace. Candidate client boundaries are the
+epoch/health check in `hooks/usePlayerEvents.ts:228`, the recent-programmatic-seek
+guard in `components/Player.tsx:488`, and the deferred health/epoch/sequence guard
+at `:517`. The exact rejecting branch has **not** been established and no fix is
+guessed. Same-WAN timing may influence provider ordering, but this evidence does
+not establish shared IP as the root cause; the command did not leave the browser.
+
+F4/N1 is closed; this separate live UX finding keeps the goal and full acceptance
+open. The agreed post-cap queue iteration is complete. A new production change
+requires a separately scoped user decision, not a silent second correction wave.
+Generated Next declarations were restored after all owned browser servers
+stopped. Primary main/index, prior output and new diagnostic evidence are
+preserved; no merge, push, deploy, live database mutation or cleanup occurred.

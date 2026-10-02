@@ -1,0 +1,92 @@
+{
+  "kind": "controller-diagnostic-summary-not-raw-transcript",
+  "date": "2026-10-02",
+  "productRevision": "95520786a37a7d6adeb229e5481d2f8910e8e5a6",
+  "productionChangedBetweenRuns": false,
+  "participants": 3,
+  "provider": "real YouTube",
+  "wan": "same physical network for both failed and passed runs",
+  "defaultSerialBrowser": {
+    "expected": 10,
+    "skipped": 1,
+    "unexpected": 0,
+    "flaky": 0,
+    "durationMs": 90658.097
+  },
+  "completeLiveAttempts": [
+    {
+      "startTime": "2026-10-02T11:31:46.77Z",
+      "exitCode": 1,
+      "durationMs": 45840.329,
+      "failedAt": "after native Pause, waiting for SyncWatch Play on all clients",
+      "assertion": "e2e/live-youtube-smoke.spec.ts:69",
+      "failureTimeoutMs": 30000,
+      "trace": false
+    },
+    {
+      "startTime": "2026-10-02T11:33:49.59Z",
+      "exitCode": 0,
+      "durationMs": 46047.734,
+      "completeFlow": "add/play/pause/seek/late join/reconnect/degraded continuation",
+      "trace": true
+    }
+  ],
+  "boundedPauseDiagnostic": {
+    "startTime": "2026-10-02T11:39:15.588Z",
+    "exitCode": 1,
+    "durationMs": 34758.72,
+    "maxRounds": 5,
+    "completedRounds": 2,
+    "failedRoundIndex": 2,
+    "capture": "filtered Socket.IO frames; authentication packets and tokens excluded",
+    "positiveControlPauseCommands": [
+      { "roundIndex": 0, "ms": 10428, "client": 2, "fromNative": true },
+      { "roundIndex": 1, "ms": 13857, "client": 2, "fromNative": true }
+    ],
+    "failedRound": {
+      "lastCanonicalFrame": {
+        "ms": 17441,
+        "sequence": 21,
+        "status": "playing"
+      },
+      "beforeNativePause": {
+        "ms": 17852,
+        "nativeStates": [1, 1, 1],
+        "positions": [4.886363, 4.819948, 4.569381],
+        "overlayPlayVisible": [false, false, false]
+      },
+      "afterActorPause": {
+        "ms": 18217,
+        "nativeStates": [1, 2, 1],
+        "positions": [5.246454, 5.123802, 4.92499],
+        "overlayPlayVisible": [false, false, false]
+      },
+      "afterFailureWait": {
+        "ms": 26286,
+        "nativeStates": [1, 1, 1],
+        "positions": [13.318531, 12.028773, 12.9962],
+        "overlayPlayVisible": [false, false, false]
+      },
+      "outboundPauseCommands": 0,
+      "outboundNativePlayCommands": 0,
+      "precedingUnrequestedNativeSeekCommands": [
+        { "ms": 17189, "client": 1, "sequence": 20 },
+        { "ms": 17440, "client": 3, "sequence": 21 }
+      ]
+    },
+    "finding": "a genuine native Pause intent did not leave the browser; canonical playback remained playing and reconciliation resumed the actor",
+    "exactGuardRootCauseEstablished": false,
+    "candidateBoundaries": [
+      "hooks/usePlayerEvents.ts:228 provider epoch/health gate",
+      "components/Player.tsx:488 recent programmatic-seek gate",
+      "components/Player.tsx:517 deferred health/epoch/sequence gate"
+    ]
+  },
+  "disposition": "F4/N1 queue fix accepted; full UX acceptance and integration withheld pending a separately authorized native-intent correction",
+  "limits": [
+    "relative event times are controller observations, not synchronized provider clocks",
+    "the focused diagnostic is not a committed production E2E replacement",
+    "the successful complete replay does not erase the failed complete attempt",
+    "this does not demonstrate distinct physical WANs or deployed Supabase behavior"
+  ]
+}
