@@ -17,6 +17,7 @@ import {
   markRoomForSync,
 } from "../db-sync";
 import { sanitizeRoom } from "../room-handler";
+import { getClientIp } from "../ip";
 import { SocketContext } from "./context";
 
 import { getJwtSecret } from "../jwt-config";
@@ -38,9 +39,7 @@ export function handleCommandEvents(
     if (!rawCommand || typeof rawCommand !== "object") return;
 
     const ip =
-      socket.handshake.headers["x-forwarded-for"] ||
-      socket.handshake.address ||
-      "unknown";
+      getClientIp(socket.handshake) || socket.handshake.address || "unknown";
     if (!(await checkRedisRateLimit(`ws:command:${ip}`, 60, 10000))) {
       socket.emit("error", { message: "Rate limit exceeded" });
       return;
