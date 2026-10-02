@@ -1,0 +1,197 @@
+{
+  "kind": "controller-verification-summary-not-raw-transcript",
+  "date": "2026-10-02",
+  "branch": "codex/syncwatch-ux-audit",
+  "reviewedProductionRevision": "d70b5a5fe5a4206bde08a34a75c4e85ecb6e2886",
+  "finalSourceAndTestsRevision": "bbef42406f616278868f9b10c0f112aab307d90e",
+  "productionChangedByTestContinuation": false,
+  "playerBlob": "d0f3c1681e6643f449780b6d889ca56d44a4b299",
+  "historicalFailureRecord": "2026-10-02-native-pause-boundary.json",
+  "priorFailuresReclassified": false,
+  "review": {
+    "scope": "native-intent only; original broad audit already completed",
+    "independentReviewers": 1,
+    "specCompliance": "PASS",
+    "initialTaskQuality": "PASS WITH NON-BLOCKING CONCERNS",
+    "critical": 0,
+    "important": 0,
+    "sameReviewerTestDelta": {
+      "M1PendingPauseArmCoverage": "ADDRESSED",
+      "M2PausedProviderClock": "ADDRESSED",
+      "newBreakage": "none found"
+    },
+    "workerContinuationLintRawLog": "absent/unretained; report corrected without reconstruction",
+    "controllerCannotVerifyDisposition": "all seven items mapped in current public audit; external-provider/WAN/deployed-database limits retained"
+  },
+  "deterministic": {
+    "initialPauseRed": { "failed": 6, "passed": 53 },
+    "pendingArmMutationRed": { "failed": 1, "filteredOut": 36 },
+    "fakeClockExpectationRed": { "failed": 4, "filteredOut": 33 },
+    "focusedFinal": { "passed": 70, "failed": 0 },
+    "participantCounts": [1, 3, 5, 25],
+    "pendingResumeSeekAgeMs": 1459,
+    "pauseFrozenPosition": 41.808,
+    "resumedPositionAfter500Ms": 42.308,
+    "finalDefault": {
+      "revision": "bbef42406f616278868f9b10c0f112aab307d90e",
+      "exitCode": 0,
+      "total": 541,
+      "passed": 532,
+      "failed": 0,
+      "skipped": 9,
+      "actualFileResults": 59,
+      "skippedFile": "__tests__/integration/final-wave-redis.test.ts",
+      "queuePassed": 19,
+      "actualSqlMigrationPassed": 3
+    }
+  },
+  "static": {
+    "revision": "bbef42406f616278868f9b10c0f112aab307d90e",
+    "lintExitCode": 0,
+    "typecheckExitCode": 0,
+    "productionBuildExitCode": 0,
+    "scopedPrettierExitCode": 0,
+    "branchWhitespaceExitCode": 0,
+    "generatedDeclarationsRestored": true,
+    "nextVersion": "16.3.8"
+  },
+  "dependencyAudit": {
+    "exitCode": 0,
+    "productionDependencies": 312,
+    "vulnerabilities": {
+      "critical": 0,
+      "high": 0,
+      "moderate": 0,
+      "low": 0,
+      "info": 0
+    },
+    "manifestAndLockUnchangedThroughFinalTestRevision": true
+  },
+  "defaultSerialBrowser": {
+    "productionRevision": "d70b5a5fe5a4206bde08a34a75c4e85ecb6e2886",
+    "exitCode": 0,
+    "startTime": "2026-10-02T16:49:51.1Z",
+    "durationMs": 89910.436,
+    "expected": 10,
+    "skipped": 1,
+    "unexpected": 0,
+    "flaky": 0,
+    "globalErrors": 0,
+    "workers": 1,
+    "retries": 0,
+    "largestContextScenario": {
+      "total": 5,
+      "independentlyImpaired": 2,
+      "healthy": 3
+    },
+    "liveSkipIsNotProviderEvidence": true
+  },
+  "completeLiveYouTube": {
+    "productionRevision": "d70b5a5fe5a4206bde08a34a75c4e85ecb6e2886",
+    "exitCode": 0,
+    "startTime": "2026-10-02T17:00:09.681Z",
+    "durationMs": 35165.004,
+    "expected": 1,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0,
+    "globalErrors": 0,
+    "initialContexts": 3,
+    "lateJoinContexts": 1,
+    "completeFlow": "add/play/native Pause/seek/late join/reconnect/degraded continuation",
+    "headed": true,
+    "trace": true,
+    "correctedSourceAttempts": 1,
+    "outputDirectory": "output/playwright/native-pause-followup-live"
+  },
+  "boundedNativePause": {
+    "productionRevision": "d70b5a5fe5a4206bde08a34a75c4e85ecb6e2886",
+    "exitCode": 0,
+    "startTime": "2026-10-02T17:01:16.458Z",
+    "durationMs": 35111.928,
+    "expected": 1,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0,
+    "globalErrors": 0,
+    "contexts": 3,
+    "maxRounds": 5,
+    "completedRounds": 5,
+    "deadlineMs": 90000,
+    "filteredRecords": 174,
+    "nativePauseCommands": 5,
+    "nativePlayCommands": 0,
+    "failureSnapshots": 0,
+    "guardObserverAttachments": 0,
+    "debuggerInstrumentationEnabled": false,
+    "capture": "filtered Socket.IO records; authentication packets/tokens excluded",
+    "rounds": [
+      {
+        "roundIndex": 0,
+        "actor": 2,
+        "pausePosition": 3.232818,
+        "matchingAppliedAcks": 1,
+        "canonicalPausedClients": [1, 2, 3],
+        "nativeStates": [2, 2, 2],
+        "overlayPlayVisible": [true, true, true]
+      },
+      {
+        "roundIndex": 1,
+        "actor": 2,
+        "pausePosition": 3.967869,
+        "matchingAppliedAcks": 1,
+        "canonicalPausedClients": [1, 2, 3],
+        "nativeStates": [2, 2, 2],
+        "overlayPlayVisible": [true, true, true]
+      },
+      {
+        "roundIndex": 2,
+        "actor": 2,
+        "pausePosition": 8.22431,
+        "matchingAppliedAcks": 1,
+        "canonicalPausedClients": [1, 2, 3],
+        "nativeStates": [2, 2, 2],
+        "overlayPlayVisible": [true, true, true]
+      },
+      {
+        "roundIndex": 3,
+        "actor": 2,
+        "pausePosition": 12.219065,
+        "matchingAppliedAcks": 1,
+        "canonicalPausedClients": [1, 2, 3],
+        "nativeStates": [2, 2, 2],
+        "overlayPlayVisible": [true, true, true]
+      },
+      {
+        "roundIndex": 4,
+        "actor": 2,
+        "pausePosition": 15.454109,
+        "matchingAppliedAcks": 1,
+        "canonicalPausedClients": [1, 2, 3],
+        "nativeStates": [2, 2, 2],
+        "overlayPlayVisible": [true, true, true]
+      }
+    ],
+    "correctedSourceAttempts": 1,
+    "outputDirectory": "output/playwright/native-pause-followup-boundary"
+  },
+  "preservation": {
+    "primaryMainRevision": "7cf98bf41c273728982a16acdb65b60038f1b683",
+    "primaryUserStagedDeletion": "dist/tsconfig.server.tsbuildinfo",
+    "primaryCheckoutAndIndexChangedByTask": false,
+    "parityIncluded": true,
+    "ownedListenerPortsStopped": [3001, 3002, 54950],
+    "oldAndNewEvidencePreserved": true,
+    "primaryMergePushDeploymentCloudWriteOrCleanupPerformed": false
+  },
+  "disposition": "full approved audit/implementation acceptance on isolated branch; human chooses local main merge, push/PR, or keep branch",
+  "limits": [
+    "real-provider runs are bounded successful samples, not universal human-versus-synthetic event-provenance or frame-perfect synchronization proof",
+    "sub-150ms physical native resume is deterministic provider-boundary coverage, not measured by the live flows",
+    "network impairment is per browser context on the same physical WAN; N25 server/unit evidence is not25 simultaneous real YouTube browsers or unlimited deployment capacity",
+    "real Redis execution is retained from unchanged backend-boundary verification, not rerun for this Player-only correction",
+    "actual SQL migration/RPC/ACL proof uses local PGlite, not deployed Supabase/PostgREST",
+    "write-behind crash loss, unreconstructable legacy fields, old-client refresh and durable-role storage/privacy costs remain documented",
+    "existing warning noise and the unretained worker continuation lint log are explicitly disclosed; controller current lint proof is separate"
+  ]
+}

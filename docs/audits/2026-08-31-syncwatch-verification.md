@@ -1,23 +1,27 @@
 # SyncWatch parity and multiplayer verification
 
-Current controller verdict (2026-10-02): **not ready for unconditional UX
-acceptance or integration**. The human-authorized targeted queue follow-up at
-`95520786a37a7d6adeb229e5481d2f8910e8e5a6` closes F4/N1 with six real-service
-regressions and an independent focused PASS. All original final-review findings
-are addressed. However, fresh live verification subsequently exposed a separate
-**native YouTube Pause intent loss**: an actual click pauses the actor's iframe,
-but no Pause command leaves that browser and reconciliation resumes it. A
-subsequent read-only guard trace identifies the rejecting recent-programmatic-
-seek guard: the genuine Pause arrived 1308 ms after a programmatic seek, inside
-the 1500 ms suppression window. The final follow-up section and native-pause
-boundary summary below are current. No native-intent correction is implemented.
+Current controller verdict (2026-10-02): **accepted on the isolated integration
+branch; ready for the human's integration choice, with the explicit limits
+below**. Useful parity changes are included by merge `589c526`; all original
+final-review findings, the separately authorized queue F4/N1 correction, and
+the separately authorized native YouTube Pause correction are closed.
 
-Fresh full unit, lint, typecheck, production build, dependency audit and serial
-browser gates pass. A complete live attempt failed at pause propagation, a
-trace-enabled complete replay passed unchanged, and a bounded socket diagnostic
-reproduced the real intent loss. A passing replay does not erase that failure.
-Primary main and its user-owned staged deletion remain untouched. Earlier
-Round 1/Round 2/final-wave passes and failures are dated historical evidence.
+Reviewed production correction: `d70b5a5fe5a4206bde08a34a75c4e85ecb6e2886`.
+Final source/test revision: `bbef42406f616278868f9b10c0f112aab307d90e`, whose
+only subsequent implementation delta is a test-only delayed-ACK/clock regression.
+Fresh final full unit, lint, typecheck and production build pass. Current
+production also passes the serial browser matrix, the complete headed real
+YouTube flow, and all five native-Pause cycles of the same previously failing
+three-client diagnostic. Independent scoped review and its same-reviewer
+test-only re-review found no remaining Critical/Important defect.
+
+The failed pre-correction live attempts remain failures: neither their earlier
+successful replay nor the new corrected-source passes erase them. The final
+native-intent section and [current verification summary](2026-10-02-native-pause-verification.json)
+are the current acceptance evidence; the older boundary summary remains the
+historical root-cause record. Primary `main` and its user-owned staged deletion
+remain untouched. No primary merge, push, deployment, cloud database write,
+worktree removal or evidence cleanup has been performed.
 
 Initial record: 2026-09-05. The sections through "Initial assessment" preserve
 that earlier verification snapshot and its failed live attempt.
@@ -614,8 +618,24 @@ Important residual is open. The goal is not marked complete.
     for a separately scoped native-intent correction. Cost if wrong: integration
     is delayed for a provider/timing edge; the exact rejecting guard still needs
     a deterministic regression. No source fix is guessed or started.
+14. Include only tightly necessary Native Play cooperation in the newly enabled
+    recent-seek Pause→Play intersection. Why: the human-approved brief requires
+    genuine rapid resume; authoritative RED at Pause age1308ms then Play151ms
+    later shows the adjacent recent-seek guard loses Play and leaves the room
+    paused. Require emitted-Pause nonce/current media/epoch/health correlation,
+    paused-seek synthetic-Play negative controls, and unchanged permissions;
+    escalate before architectural/provenance redesign. Cost if wrong: accepted
+    synthetic Play echo or scope expansion. Independent review and real runtime
+    verification must evaluate this risk, not waive it.
+15. Close the controller-confirmed delayed-delivery proof gap with a test-only
+    pending-Pause regression and a clock that freezes/resumes physically.
+    Why: the review's M1 is not a demonstrated product defect, but its untested
+    branch is specifically needed when poor connections delay acknowledgment;
+    M2 limits literal position proof. This is native-ordering evidence closure,
+    not a new UX feature, broad review or severity waiver. Cost if wrong: extra
+    test and scoped re-review time delays handoff without changing production.
 
-## Human-authorized queue follow-up and current controller verification
+## Historical queue follow-up and pre-native-correction verification
 
 The human explicitly authorized one extra targeted iteration after the preceding
 final-wave cap. Product commit `9552078` changes one line in `applyRemoveItem`:
@@ -648,7 +668,7 @@ real-Redis execution. The full current unit run includes the actual-SQL migratio
 tests. Local PostgreSQL-engine proof remains distinct from a deployed Supabase
 or PostgREST check.
 
-### New remaining UX finding: native Pause never reaches the room
+### Historical UX finding: native Pause never reaches the room
 
 The failed complete live test and passing traced replay used the same product
 revision and physical WAN. Neither failed at auth, metadata, video initialization
@@ -704,3 +724,122 @@ requires a separately scoped user decision, not a silent second correction wave.
 Generated Next declarations were restored after all owned browser servers
 stopped. Primary main/index, prior output and new diagnostic evidence are
 preserved; no merge, push, deploy, live database mutation or cleanup occurred.
+
+## Human-authorized native-intent correction and final acceptance — 2026-10-02
+
+The human separately approved correcting the diagnosed native-Pause boundary,
+preserving degraded/stale-event safety, one independent scoped review, and real
+YouTube verification. This did not reopen the completed broad audit or authorize
+primary integration, deployment or live database changes.
+
+### Actual behavior corrected
+
+The genuine ready/current/permitted YouTube Pause is no longer discarded solely
+because reconciliation sought within1500ms. Media transition, scrubber, current
+media/sequence/provider epoch, health and150ms deferred-Pause validation remain.
+Non-YouTube recent-seek suppression and Twitch's separate phantom-event guards
+remain. Initial real Player/authoritative-service RED had six intended failures
+(Player ages300/1308ms and N1/3/5/25); GREEN requires one actual Pause command,
+one canonical mutation, paused peers, and no effect from waiting/stale/forbidden
+callbacks at the same boundary.
+
+The adjacent rapid Play guard required bounded cooperation, not global removal.
+An actually emitted native Pause nonce can authorize a current eligible Play
+only while that Pause is pending at its baseline sequence or is the same nonce
+in newer canonical paused state. Correlation is consumed and a later actual
+programmatic seek invalidates it. Pre-debounce Play cancels Pause and restores
+local playing. Negative controls cover paused programmatic seek without native
+Pause, superseding Seek, later paused seek, media/provider replacement, revoked
+permission and waiting. No server, queue, Redis, persistence, dependency or UI
+redesign was introduced in this follow-up; production changes only Player.
+
+The independent reviewer gave scoped Spec PASS and quality PASS WITH
+NON-BLOCKING CONCERNS, Critical0/Important0. Controller then closed the specific
+delayed-delivery proof gap: ordered Pause/Play envelopes are held before real
+service execution; native Play at seek age1459ms must escape while canonical
+sequence is still unchanged and the exact Pause nonce awaits ACK. Disabling
+only that pending arm produces the intended missing-Play RED. The opted-in
+external clock now freezes at41.808 on Pause and resumes to42.308 after500ms;
+its independent expectation-first RED exposed the former unrealistic41.958
+fake, not a new production bug. Production was restored before runtime and its
+Player blob remains `d0f3c1681e6643f449780b6d889ca56d44a4b299`.
+
+The SAME scoped reviewer re-reviewed only `d70b5a5..bbef424`: M1 and M2
+ADDRESSED, no new breakage. All70 focused cases pass. One claimed worker ESLint
+console file was absent; the report now discloses it as unretained, without
+reconstruction. Controller's independent final whole-project lint exit0 is
+separate current proof, not a retroactive repair of that historical record.
+
+### Fresh controller gates and real UX observations
+
+| Gate | Exact result and scope |
+| --- | --- |
+| Final default unit at `bbef424` | exit0;532passed/0failed/9intentionalRedis-skips,541total,59actualfiles; native70/70, queue19/19, actual-SQL persistence3/3 |
+| Final `pnpm lint`; `pnpm typecheck`; `pnpm build` at `bbef424` | each exit0; Next16.3.8 production build and custom-server TypeScript; generated declaration noise restored after shutdown/build |
+| Scoped Prettier; full branch whitespace; restored declaration checks | exit0; no remaining tracked build noise |
+| Controller production dependency audit | exit0;312productiondependencies;0at every severity; package/lock unchanged through final test-only revision |
+| Serial existing browser matrix at product `d70b5a5` | exit0;10passed/1gatedlive-skip,89.910436s;0unexpected/flaky/globalerrors; one attempt per case, retries0 |
+| Complete headed checked-in real YouTube flow at product `d70b5a5` | exit0;1passed,35.165004s; add/play/nativePause/seek/lateJoin/reconnect/degraded continuation; new traceON, no corrected-source replay |
+| Same bounded real YouTube Pause/socket diagnostic without debugger | exit0;1passed,35.111928s; all5cycles complete; each emits one nativePause, receives one matching appliedACK, and delivers canonical paused to all3clients |
+
+Every diagnostic cycle observed the actor's real iframe reach state2, then all
+three real iframes state2 with SyncWatch Play visible. The filtered capture has
+five native Pause commands, zero native Play commands, zero failure snapshots
+and zero guard-observer attachments. The diagnostic was bounded to5cycles/90s,
+not retried to green, and ran on the same physical WAN as the historical failures.
+The old failure used the same test and stopped on cycle3. Exact1308ms/300ms guard
+timing and fast pending/canonical-ACK resume are proved deterministically;
+debugger timing instrumentation was not enabled during acceptance.
+
+Full/browser/live/raw JSON, RED/GREEN console records and traces remain in the
+ignored plan/output directories. Authentication packets/tokens are excluded
+from the filtered wire capture. The checked-in current summary is a curated
+controller verification record, not an unfiltered transcript.
+
+### Binding acceptance criteria and reviewer cannot-verify disposition
+
+| Criterion | Current disposition |
+| --- | --- |
+| Useful main/parity integration and full audit | merge589c526 retained; fresh parity ancestor check0; original broad audit/final reviews plus authorized queue/native scoped closures complete |
+| 1 unit/lint/type/build | accepted: fresh final-source gates above all exit0 |
+| 2 five-context serial browser | accepted: actual five-client sessions, current permissions/presence/provider cases, unique room IDs through existing harness, workers1/retries0 |
+| 3 real YouTube full watch-together UX | accepted: complete fresh headed flow plus all five actual native-Pause propagation cycles; no pass inferred from old replay |
+| 4 one or more poor connections | accepted within tested boundary: five-browser scenario has2independently impaired/3healthy, healthy advancement and both recoveries; full live latency/offline recovery; recent-seek waiting/stale/rapid-ACK controls and N1/3/5/25 authoritative outcomes |
+| 5 Redis/no-Redis presence and handoff | current no-Redis browser/lifecycle cases pass; reviewed real Redis/Lua49-case gate (32realRedis+17lifecycle) and Redis browser retained on unchanged backend boundaries; no fresh Redis execution claimed for Player-only fix |
+| 6 shared permission policy and visible rejection | current full policy/service tests and five-client browser pass; native unauthorized/stale controls retained; roles/advisory readiness remain reviewed unchanged behavior |
+| 7 one composer desktop/mobile | both current actual-route browser cases pass, plus keyboard flow |
+| 8 arbitrary participant count/shared NAT | N1/3/5/25 and real25-session same-address admission/group recovery remain covered; current same-NAT identity/reload browser passes; no two-person special case or25-Chromium claim |
+| 9 security/dependencies | current audit0/312; reviewed identity/token/rate/metadata egress repairs and persistence RPC ACL/migration-backed3-case actual-SQL proof retained; no deployed ACL/REST claim |
+| 10 reviewed safe handoff | original findings and new scoped concerns closed; primary main7cf98bf/user-owned staged dist deletion preserved; human chooses integration next |
+
+These rows resolve all seven original scoped-review cannot-verify items using
+controller-owned cross-task/current evidence, not by widening that reviewer.
+Actual rapid callbacks before/after debounce and pending/canonical ACKs are
+deterministic provider-boundary proof; the live runs do not measure a physical
+sub150ms gesture or establish every provider callback's human provenance.
+
+### Explicit acceptance limits and preserved state
+
+- YouTube does not expose complete human-versus-synthetic event provenance.
+  Current same-media/epoch/health/nonce protections and negative controls are
+  verified; no universal synthetic-event or frame-perfect Internet guarantee
+  is claimed. Readiness/buffering remain participant-local, not playback gates.
+- Browser network impairment is emulated per context on one physical WAN.
+  N25 server/unit evidence is not25 simultaneous real YouTube browser instances
+  or a load-capacity promise for arbitrarily large deployments.
+- Redis evidence is real but retained from the prior backend correction gate;
+  the default9opt-ins are explicit skips, not current executions. Local PGlite
+  migration/RPC/ACL proof is not deployed Supabase/PostgREST verification.
+- Write-behind can lose unflushed changes on crash; historical fields never
+  persisted cannot be reconstructed; old clients need refresh for generation/run
+  bindings. Durable roles retain friend IDs/nicknames with their storage cost.
+- Existing OCC/intentional error/React act and npm configuration warnings are
+  not presented as pristine logs. They do not change the observed gate exits.
+
+Implementation and audit acceptance on `codex/syncwatch-ux-audit` are complete
+within these stated bounds. Primary `main` still has the user's staged
+`dist/tsconfig.server.tsbuildinfo` deletion. All prior output, scratch and traces
+remain recoverable in place; owned listeners3001/3002/54950 are stopped. No
+primary merge, push, PR creation, deployment, cloud mutation or cleanup was
+performed. The available next choices are local merge to main, push/create PR,
+or keeping this named branch and worktree as-is.
