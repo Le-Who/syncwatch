@@ -9,12 +9,15 @@ const __dirname = path.dirname(__filename);
 export default defineConfig([
   {
     ignores: [
-      ".next/**",
-      "dist/**",
-      "node_modules/**",
+      "**/.worktrees/**",
+      "**/.superpowers/**",
+      "**/.next/**",
+      "**/dist/**",
+      "**/node_modules/**",
       "*.tsbuildinfo",
-      "coverage/**",
-      "playwright-report/**",
+      "**/coverage/**",
+      "**/playwright-report/**",
+      "**/test-results/**",
     ],
   },
   {

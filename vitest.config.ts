@@ -1,5 +1,5 @@
 import path from "path";
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
@@ -11,7 +11,18 @@ export default defineConfig({
       reporter: ["text", "json", "html"],
       include: ["lib/**", "components/**", "server.ts", "app/api/**"],
     },
-    exclude: ["**/*.spec.ts", "e2e/**", "node_modules/**"],
+    exclude: [
+      ...configDefaults.exclude,
+      "**/*.spec.ts",
+      "e2e/**",
+      "**/.worktrees/**",
+      "**/.superpowers/**",
+      "**/.next/**",
+      "**/dist/**",
+      "**/coverage/**",
+      "**/playwright-report/**",
+      "**/test-results/**",
+    ],
   },
   resolve: {
     alias: {
