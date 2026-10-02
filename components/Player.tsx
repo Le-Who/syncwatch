@@ -137,7 +137,12 @@ export default function Player() {
   }, []);
 
   useEffect(() => {
+    let lastTime = 0;
     const handleUserActivity = () => {
+      const now = Date.now();
+      if (now - lastTime < 500) return; // Throttle to roughly 2Hz
+      lastTime = now;
+
       wakeUp();
       if (idleTimeoutRef.current) clearTimeout(idleTimeoutRef.current);
       idleTimeoutRef.current = setTimeout(
@@ -152,18 +157,19 @@ export default function Player() {
       );
     };
 
-    window.addEventListener("mousemove", handleUserActivity);
-    window.addEventListener("keydown", handleUserActivity);
-    window.addEventListener("touchstart", handleUserActivity);
-    window.addEventListener("click", handleUserActivity);
+    const options = { passive: true };
+    window.addEventListener("mousemove", handleUserActivity, options);
+    window.addEventListener("keydown", handleUserActivity, options);
+    window.addEventListener("touchstart", handleUserActivity, options);
+    window.addEventListener("click", handleUserActivity, options);
 
     handleUserActivity();
 
     return () => {
-      window.removeEventListener("mousemove", handleUserActivity);
-      window.removeEventListener("keydown", handleUserActivity);
-      window.removeEventListener("touchstart", handleUserActivity);
-      window.removeEventListener("click", handleUserActivity);
+      window.removeEventListener("mousemove", handleUserActivity, options);
+      window.removeEventListener("keydown", handleUserActivity, options);
+      window.removeEventListener("touchstart", handleUserActivity, options);
+      window.removeEventListener("click", handleUserActivity, options);
       if (idleTimeoutRef.current) clearTimeout(idleTimeoutRef.current);
     };
   }, [wakeUp]);
