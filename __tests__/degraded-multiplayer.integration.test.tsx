@@ -29,8 +29,20 @@ const providerCallbacks = vi.hoisted(
 );
 const providerPlaying = vi.hoisted(() => new Map<string, boolean>());
 const providerTimelines = vi.hoisted(
-  () => new Map<string, { position: number; at: number; seeks: number[] }>(),
+  () =>
+    new Map<
+      string,
+      { position: number; at: number; running: boolean; seeks: number[] }
+    >(),
 );
+
+function setProviderClockPlaying(url: string, running: boolean) {
+  const timeline = providerTimelines.get(url);
+  if (!timeline) return;
+  if (timeline.running) timeline.position += (Date.now() - timeline.at) / 1_000;
+  timeline.at = Date.now();
+  timeline.running = running;
+}
 
 const integrationSocket = vi.hoisted(() => {
   const handlers = new Map<string, Set<(payload?: any) => void>>();
@@ -75,7 +87,8 @@ vi.mock("next/dynamic", async () => {
           getCurrentTime: () => {
             const timeline = providerTimelines.get(props.src);
             return timeline
-              ? timeline.position + (Date.now() - timeline.at) / 1_000
+              ? timeline.position +
+                  (timeline.running ? (Date.now() - timeline.at) / 1_000 : 0)
               : 20 + (Date.now() - 10_000) / 1_000;
           },
           getDuration: () => 120,
@@ -93,13 +106,25 @@ vi.mock("next/dynamic", async () => {
           addEventListener: vi.fn(),
           removeEventListener: vi.fn(),
         }));
+        React.useLayoutEffect(() => {
+          setProviderClockPlaying(props.src, props.playing);
+        }, [props.src, props.playing]);
         providerPlaying.set(props.src, props.playing);
         providerCallbacks.set(props.src, {
           onLoadedMetadata: props.onLoadedMetadata,
           onWaiting: props.onWaiting,
-          onPlaying: props.onPlaying,
-          onPlay: props.onPlay,
-          onPause: props.onPause,
+          onPlaying: (...args) => {
+            setProviderClockPlaying(props.src, true);
+            props.onPlaying(...args);
+          },
+          onPlay: (...args) => {
+            setProviderClockPlaying(props.src, true);
+            props.onPlay(...args);
+          },
+          onPause: (...args) => {
+            setProviderClockPlaying(props.src, false);
+            props.onPause(...args);
+          },
           onSeeked: props.onSeeked,
           onEnded: props.onEnded,
           onError: props.onError,
@@ -248,6 +273,7 @@ describe("degraded multiplayer through authoritative commands", () => {
     "resume-before-debounce",
     "resume-after-debounce",
     "resume-after-ack",
+    "resume-before-ack",
   ] as const)(
     "preserves recent-seek genuine YouTube Pause→Play %s",
     async (scenario) => {
@@ -431,6 +457,7 @@ type RecentSeekScenario =
   | "resume-before-debounce"
   | "resume-after-debounce"
   | "resume-after-ack"
+  | "resume-before-ack"
   | "paused-seek-play"
   | "resume-superseded"
   | "resume-new-seek"
@@ -456,6 +483,10 @@ async function runRecentSeekScenario(
   const acknowledgement =
     scenario === "resume-after-ack"
       ? vi.spyOn(PlaybackIntentManager.prototype, "acknowledgeServerNonce")
+      : null;
+  const emittedIntent =
+    scenario === "resume-before-ack"
+      ? vi.spyOn(PlaybackIntentManager.prototype, "markCommandEmitted")
       : null;
   const provider =
     scenario === "twitch-phantom"
@@ -483,7 +514,12 @@ async function runRecentSeekScenario(
   if (scenario === "paused-seek-play") initial.playback.status = "paused";
   if (scenario === "unauthorized") initial.leaderId = "p0";
   const actor = participantCount === 1 ? "p0" : "p1";
-  const timeline = { position: 20, at: 10_000, seeks: [] as number[] };
+  const timeline = {
+    position: 20,
+    at: 10_000,
+    running: false,
+    seeks: [] as number[],
+  };
   providerTimelines.set(url, timeline);
   const repository = new InMemoryRoomRepository([initial], () => Date.now());
   const consumers: ClientConsumer[] = Array.from(
@@ -520,28 +556,52 @@ async function runRecentSeekScenario(
   });
   const pending: Promise<unknown>[] = [];
   const nativeCommands: { type: string; payload: any }[] = [];
+  let releaseOrderedDelivery!: () => void;
+  const heldPauseDelivery = new Promise<void>((resolve) => {
+    releaseOrderedDelivery = resolve;
+  });
+  let orderedDelivery: Promise<unknown> = Promise.resolve();
+  let outgoingCommandSequence = initial.sequence;
+  const servicePlaybackOrder: string[] = [];
   const execute = async (
     participantId: string,
     type: string,
     payload: any = {},
   ) => {
     const room = useStore.getState().room!;
-    return service.execute(
-      { currentRoomId: initial.id, currentParticipantId: participantId },
-      {
-        roomId: initial.id,
-        clientSequence: room.sequence,
-        nonce: payload.nonce ?? randomUUID(),
-        command: {
-          type,
-          payload: {
-            ...payload,
-            mediaRun: room.mediaRun ?? 0,
-            roomGeneration: room.generation ?? "legacy",
-          },
-        } as RoomCommand,
-      },
-    );
+    const context = {
+      currentRoomId: initial.id,
+      currentParticipantId: participantId,
+    };
+    const envelope = {
+      roomId: initial.id,
+      clientSequence:
+        scenario === "resume-before-ack"
+          ? ++outgoingCommandSequence
+          : room.sequence,
+      nonce: payload.nonce ?? randomUUID(),
+      command: {
+        type,
+        payload: {
+          ...payload,
+          mediaRun: room.mediaRun ?? 0,
+          roomGeneration: room.generation ?? "legacy",
+        },
+      } as RoomCommand,
+    };
+    if (scenario !== "resume-before-ack")
+      return service.execute(context, envelope);
+    // Hold transport delivery, preserving send-time envelopes and Pause→Play
+    // ordering. Real command execution and canonical publication happen on release.
+    const delivery = orderedDelivery.then(async () => {
+      if (type === "pause") await heldPauseDelivery;
+      if (["pause", "play"].includes(type)) servicePlaybackOrder.push(type);
+      const result = await service.execute(context, envelope);
+      expect(result.status).toBe("applied");
+      return result;
+    });
+    orderedDelivery = delivery;
+    return delivery;
   };
   useStore.setState({
     room: structuredClone(initial),
@@ -603,6 +663,7 @@ async function runRecentSeekScenario(
   if (scenario === "resume-before-debounce") {
     act(() => providerCallbacks.get(url)!.onPlay());
     expect(providerPlaying.get(url)).toBe(true);
+    expect(timeline.running).toBe(true);
   }
   if (scenario === "stale-sequence" || scenario === "stale-media") {
     await act(async () => {
@@ -630,12 +691,13 @@ async function runRecentSeekScenario(
   const eventCountBeforeDebounce = events.length;
   await act(async () => {
     await vi.advanceTimersByTimeAsync(1);
-    await Promise.all(pending.splice(0));
+    if (scenario !== "resume-before-ack") await Promise.all(pending.splice(0));
   });
   if (
     [
       "resume-after-debounce",
       "resume-after-ack",
+      "resume-before-ack",
       "resume-superseded",
       "resume-new-seek",
       "resume-media-replaced",
@@ -668,7 +730,7 @@ async function runRecentSeekScenario(
       timeline.position = 0;
       timeline.at = Date.now();
       await act(() => vi.advanceTimersByTimeAsync(792));
-      expect(timeline.seeks).toEqual([40.5, 41.958]);
+      expect(timeline.seeks).toEqual([40.5, 41.808]);
     }
     if (
       scenario === "resume-media-replaced" ||
@@ -697,6 +759,29 @@ async function runRecentSeekScenario(
     if (scenario === "resume-after-waiting")
       act(() => providerCallbacks.get(url)!.onWaiting());
     await act(() => vi.advanceTimersByTimeAsync(1));
+    if (scenario === "resume-before-ack") {
+      // Seek at 10_500; Pause at 11_808; Play at 11_959: seek age 1459ms.
+      expect(Date.now()).toBe(11_959);
+      expect(useStore.getState().room).toMatchObject({
+        sequence: before.sequence,
+        playback: { status: "playing" },
+      });
+      expect((await repository.get(initial.id))!.sequence).toBe(
+        before.sequence,
+      );
+      expect(events).toEqual([]);
+      expect(servicePlaybackOrder).toEqual([]);
+      const manager = emittedIntent!.mock.contexts.at(
+        -1,
+      ) as PlaybackIntentManager;
+      expect(manager.isAwaitingServerAck()).toBe(true);
+      expect(manager.lastStateEmittedRef?.nonce).toBe(
+        nativeCommands[0].payload.nonce,
+      );
+      expect(providerPlaying.get(url)).toBe(false);
+      expect(timeline.running).toBe(false);
+      expect(timeline.position).toBe(41.808);
+    }
     act(() =>
       providerCallbacks
         .get(
@@ -705,6 +790,16 @@ async function runRecentSeekScenario(
         .onPlay(),
     );
     await act(async () => {
+      if (scenario === "resume-before-ack") {
+        expect(nativeCommands.map(({ type }) => type)).toEqual([
+          "pause",
+          "play",
+        ]);
+        expect(providerPlaying.get(url)).toBe(true);
+        expect(timeline.running).toBe(true);
+        expect(useStore.getState().room?.sequence).toBe(before.sequence);
+        releaseOrderedDelivery();
+      }
       await Promise.all(pending.splice(0));
     });
   }
@@ -724,7 +819,7 @@ async function runRecentSeekScenario(
         type: "pause",
         payload: expect.objectContaining({
           fromNative: true,
-          position: 41.958,
+          position: 41.808,
         }),
       },
     ]);
@@ -741,7 +836,8 @@ async function runRecentSeekScenario(
     }
   } else if (
     scenario === "resume-after-debounce" ||
-    scenario === "resume-after-ack"
+    scenario === "resume-after-ack" ||
+    scenario === "resume-before-ack"
   ) {
     expect(nativeCommands.map(({ type }) => type)).toEqual(["pause", "play"]);
     expect(after.sequence).toBe(before.sequence + 2);
@@ -751,6 +847,13 @@ async function runRecentSeekScenario(
         (event) => event.type === "playback_updated" && event.playback.status,
       ),
     ).toEqual(["paused", "playing"]);
+    if (scenario === "resume-before-ack") {
+      expect(servicePlaybackOrder).toEqual(["pause", "play"]);
+      for (const consumer of consumers) {
+        expect(consumer.room.sequence).toBe(before.sequence + 2);
+        expect(consumer.room.playback.status).toBe("playing");
+      }
+    }
   } else if (blockedResume) {
     expect(nativeCommands.map(({ type }) => type)).toEqual(["pause"]);
     expect(after.playback.status).toBe("paused");
@@ -759,7 +862,7 @@ async function runRecentSeekScenario(
         before.sequence + (scenario === "resume-superseded" ? 2 : 1),
       );
       expect(after.playback.basePosition).toBe(
-        scenario === "resume-superseded" ? 45 : 41.958,
+        scenario === "resume-superseded" ? 45 : 41.808,
       );
       expect(events).toHaveLength(scenario === "resume-superseded" ? 2 : 1);
     }
@@ -774,7 +877,7 @@ async function runRecentSeekScenario(
     expect(after.playback).toEqual(beforeDebounce.playback);
     // A direct unauthorized command must also be rejected by the real service.
     if (scenario === "unauthorized") {
-      expect(await execute(actor, "pause", { position: 41.958 })).toMatchObject(
+      expect(await execute(actor, "pause", { position: 41.808 })).toMatchObject(
         { status: "rejected", code: "NOT_PERMITTED" },
       );
       expect((await repository.get(initial.id))!.sequence).toBe(
@@ -806,7 +909,9 @@ async function runRecentSeekScenario(
   expect(nativeCommands).toHaveLength(
     scenario === "pause" || blockedResume
       ? 1
-      : scenario === "resume-after-debounce" || scenario === "resume-after-ack"
+      : scenario === "resume-after-debounce" ||
+          scenario === "resume-after-ack" ||
+          scenario === "resume-before-ack"
         ? 2
         : 0,
   );
@@ -815,9 +920,29 @@ async function runRecentSeekScenario(
       "resume-before-debounce",
       "resume-after-debounce",
       "resume-after-ack",
+      "resume-before-ack",
     ].includes(scenario)
   )
     expect(providerPlaying.get(url)).toBe(true);
+  if (scenario === "pause") {
+    expect(timeline.running).toBe(false);
+    expect(timeline.position).toBe(41.808);
+  }
+  if (scenario === "resume-before-ack") {
+    // Pause freezes at 41.808; Play resumes at 11_959; 500ms later it is 42.308.
+    expect(timeline.running).toBe(true);
+    expect(timeline.position + (Date.now() - timeline.at) / 1_000).toBeCloseTo(
+      42.308,
+      5,
+    );
+    expect(nativeCommands.map(({ payload }) => payload.position)).toEqual([
+      41.808, 41.808,
+    ]);
+    for (const client of healthy) {
+      expect(client.position).toBeCloseTo(42.308, 5);
+      expect(client.seekActions).toEqual([42.308]);
+    }
+  }
   expect((await repository.get(initial.id))!.sequence).toBe(after.sequence);
   healthyView.unmount();
   view.unmount();
