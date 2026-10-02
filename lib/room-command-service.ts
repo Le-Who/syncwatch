@@ -113,7 +113,11 @@ function commandValidationCode(
   command: RoomCommand,
 ): CommandRejectionCode | null {
   if (command.type === "next" || command.type === "video_ended") {
-    if (command.payload?.currentMediaId !== room.currentMediaId) {
+    if (
+      command.payload?.currentMediaId !== room.currentMediaId ||
+      command.payload.mediaRun !== (room.mediaRun ?? 0) ||
+      command.payload.roomGeneration !== (room.generation ?? "legacy")
+    ) {
       return "STALE_MEDIA";
     }
   }
@@ -370,6 +374,14 @@ export class RoomCommandService {
           next.playback.rate !== room.playback.rate
         ) {
           next.playback.updatedBy = currentActor.id;
+        }
+        if (
+          next.currentMediaId !== room.currentMediaId ||
+          envelope.command.type === "set_media" ||
+          envelope.command.type === "next" ||
+          envelope.command.type === "video_ended"
+        ) {
+          next.mediaRun = (room.mediaRun ?? 0) + 1;
         }
         next.version = room.version + 1;
         next.sequence = room.sequence + 1;

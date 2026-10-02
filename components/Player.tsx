@@ -311,7 +311,14 @@ export default function Player() {
     }
     // Safety net: 1.5s ignoreEventsFor as fallback in case onReady never fires
     intentManager.ignoreEventsFor(1500);
-  }, [currentMediaId, healthController, intentManager, sendCommand]);
+  }, [
+    currentMediaId,
+    room?.mediaRun,
+    room?.generation,
+    healthController,
+    intentManager,
+    sendCommand,
+  ]);
 
   // Handle Server-Side OCC Rejections (Race Condition Flashback)
   useEffect(() => {
@@ -764,7 +771,7 @@ export default function Player() {
         >
           {mounted && (
             <ReactPlayer
-              key={`${currentMediaId}-${providerRetryKey}`}
+              key={`${room?.generation ?? "legacy"}-${room?.mediaRun ?? 0}-${currentMediaId}-${providerRetryKey}`}
               ref={playerRef}
               src={currentMedia.url}
               width="100%"

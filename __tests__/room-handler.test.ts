@@ -986,7 +986,12 @@ describe("Room Handler Security & Auth Boundary", () => {
     await socketEventHandlers["command"]({
       roomId,
       type: "play",
-      payload: { position: 44, forceSeek: true },
+      payload: {
+        position: 44,
+        forceSeek: true,
+        mediaRun: storedRoom.mediaRun ?? 0,
+        roomGeneration: storedRoom.generation,
+      },
       sequence: 2,
     });
 

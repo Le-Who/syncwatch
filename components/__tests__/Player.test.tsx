@@ -12,6 +12,7 @@ import {
   type PlayerEventHandlers,
 } from "./player-test-harness";
 import { roomSocketService } from "@/lib/socket";
+import { roomWithParticipants } from "../../__tests__/helpers/room-fixtures";
 
 const providerCallbacks = vi.hoisted(
   () => new Map<string, Record<string, (...args: any[]) => void>>(),
@@ -133,6 +134,39 @@ describe("Player Component", () => {
     render(<Player />);
     expect(screen.getByText(/Awaiting Signal/i)).toBeInTheDocument();
   });
+  it.each(["mediaRun", "generation"])(
+    "recreates the same-media provider on a new %s so metadata/readiness can recover",
+    (field) => {
+      const room = roomWithParticipants(1);
+      room.currentMediaId = "a";
+      room.playlist = [
+        {
+          id: "a",
+          url: "https://example.com/a.mp4",
+          provider: "file",
+          title: "A",
+          duration: 120,
+          addedBy: "p0",
+        },
+      ];
+      const state = {
+        room,
+        participantId: "p0",
+        sendCommand: mockSendCommand,
+        serverClockOffset: 0,
+        isConnected: true,
+      };
+      mockStoreState(state);
+      const view = render(<Player />);
+      const original = screen.getByTestId("mock-react-player");
+      if (field === "mediaRun") room.mediaRun = 1;
+      else room.generation = "restored";
+      mockStoreState(state);
+      view.rerender(<Player />);
+      expect(screen.getByTestId("mock-react-player")).not.toBe(original);
+      view.unmount();
+    },
+  );
 
   it("should render the player when media is present", () => {
     mockStoreState({
@@ -312,6 +346,9 @@ describe("Player Component", () => {
       "https://example.com/video.mp4",
     );
     act(() => staleCallbacks?.onError?.(new Error("unavailable")));
+    expect(
+      screen.getByText(/Could not play “Unavailable video”/),
+    ).toBeVisible();
 
     expect(screen.getByRole("button", { name: /retry video/i })).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: /retry video/i }));
@@ -326,6 +363,7 @@ describe("Player Component", () => {
     act(() => {
       staleCallbacks?.onWaiting?.();
       staleCallbacks?.onPause?.();
+      staleCallbacks?.onPlay?.();
       staleCallbacks?.onError?.(new Error("stale unavailable"));
     });
 
@@ -688,55 +726,65 @@ describe("Player Component", () => {
     },
   );
 
-  it("cancels a YouTube pause when native play resumes before React commits", () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(10_000);
-    const mediaId = "00000000-0000-4000-8000-000000000001";
-    const url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
-    mockStoreState({
-      room: {
-        currentMediaId: mediaId,
-        sequence: 41,
-        leaderId: null,
-        playlist: [
-          { id: mediaId, url, provider: "youtube", title: "Shared video" },
-        ],
-        settings: { autoplayNext: true, looping: false },
-        playback: {
-          status: "playing",
-          basePosition: 0,
-          baseTimestamp: 10_000,
-          rate: 1,
-          updatedBy: "user2",
+  it.each([0, 200])(
+    "treats native play %sms after pause as genuine same-provider resume",
+    (delay) => {
+      vi.useFakeTimers();
+      vi.setSystemTime(10_000);
+      const mediaId = "00000000-0000-4000-8000-000000000001";
+      const url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
+      mockStoreState({
+        room: {
+          currentMediaId: mediaId,
+          sequence: 41,
+          leaderId: null,
+          playlist: [
+            { id: mediaId, url, provider: "youtube", title: "Shared video" },
+          ],
+          settings: { autoplayNext: true, looping: false },
+          playback: {
+            status: "playing",
+            basePosition: 0,
+            baseTimestamp: 10_000,
+            rate: 1,
+            updatedBy: "user2",
+          },
+          participants: { user1: { id: "user1", role: "owner" } },
         },
-        participants: { user1: { id: "user1", role: "owner" } },
-      },
-      participantId: "user1",
-      sendCommand: mockSendCommand,
-      setLocalPlaybackHealth: vi.fn(),
-      serverClockOffset: 0,
-      occRollbackTick: 0,
-      isConnected: true,
-    });
-    const view = render(<Player />);
-    fireEvent.click(screen.getByText(/Initialize Stream Sync/i));
-    const callbacks = providerCallbacks.get(url);
-    act(() => callbacks?.onLoadedMetadata?.({ target: { duration: 120 } }));
-    act(() => vi.advanceTimersByTime(2_100));
-    mockSendCommand.mockClear();
+        participantId: "user1",
+        sendCommand: mockSendCommand,
+        setLocalPlaybackHealth: vi.fn(),
+        serverClockOffset: 0,
+        occRollbackTick: 0,
+        isConnected: true,
+      });
+      const view = render(<Player />);
+      fireEvent.click(screen.getByText(/Initialize Stream Sync/i));
+      const callbacks = providerCallbacks.get(url);
+      act(() => callbacks?.onLoadedMetadata?.({ target: { duration: 120 } }));
+      act(() => vi.advanceTimersByTime(2_100));
+      mockSendCommand.mockClear();
 
-    act(() => {
-      callbacks?.onPause?.();
-      callbacks?.onPlay?.();
-      vi.advanceTimersByTime(200);
-    });
+      act(() => {
+        callbacks?.onPause?.();
+        vi.advanceTimersByTime(delay);
+        callbacks?.onPlay?.();
+        vi.advanceTimersByTime(200);
+      });
 
-    expect(mockSendCommand).not.toHaveBeenCalledWith(
-      "pause",
-      expect.anything(),
-    );
-    view.unmount();
-  });
+      if (delay === 0)
+        expect(mockSendCommand).not.toHaveBeenCalledWith(
+          "pause",
+          expect.anything(),
+        );
+      else
+        expect(mockSendCommand.mock.calls.map((call) => call[0])).toEqual([
+          "pause",
+          "play",
+        ]);
+      view.unmount();
+    },
+  );
 
   it("ignores a delayed provider callback from the previous media epoch", () => {
     const mediaA = "00000000-0000-4000-8000-000000000001";
@@ -778,15 +826,18 @@ describe("Player Component", () => {
     };
     mockStoreState(state);
     const view = render(<Player />);
-    const staleWaiting = providerCallbacks.get(
+    const staleCallbacks = providerCallbacks.get(
       "https://www.youtube.com/watch?v=aaaaaaaaaaa",
-    )?.onWaiting;
+    );
 
     state.room.currentMediaId = mediaB;
     state.room.sequence = 13;
     view.rerender(<Player />);
     mockSendCommand.mockClear();
-    act(() => staleWaiting?.());
+    act(() => {
+      staleCallbacks?.onWaiting?.();
+      staleCallbacks?.onPlay?.();
+    });
 
     expect(mockSendCommand).not.toHaveBeenCalled();
     expect(screen.queryByText("Local buffering")).not.toBeInTheDocument();

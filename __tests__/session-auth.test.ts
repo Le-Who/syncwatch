@@ -88,7 +88,7 @@ describe("POST /api/auth/session", () => {
     expect(response.status).toBe(429);
     expect(checkRedisRateLimit).toHaveBeenCalledWith(
       "api:auth:unknown",
-      10,
+      1000,
       60_000,
     );
   });

@@ -19,6 +19,8 @@ export const commandSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("play"),
     payload: z.object({
+      roomGeneration: z.string().min(1).max(64),
+      mediaRun: z.number().int().nonnegative(),
       position: z.number().min(0),
       forceSeek: z.boolean().optional(),
       nonce: z.string().optional(),
@@ -27,6 +29,8 @@ export const commandSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("pause"),
     payload: z.object({
+      roomGeneration: z.string().min(1).max(64),
+      mediaRun: z.number().int().nonnegative(),
       position: z.number().min(0),
       nonce: z.string().optional(),
     }),
@@ -34,6 +38,8 @@ export const commandSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("seek"),
     payload: z.object({
+      roomGeneration: z.string().min(1).max(64),
+      mediaRun: z.number().int().nonnegative(),
       position: z.number().min(0),
       nonce: z.string().optional(),
     }),
@@ -48,6 +54,8 @@ export const commandSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("update_rate"),
     payload: z.object({
+      roomGeneration: z.string().min(1).max(64),
+      mediaRun: z.number().int().nonnegative(),
       rate: z.number().min(0.25).max(4.0),
       nonce: z.string().optional(),
     }),
@@ -55,6 +63,8 @@ export const commandSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("sync_correction"),
     payload: z.object({
+      roomGeneration: z.string().min(1).max(64),
+      mediaRun: z.number().int().nonnegative(),
       position: z.number().min(0),
       nonce: z.string().optional(),
     }),
@@ -116,6 +126,8 @@ export const commandSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("next"),
     payload: z.object({
+      roomGeneration: z.string().min(1).max(64),
+      mediaRun: z.number().int().nonnegative(),
       currentMediaId: z.string().uuid().nullable().optional(),
     }),
   }),
@@ -230,6 +242,10 @@ export const commandSchema = z.discriminatedUnion("type", [
   }),
   z.object({
     type: z.literal("video_ended"),
-    payload: z.any().optional(),
+    payload: z.object({
+      currentMediaId: z.string().uuid().nullable(),
+      roomGeneration: z.string().min(1).max(64),
+      mediaRun: z.number().int().nonnegative(),
+    }),
   }),
 ]);

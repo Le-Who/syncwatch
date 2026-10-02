@@ -33,8 +33,13 @@ export function usePlayerShortcuts({
       // Ignore if currently typing in an input
       const target = e.target as HTMLElement;
       if (
-        target.tagName === "INPUT" ||
-        target.tagName === "TEXTAREA" ||
+        e.defaultPrevented ||
+        e.ctrlKey ||
+        e.metaKey ||
+        e.altKey ||
+        target.closest?.(
+          "input, textarea, select, button, a, [role='button'], [role='slider'], [role='tab'], [contenteditable='true']",
+        ) ||
         target.isContentEditable
       ) {
         return;

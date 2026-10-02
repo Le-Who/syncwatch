@@ -8,6 +8,73 @@ import type { PlayerMethods } from "../../lib/types";
 import { roomWithParticipants } from "../../__tests__/helpers/room-fixtures";
 
 describe("usePlaybackSync", () => {
+  it("reconciles a lower-sequence restored generation for the same media after reconnect", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(18000);
+    const room = roomWithParticipants(1);
+    room.currentMediaId = "a";
+    room.sequence = 100;
+    room.generation = "old";
+    room.playback = {
+      ...room.playback,
+      status: "playing",
+      basePosition: 10,
+      baseTimestamp: 18000,
+    };
+    useStore.setState({
+      room,
+      isConnected: true,
+      connectionEpoch: 0,
+      canonicalDeliveryVersion: 1,
+      serverClockOffset: 0,
+    });
+    const healthController = new PlaybackHealthController();
+    healthController.set("ready");
+    const intentManager = new PlaybackIntentManager();
+    const seek = vi.fn();
+    const setPlaying = vi.fn();
+    const view = renderHook(() =>
+      usePlaybackSync({
+        realPlayerRef: { current: null },
+        playerRef: { current: null },
+        getAccurateTime: () => 10,
+        getPlaying: () => true,
+        setPlaying,
+        getIsReady: () => true,
+        getSeeking: () => false,
+        getIsConnected: () => useStore.getState().isConnected,
+        getConnectionEpoch: () => useStore.getState().connectionEpoch,
+        getConnectionDeliveryFloor: () =>
+          useStore.getState().connectionDeliveryFloor,
+        getCanonicalDeliveryVersion: () =>
+          useStore.getState().canonicalDeliveryVersion,
+        intentManager,
+        healthController,
+        performProgrammaticSeek: seek,
+        getCurrentMedia: () => ({ provider: "raw" }),
+        getDuration: () => 120,
+      }),
+    );
+    await act(() => vi.advanceTimersByTimeAsync(500));
+    useStore.setState({
+      connectionEpoch: 1,
+      connectionDeliveryFloor: 1,
+      canonicalDeliveryVersion: 2,
+      room: {
+        ...room,
+        generation: "restored",
+        sequence: 12,
+        playback: { ...room.playback, status: "paused", basePosition: 50 },
+      },
+    });
+    await act(() => vi.advanceTimersByTimeAsync(2500));
+    expect(seek).toHaveBeenLastCalledWith(50, true);
+    expect(setPlaying).toHaveBeenLastCalledWith(false);
+    expect(healthController.needsReconciliation()).toBe(false);
+    view.unmount();
+    healthController.dispose();
+    intentManager.dispose();
+  });
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(18_000);

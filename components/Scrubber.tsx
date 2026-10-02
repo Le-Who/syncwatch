@@ -1,5 +1,4 @@
 import React, { useEffect, useRef, useState } from "react";
-import { useStore } from "@/lib/store";
 import { formatTime } from "@/lib/utils";
 import { PlayerMethods } from "@/lib/types";
 
@@ -19,6 +18,7 @@ export function Scrubber({
   onSeekEnd,
 }: ScrubberProps) {
   const progressBarRef = useRef<HTMLDivElement>(null);
+  const sliderRef = useRef<HTMLDivElement>(null);
   const timeDisplayRef = useRef<HTMLSpanElement>(null);
   const hoverBadgeRef = useRef<HTMLDivElement>(null);
 
@@ -59,9 +59,20 @@ export function Scrubber({
           }
           // P5 Fix: Only call formatTime when the floored second changes (~1/s vs 60/s)
           const flooredSecond = Math.floor(currentTime);
-          if (timeDisplayRef.current && flooredSecond !== lastFormattedSecondRef.current) {
+          if (
+            timeDisplayRef.current &&
+            flooredSecond !== lastFormattedSecondRef.current
+          ) {
             lastFormattedSecondRef.current = flooredSecond;
             timeDisplayRef.current.innerText = formatTime(flooredSecond);
+            sliderRef.current?.setAttribute(
+              "aria-valuenow",
+              String(Math.max(0, Math.min(duration, currentTime))),
+            );
+            sliderRef.current?.setAttribute(
+              "aria-valuetext",
+              `${formatTime(flooredSecond)} of ${formatTime(duration)}`,
+            );
           }
         });
       }
@@ -79,6 +90,7 @@ export function Scrubber({
 
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!canControl || duration === 0) return;
+    e.currentTarget.focus();
     setIsScrubbing(true);
     onSeekStart();
     updateScrubPosition(e.clientX);
@@ -157,7 +169,43 @@ export function Scrubber({
 
       <div
         id="progress-bar-container"
-        className="group relative flex flex-1 cursor-pointer items-center"
+        ref={sliderRef}
+        role="slider"
+        aria-label="Playback position"
+        aria-valuemin={0}
+        aria-valuemax={duration}
+        aria-valuenow={0}
+        aria-disabled={!canControl || duration <= 0}
+        tabIndex={canControl && duration > 0 ? 0 : -1}
+        className="group focus-visible:outline-theme-accent relative flex flex-1 cursor-pointer items-center rounded-full focus-visible:outline-2 focus-visible:outline-offset-4"
+        onKeyDown={(event) => {
+          if (!canControl || duration <= 0) return;
+          const current =
+            playerRef.current?.getCurrentTime?.() ??
+            playerRef.current?.currentTime ??
+            0;
+          const steps: Record<string, number> = {
+            ArrowLeft: -5,
+            ArrowDown: -5,
+            ArrowRight: 5,
+            ArrowUp: 5,
+            PageDown: -10,
+            PageUp: 10,
+          };
+          const target =
+            event.key === "Home"
+              ? 0
+              : event.key === "End"
+                ? duration
+                : event.key in steps
+                  ? current + steps[event.key]
+                  : null;
+          if (target === null) return;
+          event.preventDefault();
+          event.stopPropagation();
+          onSeekStart();
+          onSeekEnd(Math.max(0, Math.min(duration, target)) / duration);
+        }}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMoveHover}
         onPointerLeave={handlePointerLeaveHover}
@@ -168,7 +216,10 @@ export function Scrubber({
           <div
             ref={progressBarRef}
             className="from-theme-accent/80 to-theme-accent absolute top-0 left-0 h-full rounded-r-full bg-linear-to-r shadow-[0_0_12px_var(--color-theme-accent)] transition-transform duration-75"
-            style={{ width: "0%", transition: isScrubbing ? "none" : "width 100ms linear" }}
+            style={{
+              width: "0%",
+              transition: isScrubbing ? "none" : "width 100ms linear",
+            }}
           />
         </div>
 

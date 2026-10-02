@@ -73,7 +73,19 @@ const forcePersistRoom = async (
       ),
       p_state: {
         name: room.name,
+        mediaRun: room.mediaRun ?? 0,
+        sequence: room.sequence,
+        nextMediaId: room.nextMediaId ?? null,
+        shufflePlayedIds: room.shufflePlayedIds ?? [],
         settings,
+        participantRoles: Object.values(room.participants).map(
+          ({ id, nickname, role, joinedAt }) => ({
+            id,
+            nickname,
+            role,
+            joinedAt,
+          }),
+        ),
         chat: room.chat ?? [],
         leaderId: room.leaderId,
         flashbacks: room.flashbacks ?? {},
@@ -89,7 +101,6 @@ const forcePersistRoom = async (
           startPosition: item.startPosition || 0,
           aspectRatio: item.aspectRatio,
           isTemporary: item.isTemporary,
-          readyParticipants: item.readyParticipants,
           position: index,
           lastPosition: item.lastPosition || 0,
           thumbnail: item.thumbnail,
@@ -101,6 +112,7 @@ const forcePersistRoom = async (
           baseTimestamp: room.playback.baseTimestamp,
           rate: room.playback.rate,
           updatedBy: room.playback.updatedBy,
+          lastActionNonce: room.playback.lastActionNonce,
         },
         version: room.version,
       },
@@ -154,6 +166,9 @@ export async function loadRoomFromDB(
 
     return normalizeRoomState({
       id: roomId,
+      // A recovered snapshot begins a new cache authority, not a new identity.
+      // The winning CAS stores this value; normalization never regenerates it.
+      generation: crypto.randomUUID(),
       name: dbState.name || `Room ${roomId}`,
       settings: {
         autoplayNext: true,
@@ -161,24 +176,60 @@ export async function loadRoomFromDB(
         shuffle: false,
         ...dbSettings,
       },
-      participants: {},
-      playlist: Array.isArray(dbState.playlist) ? dbState.playlist : [],
+      participants: Object.fromEntries(
+        (Array.isArray(dbState.participantRoles)
+          ? dbState.participantRoles
+          : []
+        )
+          .filter(
+            (p: any) =>
+              typeof p.id === "string" &&
+              ["owner", "moderator", "viewer"].includes(p.role),
+          )
+          .map((p: any) => [
+            p.id,
+            {
+              id: p.id,
+              nickname:
+                typeof p.nickname === "string"
+                  ? p.nickname
+                  : "Returning friend",
+              role: p.role,
+              joinedAt: typeof p.joinedAt === "number" ? p.joinedAt : 0,
+              lastSeen: Date.now(),
+              connection: "reconnecting",
+              connectionIds: [],
+              playbackHealth: "idle",
+              readyMediaId: null,
+              ready: false,
+            },
+          ]),
+      ),
+      playlist: Array.isArray(dbState.playlist)
+        ? dbState.playlist.map(
+            ({ readyParticipants: _readiness, ...item }: any) => item,
+          )
+        : [],
       chat: Array.isArray(dbState.chat) ? dbState.chat : [],
       currentMediaId: dbState.playback?.mediaItemId || null,
-      leaderId: dbState.leaderId || null,
+      mediaRun: dbState.mediaRun ?? 0,
+      nextMediaId: dbState.nextMediaId ?? null,
+      shufflePlayedIds: dbState.shufflePlayedIds ?? [],
+      leaderId: null,
       playback: {
         status: dbState.playback?.status || "paused",
         basePosition: dbState.playback?.basePosition || 0,
         baseTimestamp: dbState.playback?.baseTimestamp || Date.now(),
         rate: dbState.playback?.rate || 1,
         updatedBy: dbState.playback?.updatedBy || "system",
+        lastActionNonce: dbState.playback?.lastActionNonce,
       },
       flashbacks:
         dbState.flashbacks && typeof dbState.flashbacks === "object"
           ? dbState.flashbacks
           : {},
       version: dbState.version || 1,
-      sequence: 1,
+      sequence: dbState.sequence ?? dbState.version ?? 1,
       lastActivity: Date.now(),
     });
   } catch (err) {

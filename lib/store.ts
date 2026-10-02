@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { roomSocketService } from "./socket";
 import { toast } from "sonner";
-import type { RoomEvent } from "./room-events";
+import type { CanonicalPlayback, RoomEvent } from "./room-events";
 import type { PlaybackHealth, RoomState } from "./types";
 import type { CommandAcknowledgement } from "./room-command-contract";
 import { reduceCanonicalRoomEvent } from "./room-event-reducer";
@@ -47,6 +47,8 @@ interface AppState {
   nickname: string;
   commandSequence: number;
   canonicalDeliveryVersion: number;
+  fullRoomSequence?: number;
+  pendingPlayback?: CanonicalPlayback;
   clockSyncReady: boolean;
   occRollbackTick: number;
   isResyncing: boolean;
@@ -141,12 +143,6 @@ function handleRoomEvent(event: RoomEvent) {
       if (state.room?.id === event.room.id) {
         roomStateRefreshInFlight = false;
       }
-      if (
-        state.room?.id === event.room.id &&
-        event.room.sequence < state.room.sequence
-      ) {
-        return;
-      }
       let newOffset = state.serverClockOffset;
       if (!state.clockSyncReady) {
         newOffset = event.serverTime - Date.now();
@@ -155,38 +151,48 @@ function handleRoomEvent(event: RoomEvent) {
         {
           room: state.room ?? event.room,
           deliveryVersion: state.canonicalDeliveryVersion,
+          fullSequence: state.fullRoomSequence,
+          pendingPlayback: state.pendingPlayback,
         },
         event,
       );
       useStore.setState({
         room: reduced.room,
         serverClockOffset: newOffset,
-        commandSequence: event.room.sequence,
+        commandSequence:
+          state.room &&
+          (state.room.generation ?? "legacy") !==
+            (reduced.room.generation ?? "legacy")
+            ? reduced.room.sequence
+            : Math.max(state.commandSequence, reduced.room.sequence),
         clockSyncReady: true,
         canonicalDeliveryVersion: reduced.deliveryVersion,
+        fullRoomSequence: reduced.fullSequence,
+        pendingPlayback: reduced.pendingPlayback,
       });
       return;
     }
     case "playback_updated": {
       if (!state.room) return;
-      const playback = event.playback;
-      if (
-        playback.mediaItemId !== state.room.currentMediaId ||
-        playback.sequence <= state.room.sequence
-      ) {
-        return;
-      }
       const reduced = reduceCanonicalRoomEvent(
         {
           room: state.room,
           deliveryVersion: state.canonicalDeliveryVersion,
+          fullSequence: state.fullRoomSequence,
+          pendingPlayback: state.pendingPlayback,
         },
         event,
       );
       useStore.setState({
         room: reduced.room,
         canonicalDeliveryVersion: reduced.deliveryVersion,
+        fullRoomSequence: reduced.fullSequence,
+        pendingPlayback: reduced.pendingPlayback,
       });
+      if (reduced.pendingPlayback && !roomStateRefreshInFlight) {
+        roomStateRefreshInFlight = true;
+        roomSocketService.requestRoomState(state.room.id);
+      }
       return;
     }
     case "participant_joined":
@@ -491,7 +497,12 @@ export const useStore = create<AppState>((set, get) => ({
   },
   disconnect: () => {
     roomSocketService.disconnect();
-    set({ isConnected: false, room: null });
+    set({
+      isConnected: false,
+      room: null,
+      fullRoomSequence: undefined,
+      pendingPlayback: undefined,
+    });
   },
   sendCommand: (type: string, payload?: any) => {
     const state = get();
@@ -508,7 +519,21 @@ export const useStore = create<AppState>((set, get) => ({
       state.room.id,
       newSequence,
       type,
-      payload,
+      [
+        "play",
+        "pause",
+        "seek",
+        "update_rate",
+        "sync_correction",
+        "next",
+        "video_ended",
+      ].includes(type)
+        ? {
+            ...payload,
+            mediaRun: state.room.mediaRun ?? 0,
+            roomGeneration: state.room.generation ?? "legacy",
+          }
+        : payload,
       state.participantId,
     );
   },

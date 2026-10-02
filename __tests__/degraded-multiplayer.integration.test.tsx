@@ -448,7 +448,14 @@ async function runScenario(
     if (["play", "pause", "seek", "video_ended"].includes(type)) {
       escapedPlaybackCommands.push(type);
     }
-    const command = { type, payload } as RoomCommand;
+    const command = {
+      type,
+      payload: {
+        ...payload,
+        mediaRun: useStore.getState().room?.mediaRun ?? 0,
+        roomGeneration: useStore.getState().room?.generation ?? "legacy",
+      },
+    } as RoomCommand;
     pendingCommands.push(
       (async () => {
         if (scenario === "delayed-pause-ack" && type === "pause") {

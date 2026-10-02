@@ -27,6 +27,7 @@ export function roomWithParticipants(
   } = {},
 ): RoomState {
   const room = createEmptyRoom("room-test", "Test Room");
+  room.generation = "legacy";
   const ownerId = options.ownerId ?? "p0";
   room.participants = Object.fromEntries(
     Array.from({ length: participantCount }, (_, index) => {

@@ -376,7 +376,7 @@ describe("SyncTube parity room mutations", () => {
     expect(room.playback.basePosition).toBe(60);
   });
 
-  it("allows viewer playback selection when no leader is active", () => {
+  it("reserves direct queue selection for owners and moderators even without a leader", () => {
     const room = roomFixture();
 
     expect(
@@ -387,8 +387,8 @@ describe("SyncTube parity room mutations", () => {
         "viewer",
         "Viewer",
       ),
-    ).toBe(true);
-    expect(room.currentMediaId).toBe(ids.two);
+    ).toBe(false);
+    expect(room.currentMediaId).toBe(ids.one);
 
     expect(
       applySlowCommand(room, "set_media", { itemId: ids.three }, "mod", "Mod"),

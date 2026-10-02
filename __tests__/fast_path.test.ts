@@ -111,7 +111,7 @@ describe("Fast-Path OCC Logic", () => {
     const result = await executeFastMutation(
       roomId,
       "play",
-      { position: 50 },
+      { roomGeneration: "legacy", mediaRun: 0, position: 50 },
       "u1",
     );
 
@@ -128,7 +128,12 @@ describe("Fast-Path OCC Logic", () => {
     const result = await executeFastMutation(
       roomId,
       "buffering",
-      { position: 99, nonce: randomUUID() },
+      {
+        roomGeneration: "legacy",
+        mediaRun: 0,
+        position: 99,
+        nonce: randomUUID(),
+      },
       "u1",
     );
 
@@ -143,7 +148,7 @@ describe("Fast-Path OCC Logic", () => {
     const result = await executeFastMutation(
       roomId,
       "play",
-      { position: 100 },
+      { roomGeneration: "legacy", mediaRun: 0, position: 100 },
       "unknown_user",
     );
 
@@ -155,7 +160,7 @@ describe("Fast-Path OCC Logic", () => {
     const viewerResult = await executeFastMutation(
       roomId,
       "play",
-      { position: 12 },
+      { roomGeneration: "legacy", mediaRun: 0, position: 12 },
       "u2",
     );
 
@@ -182,7 +187,7 @@ describe("Fast-Path OCC Logic", () => {
     const result = await executeFastMutation(
       roomId,
       "play",
-      { position: 12 },
+      { roomGeneration: "legacy", mediaRun: 0, position: 12 },
       "u2",
     );
 
@@ -229,7 +234,7 @@ describe("Fast-Path OCC Logic", () => {
     const otherViewerResult = await executeFastMutation(
       roomId,
       "play",
-      { position: 12 },
+      { roomGeneration: "legacy", mediaRun: 0, position: 12 },
       "u4",
     );
 
@@ -239,7 +244,7 @@ describe("Fast-Path OCC Logic", () => {
     const leaderResult = await executeFastMutation(
       roomId,
       "play",
-      { position: 12 },
+      { roomGeneration: "legacy", mediaRun: 0, position: 12 },
       "u2",
     );
 
@@ -248,7 +253,7 @@ describe("Fast-Path OCC Logic", () => {
     const moderatorResult = await executeFastMutation(
       roomId,
       "play",
-      { position: 13, forceSeek: true },
+      { roomGeneration: "legacy", mediaRun: 0, position: 13, forceSeek: true },
       "u3",
     );
 
@@ -278,7 +283,12 @@ describe("Fast-Path OCC Logic", () => {
     const result = await executeFastMutation(
       roomId,
       "play",
-      { position: 12, nonce: randomUUID() },
+      {
+        roomGeneration: "legacy",
+        mediaRun: 0,
+        position: 12,
+        nonce: randomUUID(),
+      },
       "u2",
     );
 
@@ -307,7 +317,12 @@ describe("Fast-Path OCC Logic", () => {
     const result = await executeFastMutation(
       roomId,
       "play",
-      { position: 23, nonce: randomUUID() },
+      {
+        roomGeneration: "legacy",
+        mediaRun: 0,
+        position: 23,
+        nonce: randomUUID(),
+      },
       "u3",
     );
 
@@ -325,7 +340,12 @@ describe("Fast-Path OCC Logic", () => {
       roomId,
       {
         type: "play",
-        payload: { position: 31, nonce: randomUUID() },
+        payload: {
+          roomGeneration: "legacy",
+          mediaRun: 0,
+          position: 31,
+          nonce: randomUUID(),
+        },
       },
       room.participants.u3,
     );
@@ -336,12 +356,17 @@ describe("Fast-Path OCC Logic", () => {
   });
 
   it("TC-Fast-3: Should handle pause mutation correctly", async () => {
-    await executeFastMutation(roomId, "play", { position: 70 }, "u1");
+    await executeFastMutation(
+      roomId,
+      "play",
+      { roomGeneration: "legacy", mediaRun: 0, position: 70 },
+      "u1",
+    );
 
     const result = await executeFastMutation(
       roomId,
       "pause",
-      { position: 75 },
+      { roomGeneration: "legacy", mediaRun: 0, position: 75 },
       "u1",
     );
 
@@ -353,13 +378,18 @@ describe("Fast-Path OCC Logic", () => {
 
   it("TC-Fast-4: Should handle sync_correction with nonce", async () => {
     // First set to playing
-    await executeFastMutation(roomId, "play", { position: 0 }, "u1");
+    await executeFastMutation(
+      roomId,
+      "play",
+      { roomGeneration: "legacy", mediaRun: 0, position: 0 },
+      "u1",
+    );
 
     const nonce = "test-nonce-123";
     const result = await executeFastMutation(
       roomId,
       "sync_correction",
-      { position: 42, nonce },
+      { roomGeneration: "legacy", mediaRun: 0, position: 42, nonce },
       "u1",
     );
 
@@ -373,7 +403,12 @@ describe("Fast-Path OCC Logic", () => {
     const result = await executeFastMutation(
       roomId,
       "sync_correction",
-      { position: 21, nonce: randomUUID() },
+      {
+        roomGeneration: "legacy",
+        mediaRun: 0,
+        position: 21,
+        nonce: randomUUID(),
+      },
       "u2",
     );
 
@@ -383,12 +418,17 @@ describe("Fast-Path OCC Logic", () => {
 
   it("TC-Fast-5: Should return NO_CHANGE when pausing an already-paused room", async () => {
     // Ensure paused first
-    await executeFastMutation(roomId, "pause", { position: 10 }, "u1");
+    await executeFastMutation(
+      roomId,
+      "pause",
+      { roomGeneration: "legacy", mediaRun: 0, position: 10 },
+      "u1",
+    );
 
     const result = await executeFastMutation(
       roomId,
       "pause",
-      { position: 20 },
+      { roomGeneration: "legacy", mediaRun: 0, position: 20 },
       "u1",
     );
 
@@ -402,13 +442,13 @@ describe("Fast-Path OCC Logic", () => {
     const first = await executeFastMutation(
       roomId,
       "seek",
-      { position: 17, nonce },
+      { roomGeneration: "legacy", mediaRun: 0, position: 17, nonce },
       "u1",
     );
     const second = await executeFastMutation(
       roomId,
       "seek",
-      { position: 99, nonce },
+      { roomGeneration: "legacy", mediaRun: 0, position: 99, nonce },
       "u1",
     );
 

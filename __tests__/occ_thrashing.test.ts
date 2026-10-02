@@ -78,7 +78,14 @@ describe("OCC Thrashing Simulation (Phase 1)", () => {
   it("should handle 100 concurrent fast-path mutations via Lua without deadlocking", async () => {
     const intents: Promise<any>[] = [];
     for (let i = 0; i < 100; i++) {
-      intents.push(executeFastMutation(roomId, "seek", { position: i }, "u1"));
+      intents.push(
+        executeFastMutation(
+          roomId,
+          "seek",
+          { position: i, mediaRun: 0, roomGeneration: "legacy" },
+          "u1",
+        ),
+      );
     }
     const results = await Promise.all(intents);
 

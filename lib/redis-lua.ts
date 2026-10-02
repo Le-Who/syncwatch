@@ -57,6 +57,10 @@ const LUA_FAST_MUTATION = `
 
   local changed = false
 
+  if mutation_type ~= "buffering" and (mutation_payload.mediaRun ~= (room.mediaRun or 0) or mutation_payload.roomGeneration ~= (room.generation or "legacy")) then
+    return "STALE_MEDIA"
+  end
+
   if mutation_type == "buffering" then
      -- Compatibility input only. Provider stalls never mutate room playback.
   elseif mutation_type == "play" or mutation_type == "seek" then

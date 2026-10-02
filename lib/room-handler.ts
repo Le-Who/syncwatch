@@ -15,6 +15,7 @@ import { persistRoomState } from "./db-sync";
 export function createEmptyRoom(id: string, name: string): RoomState {
   return normalizeRoomState({
     id,
+    generation: crypto.randomUUID(),
     name,
     settings: {
       autoplayNext: true,

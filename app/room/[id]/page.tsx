@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { useStore } from "@/lib/store";
@@ -41,6 +41,8 @@ export default function RoomPage() {
   const [isJoining, setIsJoining] = useState(true);
   const [tempName, setTempName] = useState("");
   const [copied, setCopied] = useState(false);
+  const [manualInviteLink, setManualInviteLink] = useState<string | null>(null);
+  const renameButtonRef = useRef<HTMLButtonElement>(null);
   const [activeTab, setActiveTab] = useState<
     "playlist" | "chat" | "participants"
   >("playlist");
@@ -75,11 +77,17 @@ export default function RoomPage() {
     }
   };
 
-  const copyInviteLink = () => {
+  const copyInviteLink = async () => {
     const url = `${window.location.origin}/room/${roomId}`;
-    navigator.clipboard.writeText(url);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      await navigator.clipboard.writeText(url);
+      setManualInviteLink(null);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setCopied(false);
+      setManualInviteLink(url);
+    }
   };
 
   const participant = room?.participants[participantId!];
@@ -91,6 +99,7 @@ export default function RoomPage() {
       sendCommand("update_room_name", { name: editRoomName.trim() });
     }
     setIsEditingRoomName(false);
+    requestAnimationFrame(() => renameButtonRef.current?.focus());
   };
 
   if (isJoining) {
@@ -196,6 +205,7 @@ export default function RoomPage() {
               </span>
               {isEditingRoomName ? (
                 <input
+                  aria-label="Room name"
                   value={editRoomName}
                   onChange={(e) => setEditRoomName(e.target.value)}
                   onBlur={handleRoomNameSubmit}
@@ -204,21 +214,27 @@ export default function RoomPage() {
                   className="text-theme-text border-theme-accent w-full max-w-[150px] truncate border-b-2 bg-transparent font-bold tracking-wide uppercase focus:outline-none sm:max-w-xs"
                 />
               ) : (
-                <h2
-                  className={`text-theme-text max-w-[150px] truncate font-bold tracking-wide uppercase sm:max-w-xs ${
-                    canEditRoom
-                      ? "hover:text-theme-accent cursor-pointer transition-colors"
-                      : ""
-                  }`}
-                  onClick={() => {
-                    if (canEditRoom) {
-                      setEditRoomName(room.name);
-                      setIsEditingRoomName(true);
-                    }
-                  }}
-                  title={canEditRoom ? "Click to rename room" : ""}
-                >
-                  {room.name}
+                <h2>
+                  <button
+                    ref={renameButtonRef}
+                    type="button"
+                    disabled={!canEditRoom}
+                    aria-label={canEditRoom ? "Rename room" : undefined}
+                    className={`text-theme-text focus-visible:outline-theme-accent max-w-[150px] truncate font-bold tracking-wide uppercase focus-visible:outline-2 focus-visible:outline-offset-4 sm:max-w-xs ${
+                      canEditRoom
+                        ? "hover:text-theme-accent cursor-pointer transition-colors"
+                        : ""
+                    }`}
+                    onClick={() => {
+                      if (canEditRoom) {
+                        setEditRoomName(room.name);
+                        setIsEditingRoomName(true);
+                      }
+                    }}
+                    title={canEditRoom ? "Click to rename room" : ""}
+                  >
+                    {room.name}
+                  </button>
                 </h2>
               )}
             </div>
@@ -250,6 +266,21 @@ export default function RoomPage() {
             </button>
           </div>
         </header>
+        {manualInviteLink && (
+          <div className="bg-theme-card px-4 py-2" role="status">
+            <label>
+              Copy this invite link manually:
+              <input
+                aria-label="Invite link"
+                value={manualInviteLink}
+                readOnly
+                autoFocus
+                onFocus={(event) => event.currentTarget.select()}
+                className="ml-2 w-full max-w-xl border p-2"
+              />
+            </label>
+          </div>
+        )}
 
         {/* Main Content */}
         <div className="relative mt-1 flex flex-1 flex-col overflow-hidden bg-transparent lg:flex-row">
@@ -285,7 +316,7 @@ export default function RoomPage() {
               <div className="border-theme-border flex shrink-0 border-b-2">
                 <button
                   onClick={() => setActiveTab("playlist")}
-                  className={`flex flex-1 items-center justify-center space-x-2 px-4 py-4 text-xs font-bold tracking-[0.15em] uppercase transition-all outline-none ${
+                  className={`focus-visible:ring-theme-text flex flex-1 items-center justify-center space-x-2 px-4 py-4 text-xs font-bold tracking-[0.15em] uppercase transition-all outline-none focus-visible:ring-2 focus-visible:ring-inset ${
                     activeTab === "playlist"
                       ? "bg-theme-accent text-theme-bg shadow-inner"
                       : "text-theme-muted hover:text-theme-accent hover:bg-theme-border/10"
@@ -297,7 +328,7 @@ export default function RoomPage() {
                 <div className="bg-theme-border w-0.5" />
                 <button
                   onClick={() => setActiveTab("chat")}
-                  className={`flex flex-1 items-center justify-center space-x-2 px-4 py-4 text-xs font-bold tracking-[0.15em] uppercase transition-all outline-none ${
+                  className={`focus-visible:ring-theme-text flex flex-1 items-center justify-center space-x-2 px-4 py-4 text-xs font-bold tracking-[0.15em] uppercase transition-all outline-none focus-visible:ring-2 focus-visible:ring-inset ${
                     activeTab === "chat"
                       ? "bg-theme-accent text-theme-bg shadow-inner"
                       : "text-theme-muted hover:text-theme-accent hover:bg-theme-border/10"
@@ -309,7 +340,7 @@ export default function RoomPage() {
                 <div className="bg-theme-border w-0.5" />
                 <button
                   onClick={() => setActiveTab("participants")}
-                  className={`flex flex-1 items-center justify-center space-x-2 px-4 py-4 text-xs font-bold tracking-[0.15em] uppercase transition-all outline-none ${
+                  className={`focus-visible:ring-theme-text flex flex-1 items-center justify-center space-x-2 px-4 py-4 text-xs font-bold tracking-[0.15em] uppercase transition-all outline-none focus-visible:ring-2 focus-visible:ring-inset ${
                     activeTab === "participants"
                       ? "bg-theme-accent text-theme-bg shadow-inner"
                       : "text-theme-muted hover:text-theme-accent hover:bg-theme-border/10"

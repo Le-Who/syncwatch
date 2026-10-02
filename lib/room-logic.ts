@@ -170,6 +170,7 @@ function saveFlashback(room: RoomState): void {
 function resetReadiness(room: RoomState): void {
   for (const participant of Object.values(room.participants)) {
     participant.ready = false;
+    participant.readyMediaId = null;
   }
 
   const currentItem = room.playlist.find((i) => i.id === room.currentMediaId);
@@ -327,6 +328,10 @@ export function applyRemoveItem(
 
   const initialLength = room.playlist.length;
   room.playlist = room.playlist.filter((item) => item.id !== payload.itemId);
+  if (room.nextMediaId === payload.itemId) room.nextMediaId = null;
+  room.shufflePlayedIds = room.shufflePlayedIds?.filter(
+    (id) => id !== payload.itemId,
+  );
   if (room.playlist.length >= initialLength) return false;
 
   if (room.currentMediaId === payload.itemId) {
@@ -376,15 +381,18 @@ export function applySetMedia(
   participantId: string,
   participantNickname: string,
 ): boolean {
-  const { canControlPlayback, canEditPlaylist } = getParticipantPermissions(
-    room,
-    participantId,
-  );
-  if (!canControlPlayback && !canEditPlaylist) return false;
+  const { canEditPlaylist } = getParticipantPermissions(room, participantId);
+  if (
+    !canEditPlaylist ||
+    !room.playlist.some((item) => item.id === payload.itemId)
+  )
+    return false;
 
   snapshotActiveItemPosition(room);
 
   room.currentMediaId = payload.itemId;
+  if (room.nextMediaId === payload.itemId) room.nextMediaId = null;
+  room.shufflePlayedIds = [payload.itemId];
   const targetItem = room.playlist.find((i) => i.id === payload.itemId);
   room.playback.status =
     room.playback.status === "playing" ? "playing" : "paused";
@@ -405,32 +413,62 @@ export function applyNext(
   if (!canControlPlayback) return false;
   if (payload.currentMediaId !== room.currentMediaId) return false;
 
+  return advanceQueue(room, false, participantNickname);
+}
+
+/** One queue policy for explicit Next and a successfully accepted natural end. */
+function advanceQueue(
+  room: RoomState,
+  natural: boolean,
+  actor: string,
+): boolean {
+  const currentId = room.currentMediaId;
+  const index = room.playlist.findIndex((item) => item.id === currentId);
+  const current = room.playlist[index];
+  if (!current) return false;
   snapshotActiveItemPosition(room);
-
-  const currentIndex = room.playlist.findIndex(
-    (i) => i.id === room.currentMediaId,
+  const following = room.playlist[index + 1];
+  const eligible = room.playlist.filter(
+    (item) => !current.isTemporary || item.id !== currentId,
   );
-
-  if (currentIndex !== -1 && currentIndex < room.playlist.length - 1) {
-    const nextItem = room.playlist[currentIndex + 1];
-    room.currentMediaId = nextItem.id;
-    room.playback.status = "playing";
-    room.playback.basePosition = clampStart(nextItem);
-    room.playback.baseTimestamp = Date.now();
-    room.playback.updatedBy = participantNickname;
-    resetReadiness(room);
-    return true;
-  } else if (room.settings.looping && room.playlist.length > 0) {
-    const loopItem = room.playlist[0];
-    room.currentMediaId = loopItem.id;
-    room.playback.status = "playing";
-    room.playback.basePosition = clampStart(loopItem);
-    room.playback.baseTimestamp = Date.now();
-    room.playback.updatedBy = participantNickname;
-    resetReadiness(room);
-    return true;
+  let played = (room.shufflePlayedIds ?? []).filter((id) =>
+    eligible.some((item) => item.id === id),
+  );
+  if (!played.includes(current.id)) played.push(current.id);
+  let next: PlaylistItem | undefined;
+  if (!natural || room.settings.autoplayNext) {
+    next = eligible.find((item) => item.id === room.nextMediaId);
+    if (!next && room.settings.shuffle) {
+      let remaining = eligible.filter((item) => !played.includes(item.id));
+      if (!remaining.length && room.settings.looping) {
+        played = [];
+        remaining = eligible.filter((item) => item.id !== currentId);
+        if (!remaining.length) remaining = eligible;
+      }
+      next = remaining[Math.floor(Math.random() * remaining.length)];
+    } else if (!next) {
+      next = following ?? (room.settings.looping ? eligible[0] : undefined);
+    }
   }
-  return false;
+  if (!next && !natural && !current.isTemporary) return false;
+  room.playlist = eligible;
+  room.shufflePlayedIds = played.filter((id) =>
+    eligible.some((item) => item.id === id),
+  );
+  if (next) {
+    room.nextMediaId = null;
+    room.currentMediaId = next.id;
+    room.playback.status = "playing";
+    room.playback.basePosition = clampStart(next);
+  } else {
+    room.currentMediaId = current.isTemporary ? null : currentId;
+    room.playback.status = "ended";
+    room.playback.basePosition = current.isTemporary ? 0 : current.duration;
+  }
+  room.playback.baseTimestamp = Date.now();
+  room.playback.updatedBy = actor;
+  resetReadiness(room);
+  return true;
 }
 
 export function applyClearPlaylist(
@@ -442,6 +480,8 @@ export function applyClearPlaylist(
 
   room.playlist = [];
   room.currentMediaId = null;
+  room.nextMediaId = null;
+  room.shufflePlayedIds = [];
   room.leaderId = null;
   room.flashbacks = {};
   room.playback.status = "paused";
@@ -483,45 +523,7 @@ export function applyVideoEnded(
   if (!canControlPlayback) return false;
   if (payload.currentMediaId !== room.currentMediaId) return false;
 
-  snapshotActiveItemPosition(room);
-  const activeItem = room.playlist.find((i) => i.id === room.currentMediaId);
-  const endedIndex = room.playlist.findIndex(
-    (i) => i.id === room.currentMediaId,
-  );
-
-  if (endedIndex !== -1 && endedIndex < room.playlist.length - 1) {
-    if (room.settings.autoplayNext) {
-      const nextItem = room.playlist[endedIndex + 1];
-      room.currentMediaId = nextItem.id;
-      room.playback.status = "playing";
-      room.playback.basePosition = clampStart(nextItem);
-      room.playback.baseTimestamp = Date.now();
-      room.playback.updatedBy = participantNickname;
-      resetReadiness(room);
-    } else {
-      room.playback.status = "paused";
-      room.playback.basePosition = activeItem?.duration || 0;
-      room.playback.baseTimestamp = Date.now();
-      room.playback.updatedBy = participantNickname;
-    }
-    return true;
-  } else if (room.settings.looping && room.playlist.length > 0) {
-    const loopItem = room.playlist[0];
-    room.currentMediaId = loopItem.id;
-    room.playback.status = "playing";
-    room.playback.basePosition = clampStart(loopItem);
-    room.playback.baseTimestamp = Date.now();
-    room.playback.updatedBy = participantNickname;
-    resetReadiness(room);
-    return true;
-  } else {
-    // End of playlist without looping
-    room.playback.status = "paused";
-    room.playback.basePosition = activeItem?.duration || 0;
-    room.playback.baseTimestamp = Date.now();
-    room.playback.updatedBy = participantNickname;
-    return true;
-  }
+  return advanceQueue(room, true, participantNickname);
 }
 
 export function applyUpdateDuration(room: RoomState, payload: any): boolean {
@@ -559,6 +561,7 @@ export function applySetNextItem(
     (i) => i.id === room.currentMediaId,
   );
   room.playlist.splice(newCurrentIndex + 1, 0, target);
+  room.nextMediaId = target.id;
   return true;
 }
 

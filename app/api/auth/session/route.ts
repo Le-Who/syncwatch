@@ -17,11 +17,6 @@ function sessionResponse(participantId: string, token: string) {
 }
 
 export async function POST(request: Request) {
-  const ip = getAppRouteClientIp(request.headers);
-  if (!(await checkRedisRateLimit(`api:auth:${ip}`, 10, 60_000))) {
-    return NextResponse.json({ error: "Too many requests" }, { status: 429 });
-  }
-
   try {
     const secret = getJwtSecret();
     const cookies = cookie.parse(request.headers.get("cookie") ?? "");
@@ -35,6 +30,20 @@ export async function POST(request: Request) {
       } catch {
         // Invalid session material is replaced without logging its contents.
       }
+    }
+
+    const ip = getAppRouteClientIp(request.headers);
+    if (!(await checkRedisRateLimit(`api:auth:${ip}`, 1000, 60_000))) {
+      return NextResponse.json(
+        {
+          error: "Too many new sessions. Retry in 60 seconds.",
+          retryAfterSeconds: 60,
+        },
+        {
+          status: 429,
+          headers: { "retry-after": "60", "cache-control": "no-store" },
+        },
+      );
     }
 
     const participantId = randomUUID();

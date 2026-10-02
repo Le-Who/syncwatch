@@ -22,6 +22,46 @@ export function handleConnectionEvents(
   context: SocketContext,
   eventBus: RoomEventBus,
 ) {
+  function scheduleGraceCleanup(roomId: string, participantId: string) {
+    setTimeout(() => {
+      void (async () => {
+        let cleanupRetries = 5;
+        while (cleanupRetries > 0) {
+          const room = await getRedisRoom(roomId);
+          if (!room) return;
+          const nextRoom = removeParticipantAfterGrace(
+            room,
+            participantId,
+            Date.now(),
+          );
+          if (nextRoom === room) return;
+
+          if (await setRedisRoomCAS(roomId, nextRoom, room.version)) {
+            persistRoomState(nextRoom, supabase);
+            const ownerId =
+              Object.values(nextRoom.participants).find(
+                (participant) => participant.role === "owner",
+              )?.id ?? null;
+            await eventBus
+              .publish(roomId, {
+                type: "participant_left",
+                participantId,
+                ownerId,
+              })
+              .catch((error) =>
+                console.error("Failed publishing departure", error),
+              );
+            return;
+          }
+
+          cleanupRetries--;
+          await new Promise((resolve) =>
+            setTimeout(resolve, 30 + Math.random() * 50),
+          );
+        }
+      })();
+    }, PARTICIPANT_GRACE_MS);
+  }
   socket.on("participant_health", async (payload: unknown) => {
     if (!context.currentRoomId || !context.currentParticipantId) return;
     if (!payload || typeof payload !== "object") return;
@@ -83,7 +123,7 @@ export function handleConnectionEvents(
     },
   );
 
-  socket.on("join_room", async ({ roomId, nickname }) => {
+  socket.on("join_room", async ({ roomId, nickname, snapshotRequestId }) => {
     if (await isSystemDegraded()) {
       socket.emit("error", { message: "System is degraded, try again later." });
       return;
@@ -93,7 +133,14 @@ export function handleConnectionEvents(
       socket.handshake.headers,
       socket.handshake.address || "unknown",
     );
-    if (!(await checkRedisRateLimit(`ws:join:${ip}`, 50, 60_000))) {
+    if (
+      !(await checkRedisRateLimit(
+        `ws:join:participant:${socket.data.participantId}`,
+        50,
+        60_000,
+      )) ||
+      !(await checkRedisRateLimit(`ws:join:${ip}`, 1000, 60_000))
+    ) {
       socket.emit("error", { message: "Too many join requests" });
       return;
     }
@@ -144,6 +191,13 @@ export function handleConnectionEvents(
       );
       if (success) {
         finalRoomState = nextRoom;
+        if (!roomWasCached) {
+          for (const p of Object.values(nextRoom.participants)) {
+            if (p.connection !== "connected")
+              scheduleGraceCleanup(roomId, p.id);
+          }
+        }
+        persistRoomState(nextRoom, supabase);
         const ownerIdsBefore = Object.values(room.participants)
           .filter((participant) => participant.role === "owner")
           .map((participant) => participant.id)
@@ -201,6 +255,10 @@ export function handleConnectionEvents(
     socket.emit("room_state", {
       room: sanitizedRoom,
       serverTime: Date.now(),
+      snapshotRequestId:
+        typeof snapshotRequestId === "string" && snapshotRequestId.length <= 64
+          ? snapshotRequestId
+          : undefined,
     });
 
     if (ownerRolesChanged) {
@@ -225,7 +283,7 @@ export function handleConnectionEvents(
       .catch((error) => console.error("Failed publishing join", error));
   });
 
-  socket.on("request_room_state", async ({ roomId }) => {
+  socket.on("request_room_state", async ({ roomId, snapshotRequestId }) => {
     if (
       typeof roomId !== "string" ||
       roomId !== context.currentRoomId ||
@@ -240,6 +298,10 @@ export function handleConnectionEvents(
     socket.emit("room_state", {
       room: sanitizeRoom(room),
       serverTime: Date.now(),
+      snapshotRequestId:
+        typeof snapshotRequestId === "string" && snapshotRequestId.length <= 64
+          ? snapshotRequestId
+          : undefined,
     });
   });
 
@@ -294,44 +356,7 @@ export function handleConnectionEvents(
       }
 
       if (!startGrace) return;
-      setTimeout(() => {
-        void (async () => {
-          let cleanupRetries = 5;
-          while (cleanupRetries > 0) {
-            const room = await getRedisRoom(roomId);
-            if (!room) return;
-            const nextRoom = removeParticipantAfterGrace(
-              room,
-              participantId,
-              Date.now(),
-            );
-            if (nextRoom === room) return;
-
-            if (await setRedisRoomCAS(roomId, nextRoom, room.version)) {
-              persistRoomState(nextRoom, supabase);
-              const ownerId =
-                Object.values(nextRoom.participants).find(
-                  (participant) => participant.role === "owner",
-                )?.id ?? null;
-              await eventBus
-                .publish(roomId, {
-                  type: "participant_left",
-                  participantId,
-                  ownerId,
-                })
-                .catch((error) =>
-                  console.error("Failed publishing departure", error),
-                );
-              return;
-            }
-
-            cleanupRetries--;
-            await new Promise((resolve) =>
-              setTimeout(resolve, 30 + Math.random() * 50),
-            );
-          }
-        })();
-      }, PARTICIPANT_GRACE_MS);
+      scheduleGraceCleanup(roomId, participantId);
     })();
   });
 }

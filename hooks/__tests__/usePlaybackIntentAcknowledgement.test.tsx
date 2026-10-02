@@ -5,6 +5,7 @@ import { PlaybackIntentManager } from "@/lib/playback-intent-manager";
 import { roomSocketService } from "@/lib/socket";
 import type { CommandAcknowledgement } from "@/lib/room-command-contract";
 import { usePlaybackIntentAcknowledgement } from "../usePlaybackIntentAcknowledgement";
+import { roomWithParticipants } from "../../__tests__/helpers/room-fixtures";
 
 const socketDouble = vi.hoisted(() => {
   const handlers = new Map<string, Set<(payload?: unknown) => void>>();
@@ -93,7 +94,12 @@ describe("usePlaybackIntentAcknowledgement", () => {
     socketDouble.reset();
     roomSocketService.connect("room-a", "Friend", "participant-1", null);
     manager = new PlaybackIntentManager();
-    useStore.setState({ lastCommandAcknowledgement: null });
+    useStore.setState({
+      lastCommandAcknowledgement: null,
+      room: { ...roomWithParticipants(1), currentMediaId: "media-1" },
+      fullRoomSequence: 1,
+      pendingPlayback: undefined,
+    });
     useStore.getState().init();
   });
 
@@ -118,6 +124,16 @@ describe("usePlaybackIntentAcknowledgement", () => {
     deliverAcknowledgement({ nonce: SLOW_NONCE, status: "applied" });
     expect(manager.isAwaitingServerAck()).toBe(false);
     expect(manager.getExpectedStatus("paused")).toBe("paused");
+  });
+
+  it("does not complete from a retired generation or different observed media", () => {
+    renderHook(() => usePlaybackIntentAcknowledgement(manager));
+    manager.markCommandEmitted("playing", 12, FAST_NONCE, "playback_update");
+    useStore.setState({
+      room: { ...useStore.getState().room!, generation: "new-cache" },
+    });
+    deliverPlaybackUpdate(FAST_NONCE);
+    expect(manager.isAwaitingServerAck()).toBe(true);
   });
 
   it("completes an ignored playback no-op from its correlated acknowledgement", () => {

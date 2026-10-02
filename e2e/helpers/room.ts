@@ -352,7 +352,24 @@ export async function sendCommandViaSession(
       nickname: client.nickname,
       participantId,
     });
-    await waitForSocketEvent(socket, "room_state");
+    const { room } = await waitForSocketEvent(socket, "room_state");
+    if (
+      [
+        "play",
+        "pause",
+        "seek",
+        "update_rate",
+        "sync_correction",
+        "next",
+        "video_ended",
+      ].includes(type)
+    ) {
+      payload = {
+        ...payload,
+        mediaRun: room.mediaRun ?? 0,
+        roomGeneration: room.generation ?? "legacy",
+      };
+    }
 
     const nonce = randomUUID();
     const acknowledgement = new Promise<CommandAcknowledgement>(
@@ -382,14 +399,14 @@ export async function sendCommandViaSession(
 }
 
 function waitForSocketEvent(socket: ReturnType<typeof io>, event: string) {
-  return new Promise<void>((resolve, reject) => {
+  return new Promise<any>((resolve, reject) => {
     const timer = setTimeout(
       () => reject(new Error(`Timed out waiting for socket ${event}`)),
       10_000,
     );
-    socket.once(event, () => {
+    socket.once(event, (payload) => {
       clearTimeout(timer);
-      resolve();
+      resolve(payload);
     });
     socket.once("connect_error", (error) => {
       clearTimeout(timer);

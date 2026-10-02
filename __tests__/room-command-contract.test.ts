@@ -8,7 +8,10 @@ describe("room command envelope", () => {
         roomId: crypto.randomUUID(),
         nonce: crypto.randomUUID(),
         clientSequence: 7,
-        command: { type: "play", payload: { position: 12.5 } },
+        command: {
+          type: "play",
+          payload: { roomGeneration: "legacy", mediaRun: 0, position: 12.5 },
+        },
       }).command.type,
     ).toBe("play");
   });
@@ -19,7 +22,10 @@ describe("room command envelope", () => {
         roomId: "x".repeat(129),
         nonce: crypto.randomUUID(),
         clientSequence: 1,
-        command: { type: "pause", payload: { position: 0 } },
+        command: {
+          type: "pause",
+          payload: { roomGeneration: "legacy", mediaRun: 0, position: 0 },
+        },
       }),
     ).toThrow();
   });

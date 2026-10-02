@@ -39,11 +39,17 @@ vi.mock("next", () => {
   };
 });
 
-// 2. Mock external persistence and rate limiting
-vi.mock("../lib/redis-rate-limit", () => ({
-  checkRedisRateLimit: vi.fn().mockResolvedValue(true),
-  getRedisClient: vi.fn().mockReturnValue(null),
-}));
+// 2. Real bounded local admission, with no external Redis dependency.
+vi.mock("../lib/redis-rate-limit", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../lib/redis-rate-limit")>();
+  const limiter = actual.createRateLimiter({ redis: null });
+  return {
+    ...actual,
+    checkRedisRateLimit: vi.fn(limiter.check),
+    getRedisClient: vi.fn().mockReturnValue(null),
+  };
+});
 vi.mock("@supabase/supabase-js", () => ({
   createClient: vi.fn().mockReturnValue({}),
 }));
@@ -188,6 +194,52 @@ describe("server.ts Real Socket.IO Integration", () => {
     ).toBe(false);
   });
 
+  it("admits 25 real same-NAT signed clients beyond 50 aggregate joins and isolates a noisy identity", async () => {
+    const roomId = `real-nat-${crypto.randomUUID()}`;
+    const friends: ClientSocket[] = [];
+    try {
+      for (let n = 0; n < 25; n++) {
+        const response = await fetch(`${ioServerPath}/api/auth/session`, {
+          method: "POST",
+          headers: { origin: TEST_ORIGIN },
+        });
+        expect(response.status).toBe(200);
+        const cookie = response.headers.get("set-cookie")!.split(";", 1)[0];
+        const first = await response.json();
+        const reuse = await fetch(`${ioServerPath}/api/auth/session`, {
+          method: "POST",
+          headers: { origin: TEST_ORIGIN, cookie },
+        });
+        expect(await reuse.json()).toEqual(first);
+        const socket = Client(ioServerPath, {
+          transports: ["websocket"],
+          forceNew: true,
+          extraHeaders: { cookie, origin: TEST_ORIGIN },
+        });
+        friends.push(socket);
+        await waitForSocketEvent(socket, "connect");
+      }
+      const join = async (socket: ClientSocket) => {
+        const snapshot = waitForSocketEvent(socket, "room_state");
+        socket.emit("join_room", { roomId, nickname: "Friend" });
+        return snapshot;
+      };
+      for (let round = 0; round < 4; round++)
+        for (const socket of friends) await join(socket);
+      expect(
+        Object.keys((await getRedisRoom(roomId))!.participants),
+      ).toHaveLength(25);
+      for (let n = 4; n < 50; n++) await join(friends[0]);
+      const denied = waitForSocketEvent(friends[0], "error");
+      friends[0].emit("join_room", { roomId, nickname: "Noisy" });
+      expect(await denied).toMatchObject({ message: "Too many join requests" });
+      for (const socket of friends.slice(1))
+        expect((await join(socket)).room.id).toBe(roomId);
+    } finally {
+      friends.forEach((socket) => socket.close());
+    }
+  }, 30000);
+
   it("issues an HTTP session through the production server, strips spoofed direct identity, and admits its cookie", async () => {
     const { checkRedisRateLimit } = await import("../lib/redis-rate-limit");
     vi.mocked(checkRedisRateLimit).mockClear();
@@ -209,7 +261,7 @@ describe("server.ts Real Socket.IO Integration", () => {
       expect.stringMatching(
         /^api:auth:(?!203\.0\.113\.77)(?:127\.0\.0\.1|::1)$/,
       ),
-      10,
+      1000,
       60_000,
     );
 

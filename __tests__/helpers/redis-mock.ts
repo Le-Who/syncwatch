@@ -237,6 +237,12 @@ const mockRedis = {
       }
 
       let changed = false;
+      if (
+        mutationType !== "buffering" &&
+        (payload.mediaRun !== (room.mediaRun ?? 0) ||
+          payload.roomGeneration !== (room.generation ?? "legacy"))
+      )
+        return "STALE_MEDIA";
 
       if (mutationType === "buffering") {
         // Legacy compatibility command: participant-local buffering never

@@ -241,13 +241,26 @@ function canonicalTarget(
  */
 export class PlaybackCoordinator {
   private mediaId: string | null = null;
+  private generation = "legacy";
+  private mediaRun = 0;
   private lastSequence = -1;
   private canonical: CanonicalPlayback | null = null;
   private connectionDeliveryFloor: number | null = null;
 
-  beginMediaEpoch(mediaId: string | null): boolean {
-    if (this.mediaId === mediaId) return false;
+  beginMediaEpoch(
+    mediaId: string | null,
+    generation = "legacy",
+    mediaRun = 0,
+  ): boolean {
+    if (
+      this.mediaId === mediaId &&
+      this.generation === generation &&
+      this.mediaRun === mediaRun
+    )
+      return false;
     this.mediaId = mediaId;
+    this.generation = generation;
+    this.mediaRun = mediaRun;
     this.lastSequence = -1;
     this.canonical = null;
     return true;
@@ -263,6 +276,11 @@ export class PlaybackCoordinator {
 
   acceptCanonical(playback: CanonicalPlayback, deliveryVersion = 0): boolean {
     if (playback.mediaItemId !== this.mediaId) return false;
+    if (
+      (playback.generation ?? "legacy") !== this.generation ||
+      (playback.mediaRun ?? 0) !== this.mediaRun
+    )
+      return false;
     if (this.connectionDeliveryFloor !== null) {
       if (deliveryVersion <= this.connectionDeliveryFloor) return false;
       if (playback.sequence < this.lastSequence) return false;

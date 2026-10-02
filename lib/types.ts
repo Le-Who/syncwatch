@@ -82,6 +82,12 @@ export interface RoomState {
   playlist: PlaylistItem[];
   chat: ChatMessage[];
   currentMediaId: string | null;
+  /** Playback-run identity; legacy snapshots start at zero. */
+  mediaRun?: number;
+  /** Authority lifetime: regenerated only when a room is created or hydrated. */
+  generation?: string;
+  nextMediaId?: string | null;
+  shufflePlayedIds?: string[];
   leaderId: string | null;
   playback: PlaybackState;
   flashbacks: Record<string, { position: number; savedAt: number }>;
@@ -240,6 +246,19 @@ export function normalizeRoomState(input: LegacyRoomStateInput): RoomState {
     chat: Array.isArray(input.chat) ? input.chat : [],
     currentMediaId:
       typeof input.currentMediaId === "string" ? input.currentMediaId : null,
+    mediaRun:
+      Number.isSafeInteger(input.mediaRun) && input.mediaRun! >= 0
+        ? input.mediaRun
+        : 0,
+    generation: input.generation || "legacy",
+    nextMediaId: input.playlist?.some((item) => item.id === input.nextMediaId)
+      ? input.nextMediaId
+      : null,
+    shufflePlayedIds: Array.isArray(input.shufflePlayedIds)
+      ? input.shufflePlayedIds.filter((id) =>
+          input.playlist?.some((item) => item.id === id),
+        )
+      : [],
     leaderId:
       typeof input.leaderId === "string" && participants[input.leaderId]
         ? input.leaderId

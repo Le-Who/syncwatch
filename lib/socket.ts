@@ -20,6 +20,8 @@ export class RoomSocketService {
   private listeners: Partial<Record<RoomSocketEvent, Set<Listener>>> = {};
   private readonly roomEventListeners = new Set<RoomEventListener>();
   private eventsBound = false;
+  private activeRoomId: string | null = null;
+  private snapshotRequest: { roomId: string; id: string } | null = null;
 
   private pingInterval: NodeJS.Timeout | null = null;
   public commandQueue: any[] = [];
@@ -34,15 +36,24 @@ export class RoomSocketService {
   };
 
   private readonly handleDisconnect = () => {
+    this.snapshotRequest = null;
     this.emit("disconnected");
     if (this.pingInterval) clearInterval(this.pingInterval);
   };
 
   private readonly handleRoomState = (payload: any) => {
+    if (payload.room?.id !== this.activeRoomId) return;
+    const authoritativeRecovery = Boolean(
+      this.snapshotRequest &&
+      this.snapshotRequest.roomId === payload.room.id &&
+      this.snapshotRequest.id === payload.snapshotRequestId,
+    );
+    if (authoritativeRecovery) this.snapshotRequest = null;
     this.emitRoomEvent({
       type: "room_state",
       room: payload.room,
       serverTime: payload.serverTime,
+      authoritativeRecovery,
     });
   };
 
@@ -200,16 +211,29 @@ export class RoomSocketService {
 
   public joinRoom(roomId: string, nickname: string, participantId: string) {
     if (!this.socket) return;
-    this.socket.emit("join_room", { roomId, nickname, participantId });
+    this.activeRoomId = roomId;
+    this.snapshotRequest = { roomId, id: crypto.randomUUID() };
+    this.socket.emit("join_room", {
+      roomId,
+      nickname,
+      participantId,
+      snapshotRequestId: this.snapshotRequest.id,
+    });
   }
 
   /** Requests a read-only authoritative room snapshot for the active socket. */
   public requestRoomState(roomId: string) {
-    if (!this.socket?.connected) return;
-    this.socket.emit("request_room_state", { roomId });
+    if (!this.socket?.connected || roomId !== this.activeRoomId) return;
+    this.snapshotRequest = { roomId, id: crypto.randomUUID() };
+    this.socket.emit("request_room_state", {
+      roomId,
+      snapshotRequestId: this.snapshotRequest.id,
+    });
   }
 
   public disconnect() {
+    this.snapshotRequest = null;
+    this.activeRoomId = null;
     if (this.socket) {
       this.unbindEvents();
       this.socket.disconnect();

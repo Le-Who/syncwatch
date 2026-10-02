@@ -136,7 +136,10 @@ describe("RoomCommandService", () => {
 
     const result = await service.execute(
       contextFor("room-a", "p0"),
-      envelope("room-a", { type: "play", payload: { position: 8 } }),
+      envelope("room-a", {
+        type: "play",
+        payload: { roomGeneration: "legacy", mediaRun: 0, position: 8 },
+      }),
     );
 
     expect(result).toMatchObject({
@@ -150,6 +153,8 @@ describe("RoomCommandService", () => {
           type: "playback_updated",
           playback: {
             mediaItemId: ITEM_ONE,
+            generation: "legacy",
+            mediaRun: 0,
             status: "playing",
             basePosition: 8,
             baseTimestamp: 10_000,
@@ -170,7 +175,10 @@ describe("RoomCommandService", () => {
 
     const result = await service.execute(
       contextFor("room-a", "p0"),
-      envelope("room-b", { type: "pause", payload: { position: 3 } }),
+      envelope("room-b", {
+        type: "pause",
+        payload: { roomGeneration: "legacy", mediaRun: 0, position: 3 },
+      }),
     );
 
     expect(result).toMatchObject({
@@ -185,7 +193,10 @@ describe("RoomCommandService", () => {
     const { repository, events, service } = harness();
     const command = envelope(
       "room-a",
-      { type: "seek", payload: { position: 30 } },
+      {
+        type: "seek",
+        payload: { roomGeneration: "legacy", mediaRun: 0, position: 30 },
+      },
       randomUUID(),
     );
 
@@ -228,7 +239,11 @@ describe("RoomCommandService", () => {
         contextFor("room-a", "p0"),
         envelope("room-a", {
           type,
-          payload: { currentMediaId: ITEM_TWO },
+          payload: {
+            roomGeneration: "legacy",
+            mediaRun: 0,
+            currentMediaId: ITEM_TWO,
+          },
         }),
       );
 
@@ -268,7 +283,11 @@ describe("RoomCommandService", () => {
       contextFor("room-a", "p0"),
       envelope("room-a", {
         type: "next",
-        payload: { currentMediaId: ITEM_ONE },
+        payload: {
+          roomGeneration: "legacy",
+          mediaRun: 0,
+          currentMediaId: ITEM_ONE,
+        },
       }),
     );
 
@@ -284,7 +303,10 @@ describe("RoomCommandService", () => {
       Array.from({ length: 25 }, (_, position) =>
         service.execute(
           ctx,
-          envelope("room-a", { type: "seek", payload: { position } }),
+          envelope("room-a", {
+            type: "seek",
+            payload: { roomGeneration: "legacy", mediaRun: 0, position },
+          }),
         ),
       ),
     );
@@ -324,7 +346,10 @@ describe("RoomCommandService", () => {
 
     const result = await service.execute(
       contextFor("room-a", "p0"),
-      envelope("room-a", { type: "seek", payload: { position: 45 } }),
+      envelope("room-a", {
+        type: "seek",
+        payload: { roomGeneration: "legacy", mediaRun: 0, position: 45 },
+      }),
     );
 
     expect(result).toMatchObject({ status: "applied", roomSequence: 2 });
@@ -337,7 +362,10 @@ describe("RoomCommandService", () => {
 
     const result = await service.execute(
       contextFor("room-a", "p0"),
-      envelope("room-a", { type: "play", payload: { position: 4 } }),
+      envelope("room-a", {
+        type: "play",
+        payload: { roomGeneration: "legacy", mediaRun: 0, position: 4 },
+      }),
     );
 
     expect(result.status).toBe("applied");
@@ -353,7 +381,10 @@ describe("RoomCommandService", () => {
 
     const result = await service.execute(
       contextFor("room-a", "p0"),
-      envelope("room-a", { type: "buffering", payload: { position: 12 } }),
+      envelope("room-a", {
+        type: "buffering",
+        payload: { roomGeneration: "legacy", mediaRun: 0, position: 12 },
+      }),
     );
 
     expect(result).toMatchObject({ status: "ignored", code: "NO_CHANGE" });
@@ -381,7 +412,10 @@ describe("RoomCommandService", () => {
 
       const result = await service.execute(
         contextFor("room-a", "p0"),
-        envelope("room-a", { type, payload: { position: 5 } }),
+        envelope("room-a", {
+          type,
+          payload: { roomGeneration: "legacy", mediaRun: 0, position: 5 },
+        }),
       );
 
       expect(result).toMatchObject({ status: "ignored", code: "NO_CHANGE" });
@@ -406,7 +440,10 @@ describe("RoomCommandService", () => {
 
     const result = await resilientService.execute(
       contextFor("room-a", "p0"),
-      envelope("room-a", { type: "seek", payload: { position: 22 } }),
+      envelope("room-a", {
+        type: "seek",
+        payload: { roomGeneration: "legacy", mediaRun: 0, position: 22 },
+      }),
     );
 
     expect(result).toMatchObject({ status: "applied", roomSequence: 2 });
@@ -581,7 +618,10 @@ describe("RoomCommandService", () => {
 
     const result = await service.execute(
       contextFor("room-a", "p1"),
-      envelope("room-a", { type: "play", payload: { position: 12 } }),
+      envelope("room-a", {
+        type: "play",
+        payload: { roomGeneration: "legacy", mediaRun: 0, position: 12 },
+      }),
     );
 
     expect(result).toMatchObject({ status: "rejected", code: "NOT_PERMITTED" });
@@ -630,7 +670,14 @@ describe("Socket command acknowledgement adapter", () => {
       service,
     );
     await handlers.get("command")?.(
-      envelope("room-a", { type: "play", payload: { position: 12 } }, nonce),
+      envelope(
+        "room-a",
+        {
+          type: "play",
+          payload: { roomGeneration: "legacy", mediaRun: 0, position: 12 },
+        },
+        nonce,
+      ),
       callback,
     );
 

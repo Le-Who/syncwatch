@@ -72,7 +72,11 @@ export function usePlaybackSync(props: PlaybackSyncProps) {
       const connectionEpoch = current.getConnectionEpoch?.() ?? 0;
       let beganConnectionEpoch = false;
 
-      coordinator.beginMediaEpoch(mediaId);
+      coordinator.beginMediaEpoch(
+        mediaId,
+        room?.generation ?? "legacy",
+        room?.mediaRun ?? 0,
+      );
       if (connectionEpoch !== connectionEpochRef.current) {
         connectionEpochRef.current = connectionEpoch;
         coordinator.beginConnectionEpoch(
@@ -105,6 +109,8 @@ export function usePlaybackSync(props: PlaybackSyncProps) {
 
       const canonicalFrame = {
         mediaItemId: mediaId,
+        generation: room.generation ?? "legacy",
+        mediaRun: room.mediaRun ?? 0,
         status: playback.status,
         basePosition: playback.basePosition,
         baseTimestamp: playback.baseTimestamp,

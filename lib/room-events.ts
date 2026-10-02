@@ -8,6 +8,8 @@ import type {
 
 export interface CanonicalPlayback {
   mediaItemId: string | null;
+  mediaRun?: number;
+  generation?: string;
   status: CanonicalPlaybackStatus;
   basePosition: number;
   baseTimestamp: number;
@@ -23,6 +25,8 @@ export type RoomEvent =
       room: RoomState;
       serverTime: number;
       excludeSocketId?: string;
+      /** Client-local, set only by a current transport/request correlation. */
+      authoritativeRecovery?: boolean;
     }
   | {
       type: "playback_updated";

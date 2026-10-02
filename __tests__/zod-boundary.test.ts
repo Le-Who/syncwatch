@@ -6,7 +6,12 @@ describe("Websocket Zod Security Boundary", () => {
     // Arrange
     const validPlay = {
       type: "play",
-      payload: { position: 120, nonce: "random-uuid-here" },
+      payload: {
+        roomGeneration: "legacy",
+        mediaRun: 0,
+        position: 120,
+        nonce: "random-uuid-here",
+      },
     };
 
     // Act
@@ -36,13 +41,22 @@ describe("Websocket Zod Security Boundary", () => {
 
   it("TC-03: Should validate update_rate boundary limits", () => {
     // Arrange & Act & Assert
-    const validRate = { type: "update_rate", payload: { rate: 2.0 } };
+    const validRate = {
+      type: "update_rate",
+      payload: { roomGeneration: "legacy", mediaRun: 0, rate: 2.0 },
+    };
     expect(commandSchema.safeParse(validRate).success).toBe(true);
 
-    const extremelyFastRate = { type: "update_rate", payload: { rate: 10.0 } }; // Max is 4.0
+    const extremelyFastRate = {
+      type: "update_rate",
+      payload: { roomGeneration: "legacy", mediaRun: 0, rate: 10.0 },
+    }; // Max is 4.0
     expect(commandSchema.safeParse(extremelyFastRate).success).toBe(false);
 
-    const negativeRate = { type: "update_rate", payload: { rate: -1.0 } }; // Min is 0.25
+    const negativeRate = {
+      type: "update_rate",
+      payload: { roomGeneration: "legacy", mediaRun: 0, rate: -1.0 },
+    }; // Min is 0.25
     expect(commandSchema.safeParse(negativeRate).success).toBe(false);
   });
 
@@ -50,7 +64,13 @@ describe("Websocket Zod Security Boundary", () => {
     // Arrange
     const playWithGarbage = {
       type: "play",
-      payload: { position: 120, malicious: "DROP TABLE rooms", nonce: "uuid" },
+      payload: {
+        roomGeneration: "legacy",
+        mediaRun: 0,
+        position: 120,
+        malicious: "DROP TABLE rooms",
+        nonce: "uuid",
+      },
     };
 
     // Act
@@ -86,20 +106,32 @@ describe("Websocket Zod Security Boundary", () => {
     // update_duration requires mediaId (uuid) and duration (number >= 0)
     const updateDuration = {
       type: "update_duration",
-      payload: { mediaId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890", duration: 15.0 },
+      payload: {
+        mediaId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        duration: 15.0,
+      },
     };
     expect(commandSchema.safeParse(updateDuration).success).toBe(true);
 
     // Should reject update_duration without mediaId
-    const badDuration = { type: "update_duration", payload: { duration: 15.0 } };
+    const badDuration = {
+      type: "update_duration",
+      payload: { duration: 15.0 },
+    };
     expect(commandSchema.safeParse(badDuration).success).toBe(false);
 
     // update_room_name requires name string (1-100 chars)
-    const updateName = { type: "update_room_name", payload: { name: "New Room" } };
+    const updateName = {
+      type: "update_room_name",
+      payload: { name: "New Room" },
+    };
     expect(commandSchema.safeParse(updateName).success).toBe(true);
 
     // update_nickname requires nickname string (1-50 chars)
-    const updateNick = { type: "update_nickname", payload: { nickname: "NewNick" } };
+    const updateNick = {
+      type: "update_nickname",
+      payload: { nickname: "NewNick" },
+    };
     expect(commandSchema.safeParse(updateNick).success).toBe(true);
 
     // update_role requires targetParticipantId and role enum

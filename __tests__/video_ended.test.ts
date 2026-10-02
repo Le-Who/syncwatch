@@ -109,7 +109,7 @@ describe("room-logic: video_ended command", () => {
 
     expect(changed).toBe(true);
     expect(room.currentMediaId).toBe("item-1");
-    expect(room.playback.status).toBe("paused");
+    expect(room.playback.status).toBe("ended");
   });
 
   it("loops to the first item if at end of playlist and looping is true", () => {
@@ -141,7 +141,7 @@ describe("room-logic: video_ended command", () => {
 
     expect(changed).toBe(true);
     expect(room.currentMediaId).toBe("item-3");
-    expect(room.playback.status).toBe("paused");
+    expect(room.playback.status).toBe("ended");
   });
 
   it("ignores video_ended if the mediaId doesn't match the current active media", () => {

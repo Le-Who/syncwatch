@@ -13,17 +13,19 @@ import { RoomCommandService } from "../room-command-service";
 import { RoomEventBus } from "../room-event-bus";
 
 const socketDouble = vi.hoisted(() => {
-  const handlers = new Map<string, Set<(payload?: any) => void>>();
+  const handlers = new Map<string, Array<(payload?: any) => void>>();
   const socket = {
     connected: false,
     on: vi.fn((event: string, listener: (payload?: any) => void) => {
-      const listeners = handlers.get(event) ?? new Set();
-      listeners.add(listener);
+      const listeners = handlers.get(event) ?? [];
+      listeners.push(listener);
       handlers.set(event, listeners);
       return socket;
     }),
     off: vi.fn((event: string, listener: (payload?: any) => void) => {
-      handlers.get(event)?.delete(listener);
+      const listeners = handlers.get(event) ?? [];
+      const index = listeners.indexOf(listener);
+      if (index !== -1) listeners.splice(index, 1);
       return socket;
     }),
     emit: vi.fn(),
@@ -37,6 +39,9 @@ const socketDouble = vi.hoisted(() => {
     }),
     serverEmit(event: string, payload?: any) {
       for (const listener of handlers.get(event) ?? []) listener(payload);
+    },
+    listenerCounts() {
+      return [...handlers.values()].map((listeners) => listeners.length);
     },
     reset() {
       handlers.clear();
@@ -118,6 +123,80 @@ describe("useSettingsStore", () => {
 });
 
 describe("useStore", () => {
+  it("recovers a newer unknown media frame once and merges the real authoritative snapshot", async () => {
+    useStore.getState().init();
+    const deliver = vi.mocked(roomSocketService.onRoomEvent).mock.calls[0][0];
+    const room = roomWithParticipants(5);
+    const a = "00000000-0000-4000-8000-000000000001";
+    const b = "00000000-0000-4000-8000-000000000002";
+    room.currentMediaId = a;
+    room.playlist = [a, b].map((id) => ({
+      id,
+      url: `https://example.com/${id}.mp4`,
+      provider: "file",
+      title: id,
+      duration: 100,
+      addedBy: "p0",
+    }));
+    useStore.setState({
+      room,
+      isConnected: true,
+      participantId: "p0",
+      fullRoomSequence: undefined,
+      pendingPlayback: undefined,
+    });
+    const repository = new InMemoryRoomRepository([room]);
+    const held: any[] = [];
+    const aService = new RoomCommandService({
+      repository,
+      eventBus: new RoomEventBus((_id, event) => held.push(event)),
+    });
+    const bService = new RoomCommandService({
+      repository,
+      eventBus: new RoomEventBus((_id, event) => {
+        deliver(event);
+        deliver(event);
+      }),
+    });
+    const send = (
+      service: RoomCommandService,
+      type: string,
+      payload: unknown,
+    ) =>
+      service.execute(
+        { currentRoomId: room.id, currentParticipantId: "p0" },
+        {
+          roomId: room.id,
+          nonce: randomUUID(),
+          clientSequence: 1,
+          command: { type, payload },
+        },
+      );
+    await send(aService, "update_room_name", { name: "Fresh metadata" });
+    await send(aService, "set_media", { itemId: b });
+    await send(bService, "play", {
+      roomGeneration: "legacy",
+      mediaRun: 1,
+      position: 35,
+    });
+    expect(roomSocketService.requestRoomState).toHaveBeenCalledTimes(1);
+    const authoritative = (await repository.get(room.id))!;
+    deliver({
+      type: "room_state",
+      room: authoritative,
+      serverTime: Date.now(),
+    });
+    for (const event of held) deliver(event);
+    expect(useStore.getState().room).toMatchObject({
+      name: "Fresh metadata",
+      currentMediaId: b,
+      sequence: 4,
+      playback: { status: "playing", basePosition: 35 },
+    });
+    expect(useStore.getState().pendingPlayback).toBeUndefined();
+    expect(roomSocketService.joinRoom).not.toHaveBeenCalled();
+    expect(roomSocketService.upgradeSession).not.toHaveBeenCalled();
+  });
   beforeEach(() => {
     localStorage.clear();
     const { result } = renderHook(() => useStore());
@@ -125,6 +204,8 @@ describe("useStore", () => {
       // Clear state manually for clean runs
       useStore.setState({
         room: null,
+        fullRoomSequence: undefined,
+        pendingPlayback: undefined,
         serverClockOffset: 0,
         isConnected: false,
         connectionEpoch: 0,
@@ -389,11 +470,24 @@ describe("useStore", () => {
     service.onRoomEvent(onRoomEvent);
 
     service.connect("room-a", "Friend", "p0", "token");
+    expect(socketDouble.listenerCounts().every((count) => count === 1)).toBe(
+      true,
+    );
     service.disconnect();
+    expect(socketDouble.listenerCounts().every((count) => count === 0)).toBe(
+      true,
+    );
     service.connect("room-a", "Friend", "p0", "token");
+    expect(socketDouble.listenerCounts().every((count) => count === 1)).toBe(
+      true,
+    );
     socketDouble.serverEmit("participant_joined", participant("p1"));
 
     expect(onRoomEvent).toHaveBeenCalledOnce();
+    service.disconnect();
+    expect(socketDouble.listenerCounts().every((count) => count === 0)).toBe(
+      true,
+    );
   });
 
   it("correlates client command envelopes with command acknowledgements", async () => {
@@ -441,6 +535,7 @@ describe("useStore", () => {
     expect(socketDouble.emit).toHaveBeenCalledOnce();
     expect(socketDouble.emit).toHaveBeenCalledWith("request_room_state", {
       roomId: "room-a",
+      snapshotRequestId: expect.any(String),
     });
   });
 
@@ -485,6 +580,8 @@ describe("useStore", () => {
     const intentNonce = randomUUID();
     intentManager.markCommandEmitted("playing", 12, intentNonce);
     const returnedNonce = client.sendCommand(room.id, 2, "play", {
+      roomGeneration: "legacy",
+      mediaRun: 0,
       position: 12,
       nonce: intentNonce,
     });

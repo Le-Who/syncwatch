@@ -74,6 +74,8 @@ function cloneRoom(room: RoomState): RoomState {
 function canonicalPlayback(room: RoomState): CanonicalPlayback {
   return {
     mediaItemId: room.currentMediaId,
+    mediaRun: room.mediaRun ?? 0,
+    generation: room.generation ?? "legacy",
     status: room.playback.status,
     basePosition: room.playback.basePosition,
     baseTimestamp: room.playback.baseTimestamp,
@@ -169,6 +171,13 @@ abstract class SerializedRoomRepository implements RoomRepository {
         const nonce = command.payload?.nonce;
         if (hasProcessedNonce(room, nonce)) {
           return { status: "ignored", code: "DUPLICATE" };
+        }
+        if (
+          command.type !== "buffering" &&
+          (command.payload.mediaRun !== (room.mediaRun ?? 0) ||
+            command.payload.roomGeneration !== (room.generation ?? "legacy"))
+        ) {
+          return { status: "rejected", code: "STALE_MEDIA" };
         }
 
         const baseVersion = room.version;
@@ -280,6 +289,9 @@ export class RedisRoomRepository extends SerializedRoomRepository {
       actor.id,
     );
     if (!result.success) {
+      if (result.error === "STALE_MEDIA") {
+        return { status: "rejected", code: "STALE_MEDIA" };
+      }
       if (result.error === "DUPLICATE") {
         return { status: "ignored", code: "DUPLICATE" };
       }

@@ -118,10 +118,15 @@ export function usePlayerEvents({
     (e: unknown) => {
       if (!isCurrentProviderEpoch()) return;
       console.error("Player error:", e);
-      setError("SYSTEM FAILURE. SIGNAL LOST.");
+      const title =
+        useStore
+          .getState()
+          .room?.playlist.find((item) => item.id === currentMediaId)?.title ||
+        "this video";
+      setError(`Could not play “${title}”. Retry or reinitialize your player.`);
       healthController.set("error");
     },
-    [healthController, isCurrentProviderEpoch, setError],
+    [currentMediaId, healthController, isCurrentProviderEpoch, setError],
   );
 
   /** Shared onSeek logic — filters programmatic seeks */
