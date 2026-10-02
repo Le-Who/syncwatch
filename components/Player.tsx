@@ -171,6 +171,12 @@ export default function Player() {
   // Removed ResizeObserver dimensions
 
   const [intentManager] = useState(() => new PlaybackIntentManager());
+  const nativePauseResumeRef = useRef<{
+    nonce: string;
+    mediaId: string | null | undefined;
+    providerEpoch: number;
+    sequence: number;
+  } | null>(null);
   const [providerEventEpoch, setProviderEventEpoch] = useState(0);
   const [providerRetryKey, setProviderRetryKey] = useState(0);
   const mountsAwaitingFreshDelivery =
@@ -284,6 +290,7 @@ export default function Player() {
     // never perform hard seeks during this interval, only drift math updates.
     if (!force && intentManager.isIgnoringNativeEvents()) return;
 
+    nativePauseResumeRef.current = null;
     intentManager.markProgrammaticSeek();
     const provider = currentMedia?.provider?.toLowerCase();
     if (seekPlayerTo(realPlayerRef.current, position, provider)) return;
@@ -401,6 +408,7 @@ export default function Player() {
           : null,
       );
       sendCommand(type, { ...payload, nonce });
+      return nonce;
     },
     [intentManager, sendCommand],
   );
@@ -447,6 +455,24 @@ export default function Player() {
   };
 
   const handleNativePlay = useEventCallback(() => {
+    const nativePause = nativePauseResumeRef.current;
+    nativePauseResumeRef.current = null;
+    const currentRoom = useStore.getState().room;
+    // Only a current, emitted native Pause can authorize a rapid resume inside
+    // the seek window. A later seek clears this correlation, including paused
+    // seeks whose synthetic Play must remain suppressed.
+    const resumesNativePause =
+      providerName === "youtube" &&
+      healthController.canAcceptProviderEvents() &&
+      nativePause !== null &&
+      intentManager.isProviderEventEpochCurrent(nativePause.providerEpoch) &&
+      currentRoom?.currentMediaId === nativePause.mediaId &&
+      ((currentRoom?.sequence === nativePause.sequence &&
+        intentManager.isAwaitingServerAck() &&
+        intentManager.lastStateEmittedRef?.nonce === nativePause.nonce) ||
+        ((currentRoom?.sequence ?? -1) > nativePause.sequence &&
+          currentRoom?.playback.status === "paused" &&
+          currentRoom.playback.lastActionNonce === nativePause.nonce));
     // Canonical reconciliation holds the provider paused during the native
     // pause debounce, so an intervening Play is a fresh local resume.
     intentManager.clearPauseDebounce();
@@ -456,7 +482,7 @@ export default function Player() {
     if (
       intentManager.isInMediaTransition() ||
       intentManager.isUserDraggingScrubber() ||
-      intentManager.isRecentProgrammaticSeek(1500)
+      (intentManager.isRecentProgrammaticSeek(1500) && !resumesNativePause)
     ) {
       return;
     }
@@ -479,13 +505,14 @@ export default function Player() {
   const handleNativePause = useEventCallback(() => {
     intentManager.clearPauseDebounce();
 
-    // Hard guards still block known synthetic pauses. YouTube native controls
-    // bypass the short ACK/ignore window below so a deliberate pause click is
-    // not eaten after a recent play/seek command.
+    // A recent canonical seek alone does not identify a synthetic YouTube
+    // Pause. Its current-provider health gate and deferred validation still
+    // reject unavailable/stale events; other providers retain seek suppression.
     if (
       intentManager.isInMediaTransition() ||
       intentManager.isUserDraggingScrubber() ||
-      intentManager.isRecentProgrammaticSeek(1500)
+      (providerName !== "youtube" &&
+        intentManager.isRecentProgrammaticSeek(1500))
     ) {
       return;
     }
@@ -528,7 +555,18 @@ export default function Player() {
       );
 
       if (canControl && expectedStatus !== "paused") {
-        emitCommand("pause", { position: getAccurateTime(), fromNative: true });
+        const nonce = emitCommand("pause", {
+          position: getAccurateTime(),
+          fromNative: true,
+        });
+        if (providerName === "youtube" && nonce) {
+          nativePauseResumeRef.current = {
+            nonce,
+            mediaId: deferredMediaId,
+            providerEpoch: deferredEpoch,
+            sequence: deferredSequence,
+          };
+        }
       }
     }, PAUSE_DEBOUNCE_MS);
   });

@@ -17,6 +17,7 @@ import { roomWithParticipants } from "../../__tests__/helpers/room-fixtures";
 const providerCallbacks = vi.hoisted(
   () => new Map<string, Record<string, (...args: any[]) => void>>(),
 );
+const providerPositions = vi.hoisted(() => new Map<string, number>());
 
 // Mock Zustand store hooks
 vi.mock("@/lib/store", () => {
@@ -27,54 +28,65 @@ vi.mock("@/lib/store", () => {
 });
 
 // Mock dynamic import of react-player and motion
-vi.mock("next/dynamic", () => ({
-  default: () => {
-    return function MockPlayer(props: any) {
-      providerCallbacks.set(props.src, {
-        onWaiting: props.onWaiting,
-        onPlaying: props.onPlaying,
-        onPlay: props.onPlay,
-        onPause: props.onPause,
-        onError: props.onError,
-        onSeeked: props.onSeeked,
-        onEnded: props.onEnded,
-        onLoadedMetadata: props.onLoadedMetadata,
-      });
-      return (
-        <div
-          data-testid="mock-react-player"
-          data-controls={String(Boolean(props.controls))}
-          data-muted={String(Boolean(props.muted))}
-          data-volume={String(props.volume)}
-          data-youtube-controls={String(props.config?.youtube?.controls)}
-          data-youtube-disablekb={String(props.config?.youtube?.disablekb)}
-        >
-          {/* Mock events needed by tests */}
-          <button
-            data-testid="loadedmetadata-event"
-            onClick={() =>
-              props.onLoadedMetadata?.({ target: { duration: 123 } })
-            }
+vi.mock("next/dynamic", async () => {
+  const React = await import("react");
+  return {
+    default: () => {
+      return function MockPlayer(props: any) {
+        React.useImperativeHandle(props.ref, () => ({
+          getCurrentTime: () => providerPositions.get(props.src) ?? 0,
+          seekTo: (position: number) => {
+            if (providerPositions.has(props.src))
+              providerPositions.set(props.src, position);
+          },
+          setPlaybackRate: () => {},
+        }));
+        providerCallbacks.set(props.src, {
+          onWaiting: props.onWaiting,
+          onPlaying: props.onPlaying,
+          onPlay: props.onPlay,
+          onPause: props.onPause,
+          onError: props.onError,
+          onSeeked: props.onSeeked,
+          onEnded: props.onEnded,
+          onLoadedMetadata: props.onLoadedMetadata,
+        });
+        return (
+          <div
+            data-testid="mock-react-player"
+            data-controls={String(Boolean(props.controls))}
+            data-muted={String(Boolean(props.muted))}
+            data-volume={String(props.volume)}
+            data-youtube-controls={String(props.config?.youtube?.controls)}
+            data-youtube-disablekb={String(props.config?.youtube?.disablekb)}
           >
-            loadedmetadata
-          </button>
-          <button data-testid="play-event" onClick={props.onPlay}>
-            play
-          </button>
-          <button data-testid="pause-event" onClick={props.onPause}>
-            pause
-          </button>
-          <button data-testid="waiting-event" onClick={props.onWaiting}>
-            waiting
-          </button>
-          <button data-testid="playing-event" onClick={props.onPlaying}>
-            playing
-          </button>
-        </div>
-      );
-    };
-  },
-}));
+            {/* Mock events needed by tests */}
+            <button
+              data-testid="loadedmetadata-event"
+              onClick={() =>
+                props.onLoadedMetadata?.({ target: { duration: 123 } })
+              }
+            >
+              loadedmetadata
+            </button>
+            <button data-testid="play-event" onClick={props.onPlay}>
+              play
+            </button>
+            <button data-testid="pause-event" onClick={props.onPause}>
+              pause
+            </button>
+            <button data-testid="waiting-event" onClick={props.onWaiting}>
+              waiting
+            </button>
+            <button data-testid="playing-event" onClick={props.onPlaying}>
+              playing
+            </button>
+          </div>
+        );
+      };
+    },
+  };
+});
 
 vi.mock("motion/react", () => ({
   motion: {
@@ -104,6 +116,7 @@ describe("Player Component", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     providerCallbacks.clear();
+    providerPositions.clear();
     vi.useRealTimers();
     consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
@@ -472,6 +485,65 @@ describe("Player Component", () => {
       expect.objectContaining({ position: 0, fromNative: true }),
     );
   });
+
+  it.each([300, 1308])(
+    "emits one native YouTube Pause at seek age %sms after production reconciliation",
+    (seekAgeMs) => {
+      // Wrong branch: treating a recent canonical seek as proof of a synthetic Pause.
+      vi.useFakeTimers();
+      vi.setSystemTime(10_000);
+      const url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
+      const room = roomWithParticipants(3);
+      room.currentMediaId = "media-a";
+      room.sequence = 21;
+      room.playlist = [
+        {
+          id: "media-a",
+          url,
+          provider: "youtube",
+          title: "A",
+          addedBy: "p0",
+          duration: 120,
+        },
+      ];
+      room.playback = {
+        status: "playing",
+        basePosition: 20,
+        baseTimestamp: 10_000,
+        rate: 1,
+        updatedBy: "p0",
+      };
+      providerPositions.set(url, 0);
+      mockStoreState({
+        room,
+        participantId: "p1",
+        sendCommand: mockSendCommand,
+        serverClockOffset: 0,
+        isConnected: true,
+      });
+      const view = render(<Player />);
+      fireEvent.click(
+        screen.getByRole("button", { name: "Initialize Stream Sync" }),
+      );
+      fireEvent.click(screen.getByTestId("loadedmetadata-event"));
+      act(() => vi.advanceTimersByTime(500));
+      // Reconciliation actually sought the provider to the hand-derived canonical target.
+      expect(providerPositions.get(url)).toBe(20.5);
+      mockSendCommand.mockClear();
+      act(() => vi.advanceTimersByTime(seekAgeMs));
+      fireEvent.click(screen.getByTestId("pause-event"));
+      act(() => vi.advanceTimersByTime(149));
+      expect(mockSendCommand).not.toHaveBeenCalled();
+      act(() => vi.advanceTimersByTime(1));
+      expect(mockSendCommand.mock.calls).toEqual([
+        [
+          "pause",
+          expect.objectContaining({ position: 20.5, fromNative: true }),
+        ],
+      ]);
+      view.unmount();
+    },
+  );
 
   it("should allow play/pause interactions if user has control", () => {
     mockStoreState({
