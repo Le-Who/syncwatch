@@ -137,7 +137,15 @@ export default function Player() {
   }, []);
 
   useEffect(() => {
+    let lastActivityTime = 0;
+
     const handleUserActivity = () => {
+      // ⚡ Bolt Optimization: Throttle continuous DOM events (like mousemove)
+      // to 200ms to prevent rapid setTimeout/clearTimeout cycles and main thread blocking.
+      // Reduces event calls from ~60Hz to ~5Hz while keeping UI responsiveness intact.
+      if (Date.now() - lastActivityTime < 200) return;
+      lastActivityTime = Date.now();
+
       wakeUp();
       if (idleTimeoutRef.current) clearTimeout(idleTimeoutRef.current);
       idleTimeoutRef.current = setTimeout(
@@ -152,10 +160,10 @@ export default function Player() {
       );
     };
 
-    window.addEventListener("mousemove", handleUserActivity);
-    window.addEventListener("keydown", handleUserActivity);
-    window.addEventListener("touchstart", handleUserActivity);
-    window.addEventListener("click", handleUserActivity);
+    window.addEventListener("mousemove", handleUserActivity, { passive: true });
+    window.addEventListener("keydown", handleUserActivity, { passive: true });
+    window.addEventListener("touchstart", handleUserActivity, { passive: true });
+    window.addEventListener("click", handleUserActivity, { passive: true });
 
     handleUserActivity();
 
