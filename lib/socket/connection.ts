@@ -9,6 +9,7 @@ import {
 } from "../redis-actor";
 import { persistRoomState, loadRoomFromDB, isSystemDegraded } from "../db-sync";
 import { createEmptyRoom, sanitizeRoom } from "../room-handler";
+import { getClientIp } from "../ip";
 import { RoomState } from "../types";
 import { SocketContext } from "./context";
 
@@ -43,9 +44,7 @@ export function handleConnectionEvents(
     }
 
     const ip =
-      socket.handshake.headers["x-forwarded-for"] ||
-      socket.handshake.address ||
-      "unknown";
+      getClientIp(socket.handshake) || socket.handshake.address || "unknown";
     if (!(await checkRedisRateLimit(`ws:join:${ip}`, 50, 60000))) {
       socket.emit("error", { message: "Too many join requests" });
       return;
