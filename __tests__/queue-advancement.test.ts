@@ -58,6 +58,70 @@ function fixture(
   return { read, send };
 }
 describe("authoritative queue advancement", () => {
+  for (const type of ["next", "video_ended"])
+    for (const shuffle of [false, true])
+      it(`${type} does not restart a removal-selected Set as next item (shuffle ${shuffle})`, async () => {
+        const { read, send } = fixture({ shuffle });
+        expect(await send("set_next_item", { itemId: ids[1] })).toMatchObject({
+          status: "applied",
+        });
+        expect(await send("remove_item", { itemId: ids[0] })).toMatchObject({
+          status: "applied",
+        });
+        expect(await read()).toMatchObject({
+          playlist: [{ id: ids[1] }, { id: ids[2] }],
+          currentMediaId: ids[1],
+          nextMediaId: null,
+          mediaRun: 1,
+          playback: { status: "playing" },
+        });
+
+        expect(await send(type)).toMatchObject({ status: "applied" });
+        expect(await read()).toMatchObject({
+          playlist: [{ id: ids[1] }, { id: ids[2] }],
+          currentMediaId: ids[2],
+          nextMediaId: null,
+          mediaRun: 2,
+          playback: { status: "playing" },
+        });
+      });
+
+  it("keeps a future Set as next target after removal selects another head", async () => {
+    const { read, send } = fixture();
+    await send("set_next_item", { itemId: ids[2] });
+    await send("reorder_playlist", {
+      playlist: ids.map((id) => ({ id })),
+    });
+    await send("remove_item", { itemId: ids[0] });
+    expect(await read()).toMatchObject({
+      playlist: [{ id: ids[1] }, { id: ids[2] }],
+      currentMediaId: ids[1],
+      nextMediaId: ids[2],
+      mediaRun: 1,
+    });
+
+    expect(await send("next")).toMatchObject({ status: "applied" });
+    expect(await read()).toMatchObject({
+      currentMediaId: ids[2],
+      nextMediaId: null,
+      mediaRun: 2,
+    });
+  });
+
+  it("clears Set as next when its target is removed", async () => {
+    const { read, send } = fixture();
+    await send("set_next_item", { itemId: ids[1] });
+    expect(await send("remove_item", { itemId: ids[1] })).toMatchObject({
+      status: "applied",
+    });
+    expect(await read()).toMatchObject({
+      playlist: [{ id: ids[0] }, { id: ids[2] }],
+      currentMediaId: ids[0],
+      nextMediaId: null,
+      mediaRun: 0,
+    });
+  });
+
   it("consumes Set as next when that item is directly selected, avoiding a same-item repeat", async () => {
     const { read, send } = fixture({ shuffle: true, looping: true });
     await send("set_next_item", { itemId: ids[1] });

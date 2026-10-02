@@ -336,6 +336,7 @@ export function applyRemoveItem(
 
   if (room.currentMediaId === payload.itemId) {
     room.currentMediaId = room.playlist.length > 0 ? room.playlist[0].id : null;
+    if (room.nextMediaId === room.currentMediaId) room.nextMediaId = null;
     room.playback.status =
       room.playback.status === "playing" ? "playing" : "paused";
     const newHead = room.currentMediaId
