@@ -339,9 +339,8 @@ export function applyRemoveItem(
     if (room.nextMediaId === room.currentMediaId) room.nextMediaId = null;
     room.playback.status =
       room.playback.status === "playing" ? "playing" : "paused";
-    const newHead = room.currentMediaId
-      ? room.playlist.find((i) => i.id === room.currentMediaId)
-      : null;
+    // Optimization: Directly access index 0 for O(1) access since we just set currentMediaId to playlist[0].id
+    const newHead = room.currentMediaId ? room.playlist[0] : null;
     room.playback.basePosition = newHead ? clampStart(newHead) : 0;
     room.playback.baseTimestamp = Date.now();
     resetReadiness(room);

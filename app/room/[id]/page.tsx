@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { useStore } from "@/lib/store";
+import { useShallow } from "zustand/react/shallow";
 import { motion } from "motion/react";
 import {
   Users,
@@ -36,7 +37,19 @@ export default function RoomPage() {
     init,
     sendCommand,
     participantId,
-  } = useStore();
+  } = useStore(
+    useShallow((s) => ({
+      room: s.room,
+      isConnected: s.isConnected,
+      nickname: s.nickname,
+      setNickname: s.setNickname,
+      connect: s.connect,
+      disconnect: s.disconnect,
+      init: s.init,
+      sendCommand: s.sendCommand,
+      participantId: s.participantId,
+    })),
+  );
 
   const [isJoining, setIsJoining] = useState(true);
   const [tempName, setTempName] = useState("");

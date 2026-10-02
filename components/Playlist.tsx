@@ -2,6 +2,7 @@
 "use client";
 
 import { useStore } from "@/lib/store";
+import { useShallow } from "zustand/react/shallow";
 import { formatTime } from "@/lib/utils";
 import { LivePosition } from "./LivePosition";
 import {
@@ -17,7 +18,13 @@ import { motion, Reorder } from "motion/react";
 import { MediaComposer } from "./MediaComposer";
 
 export default function Playlist() {
-  const { room, participantId, sendCommand } = useStore();
+  const { room, participantId, sendCommand } = useStore(
+    useShallow((s) => ({
+      room: s.room,
+      participantId: s.participantId,
+      sendCommand: s.sendCommand,
+    })),
+  );
 
   if (!room) return null;
 

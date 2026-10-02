@@ -1,0 +1,51 @@
+{
+  "date": "2026-10-03",
+  "scope": "Integrate the divergent remote main without reverting the completed multiplayer UX audit",
+  "parents": {
+    "localMain": "884e0ce2735bf0b7001800df1cc43014546d87ce",
+    "remoteMain": "d6993b00ab9413d10f5144e158593f00a2f68e49"
+  },
+  "decisions": [
+    "Retain shallow Zustand subscriptions in RoomPage, Participants, Playlist and RoomSettingsDialog.",
+    "Retain the constant-time queue-head lookup when removing the active item, with next-target cleanup and readiness reset intact.",
+    "Keep the shared advanceQueue implementation instead of restoring obsolete duplicated natural-ending logic.",
+    "Keep MediaComposer, which already isolates search state; do not add the obsolete PlaylistSearchForm.",
+    "Keep the current accessible Close room settings control.",
+    "Preserve the verified native YouTube intent, recovery and command acknowledgement implementations.",
+    "Preserve the local manifest and exact lockfile; the remote formatting changes must not downgrade audited dependencies.",
+    "Consolidate case-colliding palette journal paths into .jules/palette.md while preserving the remote entry."
+  ],
+  "worktreeVerification": {
+    "unit": {
+      "command": "pnpm test",
+      "exitCode": 0,
+      "files": 60,
+      "passed": 552,
+      "skipped": 9,
+      "failed": 0,
+      "skipReason": "Existing real-Redis cases require Redis; this fresh integration gate ran without cloud services."
+    },
+    "lint": { "command": "pnpm lint", "exitCode": 0 },
+    "types": { "command": "pnpm typecheck", "exitCode": 0 },
+    "productionBuild": { "command": "pnpm build", "exitCode": 0 },
+    "browser": {
+      "command": "LIVE_YOUTUBE_SMOKE=1 pnpm exec playwright test --headed --workers=1 --reporter=line --trace=on",
+      "exitCode": 0,
+      "passed": 11,
+      "failed": 0,
+      "skipped": 0,
+      "coverage": [
+        "Five independent friends, two independently impaired connections, healthy advancement and recovery",
+        "Real YouTube play, native pause, seek, late join, reconnect and degraded continuation",
+        "Three same-NAT friends retain separate signed identities through repeated reloads",
+        "Permissions, owner handoff, keyboard navigation, desktop and mobile single-composer UI"
+      ],
+      "localTraceArchive": ".worktrees/syncwatch-ux-audit/output/remote-main-integration-2026-10-03/test-results"
+    },
+    "review": "Independent read-only review: no remaining critical, important or minor merge defects."
+  },
+  "limitations": [
+    "Fresh server and browser runs used ephemeral local storage with Supabase and Redis disabled and a verification-only JWT secret.",
+    "Network emulation and deliberate provider stalls are not measurements of physical packet loss on independent residential networks."
+  ]
+}
