@@ -137,7 +137,16 @@ export default function Player() {
   }, []);
 
   useEffect(() => {
+    let lastActivity = 0;
+    const THROTTLE_MS = 1000;
+
+    // Performance Optimization: Throttle continuous DOM events to prevent excessive
+    // main thread blocking and state reads on every mouse move.
     const handleUserActivity = () => {
+      const now = Date.now();
+      if (now - lastActivity < THROTTLE_MS) return;
+      lastActivity = now;
+
       wakeUp();
       if (idleTimeoutRef.current) clearTimeout(idleTimeoutRef.current);
       idleTimeoutRef.current = setTimeout(
@@ -152,10 +161,12 @@ export default function Player() {
       );
     };
 
-    window.addEventListener("mousemove", handleUserActivity);
-    window.addEventListener("keydown", handleUserActivity);
-    window.addEventListener("touchstart", handleUserActivity);
-    window.addEventListener("click", handleUserActivity);
+    // Performance Optimization: Use passive listeners so rapid events (like mousemove/touchstart)
+    // do not block scrolling or layout performance.
+    window.addEventListener("mousemove", handleUserActivity, { passive: true });
+    window.addEventListener("keydown", handleUserActivity, { passive: true });
+    window.addEventListener("touchstart", handleUserActivity, { passive: true });
+    window.addEventListener("click", handleUserActivity, { passive: true });
 
     handleUserActivity();
 
