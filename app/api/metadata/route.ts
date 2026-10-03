@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { checkRedisRateLimit } from "@/lib/redis-rate-limit";
 import { Parser } from "htmlparser2";
-import { getAppRouteClientIp } from "@/lib/rate-limit";
+import { getAppRouteClientIp } from "@/lib/ip";
 import {
   getMetadataText,
   UnsafeMetadataDestination,
 } from "@/lib/metadata-http";
 
 export async function GET(request: NextRequest) {
-  const ip = getAppRouteClientIp(request.headers);
+  const ip = getAppRouteClientIp(request.headers) || "unknown";
   if (!(await checkRedisRateLimit(`api:metadata:${ip}`, 20, 60_000))) {
     return NextResponse.json({ error: "Too many requests" }, { status: 429 });
   }

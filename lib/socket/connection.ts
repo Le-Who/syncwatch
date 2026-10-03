@@ -13,7 +13,7 @@ import {
   PARTICIPANT_GRACE_MS,
   removeParticipantAfterGrace,
 } from "../participant-lifecycle";
-import { getClientIp } from "../rate-limit";
+import { getClientIp } from "../ip";
 
 export function handleConnectionEvents(
   io: Server,
@@ -129,10 +129,10 @@ export function handleConnectionEvents(
       return;
     }
 
-    const ip = getClientIp(
-      socket.handshake.headers,
-      socket.handshake.address || "unknown",
-    );
+    const ip =
+      getClientIp(socket.handshake.headers) ||
+      socket.handshake.address ||
+      "unknown";
     if (
       !(await checkRedisRateLimit(
         `ws:join:participant:${socket.data.participantId}`,

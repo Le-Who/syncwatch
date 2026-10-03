@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import yts from "yt-search";
 import { z } from "zod";
 import { checkRedisRateLimit } from "@/lib/redis-rate-limit";
-import { getAppRouteClientIp } from "@/lib/rate-limit";
+import { getAppRouteClientIp } from "@/lib/ip";
 
 const ytPlaylistQuerySchema = z.string().min(1);
 
@@ -259,7 +259,7 @@ function mapApiVideos(result: PlaylistResult) {
 }
 
 export async function GET(request: Request) {
-  const ip = getAppRouteClientIp(request.headers);
+  const ip = getAppRouteClientIp(request.headers) || "unknown";
   const allowed = await checkRedisRateLimit(
     `api:youtube-playlist:${ip}`,
     10,

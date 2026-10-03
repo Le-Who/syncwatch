@@ -5,7 +5,7 @@ import { jwtVerify, SignJWT } from "jose";
 import { checkRedisRateLimit } from "@/lib/redis-rate-limit";
 
 import { getJwtSecret } from "@/lib/jwt-config";
-import { getAppRouteClientIp } from "@/lib/rate-limit";
+import { getAppRouteClientIp } from "@/lib/ip";
 
 const SESSION_COOKIE = "syncwatch_session";
 
@@ -32,7 +32,7 @@ export async function POST(request: Request) {
       }
     }
 
-    const ip = getAppRouteClientIp(request.headers);
+    const ip = getAppRouteClientIp(request.headers) || "unknown";
     if (!(await checkRedisRateLimit(`api:auth:${ip}`, 1000, 60_000))) {
       return NextResponse.json(
         {

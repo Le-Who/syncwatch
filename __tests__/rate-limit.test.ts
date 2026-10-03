@@ -1,9 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   checkRateLimit,
-  getAppRouteClientIp,
-  getClientIp,
 } from "../lib/rate-limit";
+import { getAppRouteClientIp, getClientIp } from "../lib/ip";
 import { applyAuthoritativeClientIp } from "../lib/server-config";
 import { createRateLimiter } from "../lib/redis-rate-limit";
 
@@ -135,16 +134,16 @@ describe("trusted proxy client addresses", () => {
     const headers = new Headers({ "x-forwarded-for": "203.0.113.7" });
     vi.stubEnv("TRUST_PROXY", "false");
 
-    expect(getClientIp(headers, "127.0.0.1")).toBe("127.0.0.1");
+    expect(getClientIp(headers) || "127.0.0.1").toBe("127.0.0.1");
   });
 
-  it("uses the first forwarded address when trusted forwarding is enabled", () => {
+  it("uses the first non-bogon forwarded address from the right when trusted forwarding is enabled", () => {
     const headers = new Headers({
-      "x-forwarded-for": "203.0.113.7, 10.0.0.4",
+      "x-forwarded-for": "10.0.0.4, 8.8.8.8, 192.168.1.1",
     });
     vi.stubEnv("TRUST_PROXY", "true");
 
-    expect(getClientIp(headers, "127.0.0.1")).toBe("203.0.113.7");
+    expect(getClientIp(headers) || "127.0.0.1").toBe("8.8.8.8");
   });
 
   it("uses the custom server's authoritative direct peer address by default", () => {
@@ -175,8 +174,7 @@ describe("trusted proxy client addresses", () => {
     expect(
       getClientIp(
         new Headers({ "x-syncwatch-client-ip": "203.0.113.7" }),
-        "198.51.100.8",
-      ),
+      ) || "198.51.100.8",
     ).toBe("198.51.100.8");
   });
 });
