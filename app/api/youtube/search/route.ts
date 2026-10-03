@@ -3,7 +3,7 @@ import { z } from "zod";
 import { checkRedisRateLimit } from "@/lib/redis-rate-limit";
 import { Worker } from "worker_threads";
 import { LRUCache } from "@/lib/lru-cache";
-import { getAppRouteClientIp } from "@/lib/rate-limit";
+import { getAppRouteClientIp } from "@/lib/ip";
 
 const ytSearchQuerySchema = z.string().min(1);
 
@@ -141,7 +141,7 @@ async function searchWithGoogleApi(query: string, apiKey: string) {
 }
 
 export async function GET(request: Request) {
-  const ip = getAppRouteClientIp(request.headers);
+  const ip = getAppRouteClientIp(request.headers) || "unknown";
   const allowed = await checkRedisRateLimit(
     `api:youtube-search:${ip}`,
     20,
