@@ -137,7 +137,13 @@ export default function Player() {
   }, []);
 
   useEffect(() => {
+    let lastActivity = 0;
     const handleUserActivity = () => {
+      const now = Date.now();
+      // ⚡ Bolt Optimization: Throttle continuous DOM events to prevent rapid timeout clear/set cycles
+      if (now - lastActivity < 1000) return;
+      lastActivity = now;
+
       wakeUp();
       if (idleTimeoutRef.current) clearTimeout(idleTimeoutRef.current);
       idleTimeoutRef.current = setTimeout(
