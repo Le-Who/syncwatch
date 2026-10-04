@@ -137,7 +137,13 @@ export default function Player() {
   }, []);
 
   useEffect(() => {
+    let lastTime = 0;
     const handleUserActivity = () => {
+      // Reduces event calls from ~60Hz to ~5Hz while keeping UI responsiveness intact
+      const now = Date.now();
+      if (now - lastTime < 200) return;
+      lastTime = now;
+
       wakeUp();
       if (idleTimeoutRef.current) clearTimeout(idleTimeoutRef.current);
       idleTimeoutRef.current = setTimeout(
@@ -152,18 +158,20 @@ export default function Player() {
       );
     };
 
-    window.addEventListener("mousemove", handleUserActivity);
-    window.addEventListener("keydown", handleUserActivity);
-    window.addEventListener("touchstart", handleUserActivity);
-    window.addEventListener("click", handleUserActivity);
+    const passiveOpts: EventListenerOptions = { passive: true } as EventListenerOptions;
+
+    window.addEventListener("mousemove", handleUserActivity, passiveOpts);
+    window.addEventListener("keydown", handleUserActivity, passiveOpts);
+    window.addEventListener("touchstart", handleUserActivity, passiveOpts);
+    window.addEventListener("click", handleUserActivity, passiveOpts);
 
     handleUserActivity();
 
     return () => {
-      window.removeEventListener("mousemove", handleUserActivity);
-      window.removeEventListener("keydown", handleUserActivity);
-      window.removeEventListener("touchstart", handleUserActivity);
-      window.removeEventListener("click", handleUserActivity);
+      window.removeEventListener("mousemove", handleUserActivity, passiveOpts);
+      window.removeEventListener("keydown", handleUserActivity, passiveOpts);
+      window.removeEventListener("touchstart", handleUserActivity, passiveOpts);
+      window.removeEventListener("click", handleUserActivity, passiveOpts);
       if (idleTimeoutRef.current) clearTimeout(idleTimeoutRef.current);
     };
   }, [wakeUp]);
