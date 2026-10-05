@@ -156,8 +156,9 @@ export default function Playlist() {
                   </div>
                 )}
 
-                <div
-                  className="group min-w-0 flex-1 cursor-pointer px-3"
+                <button
+                  type="button"
+                  className="group min-w-0 flex-1 cursor-pointer px-3 text-left outline-none focus-visible:ring-2"
                   onClick={() => handlePlay(item.id)}
                 >
                   <p
@@ -167,6 +168,7 @@ export default function Playlist() {
                         : "text-theme-text group-hover:text-theme-accent"
                     }`}
                   >
+                    <span className="sr-only">Play </span>
                     {item.title}
                   </p>
 
@@ -201,7 +203,7 @@ export default function Playlist() {
                       </p>
                     );
                   })()}
-                </div>
+                </button>
 
                 {/* Progress Bar inside card */}
                 {(() => {
