@@ -23,7 +23,15 @@ blob-report/
 # IDE & Caches
 .vscode/
 .idea/
-.agents/
+# Track only the compatibility entry points for repository instructions.
+!.agents/
+.agents/*
+!.agents/rules/
+.agents/rules/*
+!.agents/rules/daily-use.md
+!.agents/workflows/
+.agents/workflows/*
+!.agents/workflows/full-audit-readme.md
 .worktrees/
 .eslintcache
 .stylelintcache
