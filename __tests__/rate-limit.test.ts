@@ -138,13 +138,13 @@ describe("trusted proxy client addresses", () => {
     expect(getClientIp(headers, "127.0.0.1")).toBe("127.0.0.1");
   });
 
-  it("uses the first forwarded address when trusted forwarding is enabled", () => {
+  it("uses the last forwarded address when trusted forwarding is enabled", () => {
     const headers = new Headers({
       "x-forwarded-for": "203.0.113.7, 10.0.0.4",
     });
     vi.stubEnv("TRUST_PROXY", "true");
 
-    expect(getClientIp(headers, "127.0.0.1")).toBe("203.0.113.7");
+    expect(getClientIp(headers, "127.0.0.1")).toBe("10.0.0.4");
   });
 
   it("uses the custom server's authoritative direct peer address by default", () => {
