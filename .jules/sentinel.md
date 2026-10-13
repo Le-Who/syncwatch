@@ -1,0 +1,4 @@
+## 2023-10-24 - Fix IP spoofing via X-Forwarded-For header
+**Vulnerability:** The application was extracting the left-most IP address from the `X-Forwarded-For` header when `TRUST_PROXY` was true. A malicious client could spoof the header, leading to rate limit bypass and other IP-based security vulnerabilities.
+**Learning:** In a typical reverse proxy setup (e.g., Cloudflare, AWS ALB), the client can set arbitrary values in `X-Forwarded-For`. The proxy appends the real client IP to the right side. Taking the left-most IP inherently trusts the client's input, which is a security risk.
+**Prevention:** Always extract the right-most IP address (e.g., using `.pop()`) from the `X-Forwarded-For` header when behind a trusted proxy, as the proxy guarantees the right-most address is the true origin it connected with.
