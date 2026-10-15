@@ -18,9 +18,9 @@ export function UserGestureGuard({ onActivate }: UserGestureGuardProps) {
           e.stopPropagation();
           onActivate();
         }}
-        className="bg-theme-accent text-theme-bg flex items-center gap-3 rounded-full px-8 py-4 font-bold tracking-widest uppercase shadow-[0_0_40px_var(--color-theme-accent)] transition-all hover:scale-105 active:scale-95"
+        className="bg-theme-accent text-theme-bg focus-visible:ring-theme-text flex items-center gap-3 rounded-full px-8 py-4 font-bold tracking-widest uppercase shadow-[0_0_40px_var(--color-theme-accent)] transition-all outline-none hover:scale-105 focus-visible:ring-2 active:scale-95"
       >
-        <MonitorPlay className="h-6 w-6" />
+        <MonitorPlay className="h-6 w-6" aria-hidden="true" />
         Initialize Stream Sync
       </button>
       <p className="text-theme-muted mt-6 text-xs tracking-widest uppercase">
