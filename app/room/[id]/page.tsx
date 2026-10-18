@@ -29,7 +29,7 @@ export default function RoomPage() {
   const roomId = params.id as string;
   const {
     room,
-    isConnected,
+    isSleeping,
     nickname,
     setNickname,
     connect,
@@ -40,7 +40,7 @@ export default function RoomPage() {
   } = useStore(
     useShallow((s) => ({
       room: s.room,
-      isConnected: s.isConnected,
+      isSleeping: s.isSleeping,
       nickname: s.nickname,
       setNickname: s.setNickname,
       connect: s.connect,
@@ -56,6 +56,7 @@ export default function RoomPage() {
   const [copied, setCopied] = useState(false);
   const [manualInviteLink, setManualInviteLink] = useState<string | null>(null);
   const renameButtonRef = useRef<HTMLButtonElement>(null);
+  const joinAttemptRef = useRef(0);
   const [activeTab, setActiveTab] = useState<
     "playlist" | "chat" | "participants"
   >("playlist");
@@ -77,16 +78,21 @@ export default function RoomPage() {
 
   useEffect(() => {
     return () => {
+      joinAttemptRef.current += 1;
       disconnect();
     };
   }, [disconnect]);
 
-  const handleJoin = (e: React.FormEvent) => {
+  const handleJoin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (tempName.trim()) {
+      const attempt = ++joinAttemptRef.current;
       setNickname(tempName.trim());
-      connect(roomId, tempName.trim());
       setIsJoining(false);
+      const dispatched = await connect(roomId, tempName.trim());
+      if (attempt === joinAttemptRef.current && dispatched === false) {
+        setIsJoining(true);
+      }
     }
   };
 
@@ -174,7 +180,7 @@ export default function RoomPage() {
     );
   }
 
-  if (!isConnected || !room) {
+  if (!room) {
     return (
       <main className="font-theme relative flex min-h-screen items-center justify-center bg-transparent">
         <div className="theme-panel relative z-10 flex flex-col items-center space-y-8 p-10">
@@ -195,7 +201,7 @@ export default function RoomPage() {
   return (
     <>
       {/* B5: Reconnection overlay — shows over room UI when connection drops */}
-      <ReconnectingOverlay />
+      {!isSleeping && <ReconnectingOverlay />}
       <div className="text-theme-text font-theme selection:bg-theme-accent selection:text-theme-bg flex h-dvh flex-col overflow-hidden bg-transparent">
         {/* Header */}
         <header className="border-theme-border bg-theme-card relative z-30 flex h-[72px] shrink-0 items-center gap-4 border-b-4 px-4 shadow-[0_4px_32px_var(--color-theme-shadow)] backdrop-blur-xl lg:px-6">

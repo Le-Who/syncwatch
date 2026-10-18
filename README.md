@@ -36,7 +36,7 @@ Because Native HTML5, YouTube iframe, and Twitch embed players fire lifecycle ev
 - **Media Transitions**: When `currentMediaId` changes during auto-advancement, native iframes often fire a `pause` event during load. The intent manager employs a state-based media transition guard with an active 8-second auto-expiry timeout, ensuring stale guards never permanently block events even if `onReady` fails to fire.
 - **User Scrubber Intent**: Dragging the seeker bar suppresses buffer/pause events protecting against "rubber-banding" server correction locks.
 - **Selective Event Passthrough**: The `ignoreEventsFor` method accepts a `passThroughUserActions` flag, allowing deliberate user play/pause clicks to bypass post-seek ignore windows while still filtering programmatic events.
-- **Twitch Phantom-Pause Guard**: Twitch's embed API fires asynchronous PAUSE events after seek operations. The intent manager detects these via a 500ms `isRecentSeek` window, preventing ghost pauses from corrupting sync state.
+- **Twitch Phantom-Pause Guard**: Twitch's embed API fires asynchronous PAUSE events after seek operations. The intent manager filters recent programmatic seeks and commands with `isRecentProgrammaticSeek` and `isRecentCommand`, preventing ghost pauses from corrupting sync state.
 
 ### Drift Correction & Hysteresis
 
@@ -101,7 +101,7 @@ pnpm start
 - **Graceful Shutdown**: The service captures `SIGTERM` and `SIGINT` to definitively flush the Redis write-behind queue memory buffer to Postgres before dying. Do not kill processes with `SIGKILL` or recent playlist changes may be lost.
 - **Provider API Quotas**: The system uses a headless worker script to scrape YouTube if the `YOUTUBE_API_KEY` quota exhausts. However, Twitch metadata entirely lacks an oEmbed fallback and relies on raw HTML parsing, which is brittle.
 - **Browser Autoplay Policies**: Modern browsers aggressively block autoplay without user interaction. SyncWatch forces a "Initialize Stream Sync" confirmation click before mounting `react-player`.
-- **Twitch Native Seek Quirks**: Due to an explicit constraint in the Twitch Embed API v1, scrubbing the native Twitch player timeline _always_ forces a `PAUSE` event. SyncWatch implements a multi-layered guard: the `PlaybackIntentManager` detects recent programmatic seeks via a 500ms `isRecentSeek` window and blocks these phantom pauses before they corrupt sync state.
+- **Twitch Native Seek Quirks**: Twitch can emit asynchronous `PAUSE` events after timeline changes. SyncWatch uses the `PlaybackIntentManager` to recognize recent programmatic seeks and commands and filter these phantom pauses before they affect shared playback.
 - **Session and origin boundary**: The server issues a random participant identity and signs it into a 30-day HttpOnly, `SameSite=Lax` cookie. The client adopts that server-issued identity before joining or reconnecting, so a stale local browser identity cannot claim an existing room role. In production Socket.IO accepts only the normalized `NEXT_PUBLIC_APP_URL`; deploy TLS at the proxy and configure `TRUST_PROXY=true` only when that proxy sanitizes forwarding headers.
 - **Rate-limit behavior**: Auth/session is limited to 10 requests per 60 seconds, metadata/search to 20 per 60 seconds, playlists to 10 per 60 seconds, room joins to 50 per 60 seconds, and commands to 60 per 10 seconds. Rejected commands receive a nonce-correlated `RATE_LIMITED` acknowledgement and are not retried or snapshot-refreshed automatically.
 - **Dependency boundary**: YouTube fallback searches execute in a worker with a timeout to contain failed or slow scraping. That boundary limits one request's work but is not a blanket security guarantee; keep `yt-search` and its dependency tree under audit and prefer the YouTube API key path for production traffic.
@@ -110,6 +110,15 @@ pnpm start
 
 - **Unit/Integration (`npm run test:coverage`)**: Uses Vitest to test pure logic (Zod schemas, drift math, Redis atomic playback behavior, and slow-path CAS).
 - **E2E (`npx playwright test`)**: Tests full multi-browser web-socket synchronization workflows.
+
+Redis integration tests require `REDIS_URL`. The persistence queue suite also
+requires `SYNCWATCH_TEST_DB_SYNC_REDIS=1` and an empty, disposable Redis database:
+the real worker enumerates the pending queue. Its database RPC is a controlled
+test boundary; it does not write to Supabase.
+
+```bash
+pnpm exec cross-env REDIS_URL=redis://127.0.0.1:6379/15 SYNCWATCH_TEST_DB_SYNC_REDIS=1 vitest run __tests__/integration/db-sync-redis.test.ts
+```
 
 ## Technical Debt & Improvement Backlog
 
@@ -125,7 +134,7 @@ pnpm start
 | PubSub handler cross-fire    | `lib/socket/pubsub.ts`                                              | Two separate `pmessage` handlers on the same ioredis subscriber caused both to fire on every message. The `room_events` handler lacked a prefix guard and would process `queue_wakeup` messages. Fixed by merging into a single handler with explicit `channel.startsWith()` routing.                                                  |
 | Death pause feedback loop    | `lib/store.ts`, `components/Player.tsx`, `hooks/usePlaybackSync.ts` | Three interacting bugs: (1) double nonce — `sendCommand` overwrote `emitCommand`'s nonce, breaking echo protection; (2) command-type/status-type mismatch in `markCommandEmitted`; (3) sync loop overrode user intent after 1.5s barrier expired. Fixed by removing duplicate nonce, normalizing types, and adding intent-aware guard. |
 | Media transition deadlock    | `lib/playback-intent-manager.ts`                                    | `setMediaTransition` could permanently block events if `onReady` never fired. Fixed with active 8-second auto-expiry `setTimeout`.                                                                                                                                                                                                     |
-| Twitch phantom pause         | `components/Player.tsx`, `lib/playback-intent-manager.ts`           | Twitch embed fires asynchronous PAUSE after seek. Fixed with `isRecentSeek(500)` guard in `handleNativePause`.                                                                                                                                                                                                                         |
+| Twitch phantom pause         | `components/Player.tsx`, `lib/playback-intent-manager.ts`           | Twitch embed fires asynchronous PAUSE after seek. Fixed with `isRecentProgrammaticSeek` / `isRecentCommand` guards in `handleNativePause`.                                                                                                                                                                                                                         |
 | Stale-state rollback flicker | `hooks/usePlaybackSync.ts`                                          | Owner `sync_correction` broadcast echoed back and triggered a visible rollback. Fixed by tagging emissions with nonce via `markCommandEmitted`.                                                                                                                                                                                        |
 | YouTube rate oscillation     | `lib/drift-math.ts`                                                 | Playback rate toggled rapidly when drift hovered at 0.5s boundary, causing audible pitch changes. Fixed with hysteresis (start=0.6s, stop=0.3s).                                                                                                                                                                                       |
 | Stale wakeUp closure         | `components/Player.tsx`                                             | `wakeUp` function closed over stale `isSleeping` state, causing event listener churn on every render. Fixed by using `isSleepingRef` for stable identity.                                                                                                                                                                              |

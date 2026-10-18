@@ -20,6 +20,32 @@ function getDeterministicUUID(roomId: string): string {
 
 const writeBehindQueue = new Set<string>();
 
+// Each mark changes the score even within one millisecond. A mark during a
+// retry deadline preserves that deadline (plus 1ms), rather than bypassing it.
+const MARK_DIRTY = `
+  local previous = redis.call("ZSCORE", KEYS[1], ARGV[1])
+  local score = tonumber(ARGV[2])
+  if previous then score = math.max(score, tonumber(previous) + 1) end
+  return redis.call("ZADD", KEYS[1], score, ARGV[1])
+`;
+
+// Ack/backoff only the mark we read. A newer mark belongs to another write.
+const COMPLETE_DIRTY = `
+  if redis.call("ZSCORE", KEYS[1], ARGV[1]) ~= ARGV[2] then return 0 end
+  if ARGV[3] == "" then
+    return redis.call("ZREM", KEYS[1], ARGV[1])
+  end
+  return redis.call("ZADD", KEYS[1], ARGV[3], ARGV[1])
+`;
+
+function scoredQueue(rows: string[]) {
+  const queue: Array<{ roomId: string; score?: string }> = [];
+  for (let i = 0; i < rows.length; i += 2) {
+    queue.push({ roomId: rows[i], score: rows[i + 1] });
+  }
+  return queue;
+}
+
 export async function isSystemDegraded(): Promise<boolean> {
   const redisClient = getRedisClient();
   if (redisClient) {
@@ -37,7 +63,7 @@ export const markRoomForSync = (roomId: string) => {
   const redisClient = getRedisClient();
   if (redisClient) {
     redisClient
-      .zadd("pending_db_syncs", Date.now(), roomId)
+      .eval(MARK_DIRTY, 1, "pending_db_syncs", roomId, Date.now())
       .catch((e) => console.error("Redis queue error:", e));
   } else {
     writeBehindQueue.add(roomId);
@@ -149,12 +175,21 @@ export async function loadRoomFromDB(
       .from("rooms")
       .select("state")
       .eq("id", getDeterministicUUID(roomId))
-      .single();
+      .maybeSingle();
 
-    if (error || !roomData) return null;
+    if (error) throw error;
+    if (!roomData) return null;
 
     const dbState = roomData.state as any;
-    if (!dbState || typeof dbState !== "object") return null;
+    if (
+      !dbState ||
+      typeof dbState !== "object" ||
+      Array.isArray(dbState) ||
+      typeof dbState.name !== "string" ||
+      !Array.isArray(dbState.playlist)
+    ) {
+      throw new Error("Stored room snapshot is invalid");
+    }
 
     const {
       controlMode: _legacyControlMode,
@@ -234,7 +269,7 @@ export async function loadRoomFromDB(
     });
   } catch (err) {
     console.error(`Failed to load room ${roomId} from DB:`, err);
-    return null;
+    throw err;
   }
 }
 
@@ -242,17 +277,29 @@ export function startDbSyncWorker(supabase: SupabaseClient | null) {
   if (!supabase) return null;
   return setInterval(async () => {
     const redisClient = getRedisClient();
-    let queue: string[] = [];
+    let queue: Array<{ roomId: string; score?: string }> = [];
 
     if (redisClient) {
       const cutoff = Date.now() - 5000;
-      queue = await redisClient
-        .zrangebyscore("pending_db_syncs", "-inf", cutoff, "LIMIT", 0, 50)
-        .catch(() => []);
+      queue = scoredQueue(
+        await redisClient
+          .zrangebyscore(
+            "pending_db_syncs",
+            "-inf",
+            cutoff,
+            "WITHSCORES",
+            "LIMIT",
+            0,
+            50,
+          )
+          .catch(() => []),
+      );
     } else {
       if (writeBehindQueue.size === 0) return;
-      queue = Array.from(writeBehindQueue).slice(0, 50);
-      queue.forEach((q) => writeBehindQueue.delete(q));
+      queue = Array.from(writeBehindQueue)
+        .slice(0, 50)
+        .map((roomId) => ({ roomId }));
+      queue.forEach(({ roomId }) => writeBehindQueue.delete(roomId));
 
       if (writeBehindQueue.size > 3000) {
         console.warn(
@@ -272,20 +319,28 @@ export function startDbSyncWorker(supabase: SupabaseClient | null) {
 
       // 1. Fetch all room states concurrently first
       const roomStrs = await Promise.allSettled(
-        batch.map((roomId) => getRedisRoom(roomId)),
+        batch.map(({ roomId }) => getRedisRoom(roomId)),
       );
 
       // 2. Process the batch
-      const promises = batch.map(async (roomId, index) => {
+      const promises = batch.map(async ({ roomId, score }, index) => {
         let room;
         const result = roomStrs[index];
+        // A failed cache read says nothing about whether the room still exists.
+        // Keep its dirty marker so a later worker can retry the read.
+        if (result.status === "rejected") {
+          if (!redisClient) writeBehindQueue.add(roomId);
+          return;
+        }
         if (result.status === "fulfilled" && result.value) {
           room = result.value;
         }
 
         if (!room) {
           if (redisClient) {
-            await redisClient.zrem("pending_db_syncs", roomId).catch(() => {});
+            await redisClient
+              .eval(COMPLETE_DIRTY, 1, "pending_db_syncs", roomId, score!, "")
+              .catch(() => {});
           }
           return;
         }
@@ -306,14 +361,23 @@ export function startDbSyncWorker(supabase: SupabaseClient | null) {
           await forcePersistRoom(room, supabase);
 
           if (redisClient) {
-            await redisClient.zrem("pending_db_syncs", roomId).catch(() => {});
+            await redisClient
+              .eval(COMPLETE_DIRTY, 1, "pending_db_syncs", roomId, score!, "")
+              .catch(() => {});
             await redisClient.del(`db_sync_lock:${roomId}`).catch(() => {});
           }
         } catch (err) {
           if (redisClient) {
             await redisClient.del(`db_sync_lock:${roomId}`).catch(() => {});
             await redisClient
-              .zadd("pending_db_syncs", Date.now() + 60000, roomId)
+              .eval(
+                COMPLETE_DIRTY,
+                1,
+                "pending_db_syncs",
+                roomId,
+                score!,
+                Date.now() + 60000,
+              )
               .catch(() => {});
           } else {
             writeBehindQueue.add(roomId);
@@ -328,25 +392,34 @@ export function startDbSyncWorker(supabase: SupabaseClient | null) {
 export async function flushDbSyncQueue(supabase: SupabaseClient | null) {
   if (!supabase) return;
   const redisClient = getRedisClient();
-  let queue: string[] = [];
+  let queue: Array<{ roomId: string; score?: string }> = [];
 
   if (redisClient) {
-    queue = await redisClient
-      .zrangebyscore("pending_db_syncs", "-inf", "+inf")
-      .catch(() => []);
+    queue = scoredQueue(
+      await redisClient
+        .zrangebyscore("pending_db_syncs", "-inf", "+inf", "WITHSCORES")
+        .catch(() => []),
+    );
   } else {
-    queue = Array.from(writeBehindQueue);
+    queue = Array.from(writeBehindQueue).map((roomId) => ({ roomId }));
   }
 
-  for (const roomId of queue) {
-    let room;
-    const roomStr = await getRedisRoom(roomId);
-    if (roomStr) room = roomStr;
-
-    if (room) {
-      await forcePersistRoom(room, supabase).catch(() => {});
-      if (redisClient)
-        await redisClient.zrem("pending_db_syncs", roomId).catch(() => {});
+  for (const { roomId, score } of queue) {
+    // Claim local work before awaiting: a new mark during persistence remains
+    // queued for the next flush instead of being cleared by this write's ack.
+    if (!redisClient) writeBehindQueue.delete(roomId);
+    try {
+      const room = await getRedisRoom(roomId);
+      if (room) await forcePersistRoom(room, supabase);
+      if (redisClient) {
+        await redisClient
+          .eval(COMPLETE_DIRTY, 1, "pending_db_syncs", roomId, score!, "")
+          .catch(() => {});
+      }
+    } catch {
+      // Both transient reads and failed writes must remain retryable. Continue
+      // with other rooms so one failure cannot block the shutdown flush.
+      if (!redisClient) writeBehindQueue.add(roomId);
     }
   }
 }

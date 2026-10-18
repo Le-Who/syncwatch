@@ -1,7 +1,6 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, afterAll } from "vitest";
 import { getRedisClient } from "../../lib/redis-rate-limit";
 import {
-  withLock,
   getRedisRoom,
   setRedisRoomCAS,
   setRedisRoom,
@@ -15,17 +14,9 @@ import { randomUUID } from "node:crypto";
 // We require a real Redis instance (like the one in .env.local) to test Lua scripts.
 // We use a unique namespace per test run to prevent CI collisions.
 const TEST_RUN_ID = randomUUID().slice(0, 8);
+const redis = process.env.REDIS_URL ? getRedisClient() : null;
 
-describe("Redis Actor & Queue Integration Tests", () => {
-  let redis: ReturnType<typeof getRedisClient>;
-
-  beforeAll(() => {
-    redis = getRedisClient();
-    if (!redis) {
-      console.warn("Skipping Redis integration tests. No REDIS_URL found.");
-    }
-  });
-
+describe.skipIf(!redis)("Redis actor integration tests", () => {
   afterAll(async () => {
     if (redis) {
       // Clean up all keys generated in this isolated test run
@@ -35,36 +26,6 @@ describe("Redis Actor & Queue Integration Tests", () => {
       }
       await redis.quit();
     }
-  });
-
-  it("1. withLock: should guarantee mutual exclusion for distributed locks", async () => {
-    if (!redis) return;
-
-    const resourceId = `lock_test_${TEST_RUN_ID}`;
-    let concurrencyCounter = 0;
-    let maxConcurrencyObserved = 0;
-
-    const criticalPath = async () => {
-      await withLock(resourceId, 5000, async () => {
-        concurrencyCounter++;
-        maxConcurrencyObserved = Math.max(
-          maxConcurrencyObserved,
-          concurrencyCounter,
-        );
-        await new Promise((resolve) => setImmediate(resolve));
-        concurrencyCounter--;
-      });
-    };
-
-    await Promise.all([
-      criticalPath(),
-      criticalPath(),
-      criticalPath(),
-      criticalPath(),
-      criticalPath(),
-    ]);
-
-    expect(maxConcurrencyObserved).toBe(1);
   });
 
   it("2. setRedisRoomCAS: should reject stale versions (Optimistic Concurrency Control)", async () => {

@@ -8,14 +8,14 @@
   },
   "scripts": {
     "dev": "cross-env NODE_OPTIONS=\"--no-warnings=DeprecationWarning\" tsx server.ts",
-    "build": "next build && npx tsc -p tsconfig.server.json",
+    "build": "next build && tsc -p tsconfig.server.json",
     "start": "cross-env NODE_ENV=production NODE_OPTIONS=\"--no-warnings=DeprecationWarning\" node .next/production-server/server.js",
     "lint": "eslint .",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "clean": "next clean",
+    "clean": "node scripts/clean.mjs",
     "format": "prettier --write .",
-    "prune": "knip",
+    "check:unused": "knip",
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
@@ -38,6 +38,7 @@
     "react-dom": "^19.2.1",
     "react-player": "^3.4.0",
     "socket.io": "^4.8.3",
+    "socket.io-client": "^4.8.3",
     "sonner": "^2.0.7",
     "tailwindcss": "^4.2.2",
     "tsx": "^4.21.0",
@@ -58,30 +59,41 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/yt-search": "^2.10.3",
-    "@vitest/coverage-v8": "^4.1.0",
+    "@vitest/coverage-v8": "^4.1.12",
     "eslint": "^9.39.4",
     "eslint-config-next": "^16.3.6",
     "jsdom": "^28.1.0",
     "knip": "^5.85.0",
     "prettier": "^3.8.1",
     "prettier-plugin-tailwindcss": "^0.7.2",
-    "socket.io-client": "^4.8.3",
-    "vitest": "^4.1.0"
+    "vite": "8.3.4",
+    "vitest": "^4.1.12"
   },
   "pnpm": {
     "overrides": {
       "@babel/core": "7.29.6",
+      "@humanfs/node": "0.16.8",
       "baseline-browser-mapping": "2.11.26",
       "brace-expansion@1": "1.1.21",
+      "brace-expansion@5": "5.0.12",
       "browserslist": "4.28.8",
       "engine.io": "6.6.10",
       "esbuild": "0.28.1",
+      "flatted": "3.4.4",
+      "js-yaml@4": "4.3.2",
       "minimatch@3": "3.1.4",
       "nanoid@3": "3.3.18",
+      "picomatch@2": "2.3.2",
+      "picomatch@4": "4.0.7",
       "postcss": "8.5.26",
+      "sharp": "0.35.5",
+      "smol-toml": "1.9.1",
       "socket.io-parser": "4.2.7",
+      "source-map-js": "1.2.2",
       "undici@7": "7.29.1",
-      "ws": "8.21.3"
+      "vite": "8.3.4",
+      "ws": "8.21.3",
+      "yaml": "2.9.1"
     }
   }
 }

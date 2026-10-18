@@ -40,6 +40,13 @@ describe("media input parsing", () => {
     expect(expanded[99]).toBe("https://cdn.example/100.mp4");
   });
 
+  it("leaves unsafe integer masks intact instead of generating duplicate URLs", () => {
+    const input =
+      "https://cdn.example/episode-${9007199254740992-9007199254740994}.mp4";
+
+    expect(expandMediaInput(input)).toEqual([input]);
+  });
+
   it("extracts YouTube playlist identifiers", () => {
     expect(
       extractYouTubePlaylistId(
@@ -49,15 +56,34 @@ describe("media input parsing", () => {
     expect(extractYouTubePlaylistId("https://youtu.be/abc")).toBeNull();
   });
 
+  it.each([
+    "https://youtube.com.example.org/watch?list=PL123",
+    "https://notyoutube.com/watch?list=PL123",
+    "https://youtu.be.example.org/watch?list=PL123",
+    "ftp://www.youtube.com/watch?list=PL123",
+  ])("does not import a playlist from %s", (url) => {
+    expect(extractYouTubePlaylistId(url)).toBeNull();
+  });
+
+  it("accepts YouTube subdomains when importing playlists", () => {
+    expect(
+      extractYouTubePlaylistId("https://m.youtube.com/watch?list=PL123"),
+    ).toBe("PL123");
+  });
+
   it("extracts numeric and h/m/s start positions from URLs", () => {
-    expect(
-      extractStartPositionFromUrl("https://youtu.be/abc?t=91"),
-    ).toBe(91);
-    expect(
-      extractStartPositionFromUrl("https://youtu.be/abc?t=1h2m3s"),
-    ).toBe(3723);
+    expect(extractStartPositionFromUrl("https://youtu.be/abc?t=91")).toBe(91);
+    expect(extractStartPositionFromUrl("https://youtu.be/abc?t=1h2m3s")).toBe(
+      3723,
+    );
     expect(
       extractStartPositionFromUrl("https://youtube.com/watch?v=abc&start=45"),
     ).toBe(45);
+  });
+
+  it("ignores numeric start positions that overflow to infinity", () => {
+    expect(
+      extractStartPositionFromUrl(`https://youtu.be/abc?t=${"9".repeat(400)}`),
+    ).toBe(0);
   });
 });

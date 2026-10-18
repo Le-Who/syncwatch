@@ -11,37 +11,34 @@ export interface FlashbackPoint {
 
 export function useFlashback() {
   const [flashbacks, setFlashbacks] = useState<FlashbackPoint[]>([]);
-  const lastKnownPosition = useRef<number>(0);
+  // Undo returns a position synchronously; React may defer render updates.
+  const stackRef = useRef<FlashbackPoint[]>([]);
 
   const registerPossibleFlashback = useCallback(
     (currentPosition: number, targetSeekPosition: number, mediaId: string) => {
       if (
         Math.abs(targetSeekPosition - currentPosition) > FLASHBACK_THRESHOLD_SEC
       ) {
-        setFlashbacks((prev) => {
-          const newStack = [
-            { position: currentPosition, timestamp: Date.now(), mediaId },
-            ...prev,
-          ].slice(0, MAX_FLASHBACKS);
-          return newStack;
-        });
+        const newStack = [
+          { position: currentPosition, timestamp: Date.now(), mediaId },
+          ...stackRef.current,
+        ].slice(0, MAX_FLASHBACKS);
+        stackRef.current = newStack;
+        setFlashbacks(newStack);
       }
-      lastKnownPosition.current = targetSeekPosition;
     },
     [],
   );
 
   const popFlashback = useCallback((currentMediaId: string): number | null => {
-    let restoredPosition: number | null = null;
-    setFlashbacks((prev) => {
-      const fb = prev.find((p) => p.mediaId === currentMediaId);
-      if (fb) {
-        restoredPosition = fb.position;
-        return prev.filter((p) => p !== fb);
-      }
-      return prev;
-    });
-    return restoredPosition;
+    const fb = stackRef.current.find(
+      (point) => point.mediaId === currentMediaId,
+    );
+    if (!fb) return null;
+    const newStack = stackRef.current.filter((point) => point !== fb);
+    stackRef.current = newStack;
+    setFlashbacks(newStack);
+    return fb.position;
   }, []);
 
   return { flashbacks, registerPossibleFlashback, popFlashback };

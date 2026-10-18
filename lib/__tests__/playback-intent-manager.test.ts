@@ -90,18 +90,16 @@ describe("PlaybackIntentManager", () => {
   describe("Programmatic Seeks", () => {
     it("should not have recent programmatic seek initially", () => {
       expect(manager.isRecentProgrammaticSeek()).toBe(false);
-      expect(manager.isRecentSeek()).toBe(false);
     });
 
     it("should track programmatic seeks", () => {
       manager.markProgrammaticSeek();
 
       expect(manager.isRecentProgrammaticSeek()).toBe(true);
-      expect(manager.isRecentSeek()).toBe(true);
 
       vi.advanceTimersByTime(300);
       expect(manager.isRecentProgrammaticSeek()).toBe(true);
-      expect(manager.isRecentSeek()).toBe(false); // Default window is 300ms
+      expect(manager.isRecentProgrammaticSeek(300)).toBe(false);
 
       vi.advanceTimersByTime(1200); // Total 1500ms
       expect(manager.isRecentProgrammaticSeek()).toBe(false); // Default threshold is 1500ms
@@ -116,13 +114,13 @@ describe("PlaybackIntentManager", () => {
       expect(manager.isRecentProgrammaticSeek(1500)).toBe(false);
     });
 
-    it("should respect custom windows for recent seeks", () => {
+    it("should respect short custom windows for programmatic seeks", () => {
       manager.markProgrammaticSeek();
-      expect(manager.isRecentSeek(1000)).toBe(true);
+      expect(manager.isRecentProgrammaticSeek(1000)).toBe(true);
 
       vi.advanceTimersByTime(500);
-      expect(manager.isRecentSeek(1000)).toBe(true);
-      expect(manager.isRecentSeek(300)).toBe(false);
+      expect(manager.isRecentProgrammaticSeek(1000)).toBe(true);
+      expect(manager.isRecentProgrammaticSeek(300)).toBe(false);
     });
   });
 
@@ -412,7 +410,7 @@ describe("PlaybackIntentManager", () => {
       (_command, optimisticStatus, authoritativeStatus) => {
         manager.markCommandEmitted(optimisticStatus, 10, "nonce123");
 
-        manager.checkAndConsumeNonce("nonce123");
+        manager.acknowledgeServerNonce("nonce123");
 
         expect(manager.isIgnoringNativeEvents()).toBe(true);
         expect(manager.isAwaitingServerAck()).toBe(false);
@@ -422,7 +420,7 @@ describe("PlaybackIntentManager", () => {
         );
 
         vi.advanceTimersByTime(250);
-        manager.checkAndConsumeNonce("nonce123");
+        manager.acknowledgeServerNonce("nonce123");
         vi.advanceTimersByTime(250);
         expect(manager.isIgnoringNativeEvents()).toBe(false);
       },
@@ -431,7 +429,7 @@ describe("PlaybackIntentManager", () => {
     it("should not consume non-matching nonce", () => {
       manager.markCommandEmitted("playing", 10, "nonce123");
 
-      manager.checkAndConsumeNonce("nonce456");
+      manager.acknowledgeServerNonce("nonce456");
 
       expect(manager.isIgnoringNativeEvents()).toBe(false);
       expect(manager.lastStateEmittedRef?.nonce).toBe("nonce123");
@@ -440,7 +438,7 @@ describe("PlaybackIntentManager", () => {
     it("should do nothing if playbackNonce is not provided", () => {
       manager.markCommandEmitted("playing", 10, "nonce123");
 
-      manager.checkAndConsumeNonce(undefined);
+      manager.acknowledgeServerNonce(undefined);
 
       expect(manager.isIgnoringNativeEvents()).toBe(false);
       expect(manager.lastStateEmittedRef?.nonce).toBe("nonce123");

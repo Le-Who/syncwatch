@@ -138,6 +138,10 @@ describe("server.ts Real Socket.IO Integration", () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("JWT_SECRET", "default_local_secret_dont_use_in_prod");
     vi.stubEnv("NEXT_PUBLIC_APP_URL", TEST_ORIGIN);
+    // Exercise the local repository without inheriting developer DB credentials.
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "");
+    vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "");
+    vi.stubEnv("SUPABASE_SERVICE_KEY", "");
     // Import server.ts to trigger app.prepare().then(...)
     await import("../server");
 

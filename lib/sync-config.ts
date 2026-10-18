@@ -38,22 +38,10 @@ export const HARD_SEEK_IFRAME = 2.0;
 /** Hard-seek threshold for Twitch (most latency-sensitive) */
 export const HARD_SEEK_TWITCH = 1.0;
 
-/** Controlled-mode: owner sends sync_correction when drift exceeds this */
-export const CONTROLLED_OWNER_CORRECTION = 0.6;
-
-/** Controlled-mode: followers hard-seek when drift exceeds this */
-export const CONTROLLED_FOLLOWER_SEEK = 2.0;
-
 /** Paused state: hard-seek when position mismatch exceeds this */
 export const PAUSED_HARD_SEEK = 3.0;
 
 // ─── Grace Periods ─────────────────────────────────────────────────────
-
-/** Milliseconds to skip hard seeks after joining (lets clock sync converge) */
-export const JOIN_GRACE_PERIOD_MS = 3000;
-
-/** Milliseconds to suppress SyncStatusBadge after playback status change */
-export const BADGE_GRACE_PERIOD_MS = 2000;
 
 /** Pause debounce window in milliseconds */
 export const PAUSE_DEBOUNCE_MS = 150;
@@ -62,11 +50,3 @@ export const PAUSE_DEBOUNCE_MS = 150;
 
 /** Drift below this = "synced" */
 export const BADGE_SYNCED = 0.3;
-
-/** Drift below this but above BADGE_SYNCED = "syncing" */
-export const BADGE_SYNCING = 1.0;
-
-/** Drift below this but above BADGE_SYNCING = "drift" */
-export const BADGE_DRIFT = 3.0;
-
-/** Drift at or above BADGE_DRIFT = "lost" */

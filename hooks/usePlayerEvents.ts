@@ -19,7 +19,6 @@ export interface UsePlayerEventsOptions {
   playing: boolean;
   setIsReady: (ready: boolean) => void;
   setError: (err: string | null) => void;
-  setPlaying: (playing: boolean) => void;
   setDuration: (dur: number) => void;
   emitCommand: (type: string, payload?: any) => void;
   handleNativePlay: () => void;
@@ -43,7 +42,6 @@ export function usePlayerEvents({
   playing,
   setIsReady,
   setError,
-  setPlaying: _setPlaying,
   setDuration,
   emitCommand,
   handleNativePlay,
@@ -216,11 +214,6 @@ export function usePlayerEvents({
     healthController.set("ready");
   }, [healthController, isCurrentProviderEpoch]);
 
-  /** Shared onSeeked handler (ReactPlayer only, but harmless for Twitch) */
-  const handleSeeked = useCallback(() => {
-    if (!isCurrentProviderEpoch()) return;
-  }, [isCurrentProviderEpoch]);
-
   const guardedNativePlay = useCallback(() => {
     if (isCurrentProviderEpoch()) handleNativePlay();
   }, [handleNativePlay, isCurrentProviderEpoch]);
@@ -237,7 +230,6 @@ export function usePlayerEvents({
     handleEnded,
     handleWaiting,
     handlePlaying,
-    handleSeeked,
     handleNativePlay: guardedNativePlay,
     handleNativePause: guardedNativePause,
   };

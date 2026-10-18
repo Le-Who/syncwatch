@@ -60,37 +60,12 @@ describe("Redis Rate Limit & Persistence Fallbacks", () => {
     expect(allowed).toBe(true);
   });
 
-  it("TC-03: Should add exponential backoff on database sync failure", async () => {
-    // Arrange
-    vi.useFakeTimers();
-    vi.setSystemTime(1000000);
-
-    // Act - We isolate the core logic that the interval uses to process failures
-
-    // Mock the error handling response explicitly to prove it pushes the task back to the queue
-    const roomId = "room_abc123";
-    const queueErrorSimulation = async () => {
-      // Simulate RPC Failure catching block from server.ts
-      await mockZadd("pending_db_syncs", Date.now() + 60000, roomId);
-    };
-
-    await queueErrorSimulation();
-
-    // Assert
-    // It should add Date.now() + 1 minute (60000ms) to the sorted set score
-    expect(mockZadd).toHaveBeenCalledWith(
-      "pending_db_syncs",
-      1060000,
-      "room_abc123",
-    );
-  });
-
   it("normalizes a legacy persisted room during database hydration", async () => {
     const supabase = {
       from: () => ({
         select: () => ({
           eq: () => ({
-            single: async () => ({
+            maybeSingle: async () => ({
               data: {
                 state: {
                   name: "Legacy Database Room",

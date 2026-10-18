@@ -1,75 +1,96 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
+  act,
+  cleanup,
+  fireEvent,
   render,
   screen,
-  fireEvent,
-  waitFor,
-  act,
 } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Reactions from "../../components/Reactions";
-import { roomSocketService } from "../../lib/socket";
 
-// 1. Mock Socket Service
-vi.mock("../../lib/socket", () => {
-  return {
-    roomSocketService: {
-      getSocket: vi.fn(),
-    },
-  };
-});
+const socket = vi.hoisted(() => ({ on: vi.fn(), off: vi.fn(), emit: vi.fn() }));
+vi.mock("@/lib/socket", () => ({
+  roomSocketService: { getSocket: () => socket },
+}));
 
-// Mock web animations / crypto for jsdom
+function receive(payload: unknown) {
+  const handler = socket.on.mock.calls.find(
+    ([event]) => event === "reaction",
+  )![1] as (value: unknown) => void;
+  act(() => handler(payload));
+}
+
 beforeEach(() => {
-  if (!global.crypto) {
-    global.crypto = {
-      randomUUID: () => "mock-uuid-" + Math.random(),
-    } as any;
-  }
+  vi.useFakeTimers();
+  vi.clearAllMocks();
+});
+afterEach(() => {
+  cleanup();
+  vi.clearAllTimers();
+  vi.useRealTimers();
 });
 
-describe("Reactions Component (Unit Tests)", () => {
-  let mockSocket: any;
-  let eventHandlers: Record<string, Function> = {};
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    eventHandlers = {};
-
-    mockSocket = {
-      on: vi.fn((event, handler) => {
-        eventHandlers[event] = handler;
-      }),
-      off: vi.fn((event, handler) => {
-        if (eventHandlers[event] === handler) {
-          delete eventHandlers[event];
-        }
-      }),
-      emit: vi.fn(),
-    };
-
-    (roomSocketService.getSocket as any).mockReturnValue(mockSocket);
-    // Fake timers to test the 4000ms removal logic
-    vi.useFakeTimers();
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it("TC-UI-06: Renders reaction toggle button and opens menu", async () => {
+describe("reaction packet boundary", () => {
+  it("TC-UI-06: Renders reaction toggle button and opens menu", () => {
     render(<Reactions />);
-
-    const toggleBtn = screen.getByRole("button");
-    expect(toggleBtn).toBeInTheDocument();
-
-    // Menu should be hidden initially
+    const toggleButton = screen.getByRole("button");
+    expect(toggleButton).toBeInTheDocument();
     expect(screen.queryByText("🔥")).not.toBeInTheDocument();
-
-    // Click toggle
-    fireEvent.click(toggleBtn);
-
-    // Menu should appear with emojis
+    fireEvent.click(toggleButton);
     expect(screen.getByText("🔥")).toBeInTheDocument();
     expect(screen.getByText("😂")).toBeInTheDocument();
+  });
+
+  it.each(
+    [
+      null,
+      undefined,
+      {},
+      { emoji: null },
+      { emoji: { invalid: true } },
+      { emoji: ["🔥"] },
+      { emoji: "x".repeat(50_001) },
+      { emoji: "" },
+    ].map((payload) => ({ payload })),
+  )("ignores malformed incoming packet $payload", ({ payload }) => {
+    const view = render(<Reactions />);
+    expect(() => receive(payload)).not.toThrow();
+    expect(view.container.querySelectorAll(".animate-float-up")).toHaveLength(
+      0,
+    );
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it.each(["🔥", "😂", "💖", "👀", "🤯", "💯"])(
+    "shows supported incoming reaction %s and expires it",
+    (emoji) => {
+      const view = render(<Reactions />);
+      receive({ emoji });
+      expect(screen.getByText(emoji)).toBeInTheDocument();
+      expect(view.container.querySelectorAll(".animate-float-up")).toHaveLength(
+        1,
+      );
+      act(() => vi.advanceTimersByTime(4000));
+      expect(view.container.querySelectorAll(".animate-float-up")).toHaveLength(
+        0,
+      );
+    },
+  );
+
+  it("keeps all six reaction controls working with local playback", () => {
+    render(<Reactions />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Toggle reactions menu" }),
+    );
+    for (const emoji of ["🔥", "😂", "💖", "👀", "🤯", "💯"]) {
+      expect(
+        screen.getByRole("button", { name: `React with ${emoji}` }),
+      ).toBeInTheDocument();
+    }
+    fireEvent.click(screen.getByRole("button", { name: "React with 🔥" }));
+    expect(socket.emit).toHaveBeenCalledExactlyOnceWith("reaction", {
+      emoji: "🔥",
+    });
+    expect(screen.getByText("🔥")).toBeInTheDocument();
   });
 });

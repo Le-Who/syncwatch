@@ -22,7 +22,7 @@ function enter() {
     participantId: "p0",
     isConnected: true,
     init: () => {},
-    connect: async () => {},
+    connect: async () => true,
     disconnect: () => {},
     setNickname: () => {},
   });

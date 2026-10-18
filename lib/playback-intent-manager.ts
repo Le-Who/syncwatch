@@ -270,17 +270,6 @@ export class PlaybackIntentManager {
     return Date.now() - this.lastProgrammaticSeek < thresholdMs;
   }
 
-  /**
-   * Check if a programmatic seek happened recently within a custom window.
-   * Used by Twitch to detect phantom-pause events fired asynchronously after seek.
-   */
-  public isRecentSeek(windowMs: number = 300): boolean {
-    return (
-      this.lastProgrammaticSeek > 0 &&
-      Date.now() - this.lastProgrammaticSeek < windowMs
-    );
-  }
-
   public clearPauseDebounce() {
     if (this.pauseDebounce) {
       clearTimeout(this.pauseDebounce);
@@ -340,13 +329,5 @@ export class PlaybackIntentManager {
 
   public get lastStateEmittedRef() {
     return this.lastStateEmitted;
-  }
-
-  /**
-   * @deprecated Use acknowledgeServerNonce() instead. Kept for backward
-   * compatibility during migration.
-   */
-  public checkAndConsumeNonce(playbackNonce?: string) {
-    this.acknowledgeServerNonce(playbackNonce);
   }
 }

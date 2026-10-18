@@ -33,11 +33,13 @@ export const useSettingsStore = create<LocalSettingsState>()(
 );
 
 let roomStateRefreshInFlight = false;
+let connectionAttempt = 0;
 
 interface AppState {
   room: RoomState | null;
   serverClockOffset: number;
   isConnected: boolean;
+  isSleeping: boolean;
   /** Monotonic transport generation, advanced once when a live socket drops. */
   connectionEpoch: number;
   /** Canonical delivery version observed synchronously at the socket drop. */
@@ -57,8 +59,10 @@ interface AppState {
   resyncSession: () => Promise<void>;
   setNickname: (name: string) => void;
   setLocalPlaybackHealth: (health: PlaybackHealth) => void;
-  connect: (roomId: string, nickname: string) => Promise<void>;
+  /** True when dispatched, false for HTTP rejection, null when superseded. */
+  connect: (roomId: string, nickname: string) => Promise<boolean | null>;
   disconnect: () => void;
+  suspendConnection: () => void;
   sendCommand: (type: string, payload?: any) => void;
   triggerOccRollback: () => void;
   init: () => void;
@@ -122,6 +126,39 @@ function handleCommandAcknowledgement(acknowledgement: CommandAcknowledgement) {
   if (message) toast.error(message);
 
   const state = useStore.getState();
+  if (
+    acknowledgement.status === "rejected" &&
+    (acknowledgement.code === "NOT_JOINED" ||
+      acknowledgement.code === "NOT_PARTICIPANT") &&
+    state.isConnected &&
+    state.room &&
+    state.participantId &&
+    roomSocketService.retainCommandForRecovery(
+      state.room.id,
+      acknowledgement.nonce,
+    )
+  ) {
+    if (
+      !state.isResyncing &&
+      !roomSocketService.isSessionUpgradePending(state.room.id)
+    ) {
+      roomSocketService.joinRoom(
+        state.room.id,
+        state.room.participants[state.participantId]?.nickname ||
+          state.nickname ||
+          "User",
+        state.participantId,
+      );
+      void state.resyncSession();
+    }
+    return;
+  }
+  if (
+    acknowledgement.status === "rejected" &&
+    (acknowledgement.code === "NOT_JOINED" ||
+      acknowledgement.code === "NOT_PARTICIPANT")
+  )
+    return;
   if (
     acknowledgement.status === "rejected" &&
     acknowledgement.code !== "RATE_LIMITED" &&
@@ -326,6 +363,7 @@ export const useStore = create<AppState>((set, get) => ({
   room: null,
   serverClockOffset: 0,
   isConnected: false,
+  isSleeping: false,
   connectionEpoch: 0,
   connectionDeliveryFloor: 0,
   participantId: null,
@@ -342,53 +380,74 @@ export const useStore = create<AppState>((set, get) => ({
     set((state) => ({ occRollbackTick: state.occRollbackTick + 1 })),
   resyncSession: async () => {
     const state = get();
-    if (state.isResyncing) return;
+    if (
+      state.isResyncing ||
+      !state.room ||
+      !state.isConnected ||
+      typeof window === "undefined" ||
+      roomSocketService.isSessionUpgradePending(state.room.id)
+    )
+      return;
     set({ isResyncing: true });
-    setTimeout(() => {
-      set({ isResyncing: false });
-    }, 60000);
-
-    if (state.room && typeof window !== "undefined") {
-      try {
-        const res = await fetch("/api/auth/session", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ participantId: state.participantId }),
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (typeof data.participantId === "string") {
-            set({ participantId: data.participantId });
-            localStorage.setItem("participantId", data.participantId);
-          }
-          if (data.token) {
-            set({ sessionToken: data.token });
-            roomSocketService.upgradeSession(
-              state.room.id,
-              state.commandSequence + 1,
-              data.token,
-            );
-
-            setTimeout(() => {
-              while (roomSocketService.commandQueue.length > 0) {
-                const cmd = roomSocketService.commandQueue.shift();
-                if (cmd) {
-                  roomSocketService.sendCommand(
-                    cmd.roomId,
-                    cmd.sequence,
-                    cmd.type,
-                    cmd.payload,
-                    get().participantId,
-                  );
-                }
-              }
-            }, 600);
-          }
-        }
-      } catch (e) {
-        console.warn("Failed to resync session", e);
-        roomSocketService.commandQueue = [];
+    const attempt = connectionAttempt;
+    const roomId = state.room.id;
+    const generation = state.room.generation;
+    const isCurrentSession = () =>
+      connectionAttempt === attempt &&
+      get().isConnected &&
+      get().connectionEpoch === state.connectionEpoch &&
+      get().room?.id === roomId &&
+      get().room?.generation === generation;
+    const controller = new AbortController();
+    let rejectCancellation!: (error: Error) => void;
+    const cancellation = new Promise<never>((_, reject) => {
+      rejectCancellation = reject;
+    });
+    const cancel = () => {
+      clearTimeout(deadline);
+      controller.abort();
+      rejectCancellation(new Error("Session recovery cancelled"));
+    };
+    // Bound both response headers and JSON parsing, including transports that
+    // finish after cancellation. Expiry permits manual retry without replay.
+    const deadline = setTimeout(cancel, 15_000);
+    const unsubscribe = useStore.subscribe(() => {
+      if (!isCurrentSession()) cancel();
+    });
+    try {
+      const data = await Promise.race([
+        (async () => {
+          const res = await fetch("/api/auth/session", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ participantId: state.participantId }),
+            signal: controller.signal,
+          });
+          return res.ok ? await res.json() : null;
+        })(),
+        cancellation,
+      ]);
+      if (!data || !isCurrentSession()) return;
+      if (typeof data.participantId === "string") {
+        set({ participantId: data.participantId });
+        localStorage.setItem("participantId", data.participantId);
       }
+      if (data.token) {
+        set({ sessionToken: data.token });
+        roomSocketService.upgradeSession(
+          roomId,
+          get().commandSequence + 1,
+          data.token,
+          get().participantId,
+        );
+      }
+    } catch (e) {
+      if (!controller.signal.aborted)
+        console.warn("Failed to resync session", e);
+    } finally {
+      clearTimeout(deadline);
+      unsubscribe();
+      set({ isResyncing: false });
     }
   },
   init: () => {
@@ -444,6 +503,8 @@ export const useStore = create<AppState>((set, get) => ({
     });
   },
   connect: async (roomId: string, nickname: string) => {
+    const attempt = ++connectionAttempt;
+    set({ isSleeping: false });
     let pId = get().participantId;
     let sToken = get().sessionToken;
     if (!pId && typeof window !== "undefined") {
@@ -459,10 +520,13 @@ export const useStore = create<AppState>((set, get) => ({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ participantId: pId }),
       });
+      if (attempt !== connectionAttempt) return null;
       if (!res.ok) {
         toast.error("Handshake failed. Features may be restricted.");
+        return false;
       } else {
         const data = await res.json();
+        if (attempt !== connectionAttempt) return null;
         const serverParticipantId =
           typeof data.participantId === "string" ? data.participantId : pId;
         if (serverParticipantId) {
@@ -488,21 +552,34 @@ export const useStore = create<AppState>((set, get) => ({
           serverParticipantId as string,
           data.token || sToken,
         );
+        return true;
       }
     } catch (err) {
+      if (attempt !== connectionAttempt) return null;
       console.warn("Could not establish secure session", err);
       // Fallback
       roomSocketService.connect(roomId, nickname, pId as string, sToken);
+      return true;
     }
   },
   disconnect: () => {
+    connectionAttempt += 1;
     roomSocketService.disconnect();
     set({
       isConnected: false,
+      isSleeping: false,
       room: null,
       fullRoomSequence: undefined,
       pendingPlayback: undefined,
     });
+  },
+  suspendConnection: () => {
+    connectionAttempt += 1;
+    // Keep the canonical room and mounted player so activity can reconnect.
+    // Set sleep first: the retry overlay must not reopen this transport.
+    set({ isSleeping: true });
+    roomSocketService.disconnect();
+    set({ isConnected: false });
   },
   sendCommand: (type: string, payload?: any) => {
     const state = get();

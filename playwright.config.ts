@@ -37,7 +37,8 @@ export default defineConfig({
   webServer: [
     {
       command: "pnpm exec tsx server.ts",
-      port: 3002,
+      // Wait for the room route to compile before timing browser navigation.
+      url: "http://localhost:3002/room/e2e-warmup",
       env: {
         PORT: "3002",
         TRUST_PROXY: "true",

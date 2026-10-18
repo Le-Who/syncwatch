@@ -56,7 +56,8 @@ export async function buildMediaAddCommand(
   const canPlay =
     options.canPlay ?? ((url: string) => Boolean(ReactPlayer.canPlay?.(url)));
 
-  const playlistId = urls.length === 1 ? extractYouTubePlaylistId(urls[0]) : null;
+  const playlistId =
+    urls.length === 1 ? extractYouTubePlaylistId(urls[0]) : null;
   if (playlistId) {
     const items = await fetchYouTubePlaylistItems(playlistId, fetcher);
     return {
@@ -145,8 +146,7 @@ async function buildMediaItem(
     provider,
     title: seed?.title || metadata.title || fallbackTitle(provider),
     duration: seed?.duration ?? (Number(metadata.duration) || 0),
-    startPosition:
-      seed?.startPosition ?? extractStartPositionFromUrl(url),
+    startPosition: seed?.startPosition ?? extractStartPositionFromUrl(url),
     thumbnail: seed?.thumbnail || metadata.thumbnail,
     author: seed?.author || metadata.author,
     aspectRatio: seed?.aspectRatio || metadata.aspectRatio,
@@ -173,7 +173,9 @@ async function fetchMetadata(
   fetcher: BuildMediaAddCommandOptions["fetcher"],
 ) {
   try {
-    const response = await fetcher!(`/api/metadata?url=${encodeURIComponent(url)}`);
+    const response = await fetcher!(
+      `/api/metadata?url=${encodeURIComponent(url)}`,
+    );
     if (!response.ok) return {};
     const data = await response.json();
     return typeof data === "object" && data ? data : {};
@@ -186,10 +188,12 @@ function detectProvider(url: string): string {
   try {
     const parsed = new URL(url);
     const host = parsed.hostname.toLowerCase();
-    if (host.includes("youtube.com") || host.includes("youtu.be")) return "youtube";
-    if (host.includes("vimeo.com")) return "vimeo";
-    if (host.includes("twitch.tv")) return "twitch";
-    if (host.includes("soundcloud.com")) return "soundcloud";
+    const matchesHost = (domain: string) =>
+      host === domain || host.endsWith(`.${domain}`);
+    if (matchesHost("youtube.com") || matchesHost("youtu.be")) return "youtube";
+    if (matchesHost("vimeo.com")) return "vimeo";
+    if (matchesHost("twitch.tv")) return "twitch";
+    if (matchesHost("soundcloud.com")) return "soundcloud";
   } catch {
     return "media";
   }

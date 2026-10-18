@@ -70,6 +70,7 @@ export default function Player() {
   const room = useStore((s) => s.room);
   const serverClockOffset = useStore((s) => s.serverClockOffset);
   const isConnected = useStore((s) => s.isConnected);
+  const isSleeping = useStore((s) => s.isSleeping);
   const connectionEpoch = useStore((s) => s.connectionEpoch);
   const connectionDeliveryFloor = useStore((s) => s.connectionDeliveryFloor);
   const canonicalDeliveryVersion = useStore((s) => s.canonicalDeliveryVersion);
@@ -116,23 +117,12 @@ export default function Player() {
   const { flashbacks, registerPossibleFlashback, popFlashback } =
     useFlashback();
 
-  const [isSleeping, setIsSleeping] = useState(false);
-  const isSleepingRef = useRef(false);
   const idleTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // P5 Fix: Sync ref with state so event handlers never read stale closure
-  useEffect(() => {
-    isSleepingRef.current = isSleeping;
-  }, [isSleeping]);
-
-  // P5 Fix: wakeUp uses ref — stable identity, no event listener churn
   const wakeUp = useCallback(() => {
-    if (isSleepingRef.current) {
-      setIsSleeping(false);
-      const state = useStore.getState();
-      if (state.room && !state.isConnected) {
-        state.connect(state.room.id, state.nickname);
-      }
+    const state = useStore.getState();
+    if (state.isSleeping && state.room && !state.isConnected) {
+      void state.connect(state.room.id, state.nickname);
     }
   }, []);
 
@@ -144,8 +134,8 @@ export default function Player() {
         () => {
           const currentStatus = useStore.getState().room?.playback?.status;
           if (currentStatus === "paused" || currentStatus === "ended") {
-            setIsSleeping(true);
-            useStore.getState().disconnect();
+            setPlaying(false);
+            useStore.getState().suspendConnection();
           }
         },
         2 * 60 * 60 * 1000,
@@ -306,6 +296,7 @@ export default function Player() {
     setProviderEventEpoch(intentManager.advanceProviderEventEpoch());
     setError(null);
     setIsReady(false);
+    setDuration(0);
     healthController.beginMedia(currentMediaId ?? null);
     setUpNextDismissedForMedia(null);
 
@@ -583,7 +574,6 @@ export default function Player() {
     playing,
     setIsReady,
     setError,
-    setPlaying,
     setDuration,
     emitCommand,
     handleNativePlay,
@@ -611,12 +601,21 @@ export default function Player() {
   const handleKeyboardSeek = useCallback(
     (delta: number) => {
       const currentPos = getAccurateTime();
-      const newPos = Math.max(0, Math.min(duration, currentPos + delta));
+      const target = currentPos + delta;
+      const newPos = Math.max(
+        0,
+        duration > 0 ? Math.min(duration, target) : target,
+      );
       // P6: Allow user play/pause clicks during seek ignore window
       intentManager.ignoreEventsFor(2000, true);
       const provider = providerName;
-      if (!seekPlayerTo(realPlayerRef.current, newPos, provider)) {
-        seekPlayerTo(playerRef.current, newPos, provider);
+      let seekTarget = realPlayerRef.current;
+      if (!seekPlayerTo(seekTarget, newPos, provider)) {
+        seekTarget = playerRef.current;
+        if (!seekPlayerTo(seekTarget, newPos, provider)) seekTarget = null;
+      }
+      if (playing && provider === "twitch") {
+        seekTarget?.play?.();
       }
       if (canControl) {
         if (playing) {
@@ -815,7 +814,7 @@ export default function Player() {
               width="100%"
               height="100%"
               controls={usesNativeProviderControls}
-              playing={userJoined ? playing : false}
+              playing={userJoined && !isSleeping ? playing : false}
               volume={volume}
               muted={userJoined ? muted : true}
               onVolumeChange={handleNativeVolumeChange}
@@ -831,7 +830,6 @@ export default function Player() {
                   getAccurateTime(),
                   providerName === "twitch",
                 );
-                playerEvents.handleSeeked();
               }}
               onDurationChange={playerEvents.handleDurationChange}
               onEnded={playerEvents.handleEnded}
@@ -944,6 +942,7 @@ export default function Player() {
       {currentMedia.provider?.toLowerCase() !== "youtube" &&
         currentMedia.provider?.toLowerCase() !== "twitch" && (
           <PlayerControlBar
+            key={`${room?.generation ?? "legacy"}-${room?.mediaRun ?? 0}-${currentMediaId}`}
             playerRef={realPlayerRef}
             containerRef={containerRef}
             duration={duration}
@@ -959,6 +958,7 @@ export default function Player() {
             onNext={handleNext}
             onSeekStart={handleSeekMouseDown}
             onSeekEnd={handleSeekMouseUp}
+            onSeekCancel={() => setSeeking(false)}
           />
         )}
     </div>

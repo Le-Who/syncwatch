@@ -182,19 +182,6 @@ const mockRedis = {
       return 0;
     }
 
-    // Lock release script (withLock)
-    if (
-      script.includes('redis.call("get"') &&
-      script.includes('redis.call("del"')
-    ) {
-      const lockVal = args[1] as string;
-      if (store.get(key) === lockVal) {
-        store.delete(key);
-        return 1;
-      }
-      return 0;
-    }
-
     // Fast-path mutation script (executeFastMutation)
     if (script.includes("mutation_type") && script.includes("cjson.decode")) {
       const mutationType = args[1] as string;

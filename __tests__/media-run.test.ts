@@ -32,6 +32,26 @@ function fixture() {
   return { room, repository, execute };
 }
 describe("commands belong to the observed playback run", () => {
+  it("reselects the active item in a fresh run at its saved position", async () => {
+    const { room, repository, execute } = fixture();
+    await repository.compareAndSet(room.id, room.version, {
+      ...room,
+      version: room.version + 1,
+      sequence: room.sequence + 1,
+      playback: { ...room.playback, status: "paused", basePosition: 90 },
+    });
+
+    expect(await execute("set_media", { itemId: a })).toMatchObject({
+      status: "applied",
+    });
+    const reselected = (await repository.get(room.id))!;
+    expect(reselected.mediaRun).toBe(1);
+    expect(reselected.playback.basePosition).toBe(90);
+    expect(
+      reselected.playlist.find((item) => item.id === a)?.lastPosition,
+    ).toBe(90);
+  });
+
   it("rejects a command from a retired cache lifetime even with the same media run", async () => {
     const { room, repository, execute } = fixture();
     const current = { ...room, generation: "restored-cache" };

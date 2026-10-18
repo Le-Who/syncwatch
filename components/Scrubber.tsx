@@ -1,4 +1,10 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { formatTime } from "@/lib/utils";
 import { PlayerMethods } from "@/lib/types";
 
@@ -8,6 +14,7 @@ interface ScrubberProps {
   canControl: boolean;
   onSeekStart: () => void;
   onSeekEnd: (percent: number) => void;
+  onSeekCancel?: () => void;
 }
 
 export function Scrubber({
@@ -16,11 +23,14 @@ export function Scrubber({
   canControl,
   onSeekStart,
   onSeekEnd,
+  onSeekCancel,
 }: ScrubberProps) {
   const progressBarRef = useRef<HTMLDivElement>(null);
   const sliderRef = useRef<HTMLDivElement>(null);
   const timeDisplayRef = useRef<HTMLSpanElement>(null);
   const hoverBadgeRef = useRef<HTMLDivElement>(null);
+  const dragCleanupRef = useRef<(() => void) | null>(null);
+  const seekHandlersRef = useRef({ onSeekEnd, onSeekCancel });
 
   const [isScrubbing, setIsScrubbing] = useState(false);
 
@@ -28,6 +38,21 @@ export function Scrubber({
   const scrubPercentRef = useRef<number>(0);
   // P5 Fix: Throttle formatTime — only re-format when the floored second changes
   const lastFormattedSecondRef = useRef<number>(-1);
+
+  useLayoutEffect(() => {
+    seekHandlersRef.current = { onSeekEnd, onSeekCancel };
+  });
+
+  const cancelDrag = useCallback(() => {
+    if (!dragCleanupRef.current) return;
+    dragCleanupRef.current();
+    setIsScrubbing(false);
+    seekHandlersRef.current.onSeekCancel?.();
+  }, []);
+
+  // A drag belongs to the permission and duration it started with. Release it
+  // before a changed scope (or unmount) can accept a document-level pointerup.
+  useLayoutEffect(() => () => cancelDrag(), [canControl, duration, cancelDrag]);
 
   useEffect(() => {
     let animationFrameId: number;
@@ -89,7 +114,8 @@ export function Scrubber({
   }, [playerRef, duration, isScrubbing]);
 
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!canControl || duration === 0) return;
+    if (!canControl || duration <= 0) return;
+    dragCleanupRef.current?.();
     e.currentTarget.focus();
     setIsScrubbing(true);
     onSeekStart();
@@ -97,23 +123,28 @@ export function Scrubber({
 
     document.addEventListener("pointermove", handlePointerMove);
     document.addEventListener("pointerup", handlePointerUp);
+    document.addEventListener("pointercancel", cancelDrag);
+    dragCleanupRef.current = () => {
+      document.removeEventListener("pointermove", handlePointerMove);
+      document.removeEventListener("pointerup", handlePointerUp);
+      document.removeEventListener("pointercancel", cancelDrag);
+      dragCleanupRef.current = null;
+    };
   };
 
   const handlePointerMove = (e: PointerEvent) => {
     updateScrubPosition(e.clientX);
   };
 
-  const handlePointerUp = (e: PointerEvent) => {
-    document.removeEventListener("pointermove", handlePointerMove);
-    document.removeEventListener("pointerup", handlePointerUp);
+  const handlePointerUp = () => {
+    if (!dragCleanupRef.current) return;
+    dragCleanupRef.current();
     setIsScrubbing(false);
-    onSeekEnd(scrubPercentRef.current);
+    seekHandlersRef.current.onSeekEnd(scrubPercentRef.current);
   };
 
   const updateScrubPosition = (clientX: number) => {
-    const rect = document
-      .getElementById("progress-bar-container")
-      ?.getBoundingClientRect();
+    const rect = sliderRef.current?.getBoundingClientRect();
     if (!rect) return;
 
     let percent = (clientX - rect.left) / rect.width;

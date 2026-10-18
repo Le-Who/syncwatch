@@ -22,6 +22,14 @@ export class RoomSocketService {
   private eventsBound = false;
   private activeRoomId: string | null = null;
   private snapshotRequest: { roomId: string; id: string } | null = null;
+  private joinRequest: { roomId: string; id: string } | null = null;
+  private sessionUpgrade: {
+    roomId: string;
+    sequence: number;
+    token: string;
+    nonce: string | null;
+  } | null = null;
+  private sessionUpgradeTimeout: ReturnType<typeof setTimeout> | null = null;
 
   private pingInterval: NodeJS.Timeout | null = null;
   public commandQueue: any[] = [];
@@ -37,12 +45,20 @@ export class RoomSocketService {
 
   private readonly handleDisconnect = () => {
     this.snapshotRequest = null;
+    this.joinRequest = null;
+    this.clearSessionUpgrade();
     this.emit("disconnected");
     if (this.pingInterval) clearInterval(this.pingInterval);
   };
 
   private readonly handleRoomState = (payload: any) => {
     if (payload.room?.id !== this.activeRoomId) return;
+    const joined = Boolean(
+      this.joinRequest &&
+      this.joinRequest.roomId === payload.room.id &&
+      this.joinRequest.id === payload.snapshotRequestId,
+    );
+    if (joined) this.joinRequest = null;
     const authoritativeRecovery = Boolean(
       this.snapshotRequest &&
       this.snapshotRequest.roomId === payload.room.id &&
@@ -55,6 +71,7 @@ export class RoomSocketService {
       serverTime: payload.serverTime,
       authoritativeRecovery,
     });
+    if (joined) this.sendSessionUpgrade();
   };
 
   private readonly handlePlaybackUpdated = (payload: any) => {
@@ -96,13 +113,50 @@ export class RoomSocketService {
   };
 
   private readonly handleSessionUpgraded = ({ participantId }: any) => {
+    if (
+      !this.socket?.connected ||
+      !this.sessionUpgrade?.nonce ||
+      this.sessionUpgrade.roomId !== this.activeRoomId ||
+      participantId !== this.latestParticipantId
+    )
+      return;
     this.emit("session_upgraded", { participantId });
   };
 
   private readonly handleCommandAcknowledgement = (
     acknowledgement: CommandAcknowledgement,
   ) => {
+    const upgrade = this.sessionUpgrade;
+    const completesUpgrade = upgrade?.nonce === acknowledgement.nonce;
+    if (completesUpgrade) this.clearSessionUpgrade();
     this.emit("command_ack", acknowledgement);
+    if (this.lastCommand?.nonce === acknowledgement.nonce)
+      this.lastCommand = null;
+    if (
+      completesUpgrade &&
+      acknowledgement.status === "applied" &&
+      this.socket?.connected &&
+      !this.joinRequest &&
+      upgrade?.roomId === this.activeRoomId
+    ) {
+      while (this.commandQueue.length && this.socket.connected) {
+        const command = this.commandQueue[0];
+        if (command.roomId !== this.activeRoomId) {
+          this.commandQueue.shift();
+          continue;
+        }
+        const nonce = this.sendCommand(
+          command.roomId,
+          command.sequence,
+          command.type,
+          command.payload,
+          undefined,
+          command.nonce,
+        );
+        if (!nonce) break;
+        this.commandQueue.shift();
+      }
+    }
   };
 
   private readonly handleError = (error: any) => {
@@ -211,8 +265,18 @@ export class RoomSocketService {
 
   public joinRoom(roomId: string, nickname: string, participantId: string) {
     if (!this.socket) return;
+    if (this.activeRoomId !== roomId) {
+      this.commandQueue = [];
+      this.lastCommand = null;
+      this.clearSessionUpgrade();
+    } else if (this.sessionUpgrade) {
+      // A new join retires the old upgrade acknowledgement, even in the same
+      // room. The desired upgrade resumes with a fresh nonce after this join.
+      this.sessionUpgrade.nonce = null;
+    }
     this.activeRoomId = roomId;
     this.snapshotRequest = { roomId, id: crypto.randomUUID() };
+    this.joinRequest = this.snapshotRequest;
     this.socket.emit("join_room", {
       roomId,
       nickname,
@@ -233,7 +297,11 @@ export class RoomSocketService {
 
   public disconnect() {
     this.snapshotRequest = null;
+    this.joinRequest = null;
+    this.clearSessionUpgrade();
     this.activeRoomId = null;
+    this.commandQueue = [];
+    this.lastCommand = null;
     if (this.socket) {
       this.unbindEvents();
       this.socket.disconnect();
@@ -248,10 +316,11 @@ export class RoomSocketService {
     type: string,
     payload?: any,
     participantId?: string | null,
+    originalNonce?: string,
   ) {
     if (!this.socket || !this.socket.connected) return null;
 
-    const suppliedNonce = payload?.nonce;
+    const suppliedNonce = originalNonce ?? payload?.nonce;
     const nonce = commandNonceSchema.safeParse(suppliedNonce).success
       ? suppliedNonce
       : crypto.randomUUID();
@@ -283,16 +352,73 @@ export class RoomSocketService {
     return true;
   }
 
-  public upgradeSession(roomId: string, sequence: number, token: string) {
-    if (!this.socket || !this.socket.connected) return null;
+  public isSessionUpgradePending(roomId: string) {
+    return this.sessionUpgrade?.roomId === roomId;
+  }
 
+  public retainCommandForRecovery(roomId: string, nonce: string) {
+    const command = this.lastCommand;
+    if (
+      !this.socket?.connected ||
+      this.activeRoomId !== roomId ||
+      !command ||
+      command.roomId !== roomId ||
+      command.nonce !== nonce
+    )
+      return false;
+    if (
+      !this.commandQueue.some(
+        (queued) => queued.roomId === roomId && queued.nonce === nonce,
+      )
+    ) {
+      this.commandQueue.push(command);
+    }
+    this.lastCommand = null;
+    return true;
+  }
+
+  public upgradeSession(
+    roomId: string,
+    sequence: number,
+    token: string,
+    participantId = this.latestParticipantId,
+  ) {
+    if (roomId !== this.activeRoomId) return null;
     this.latestSessionToken = token;
+    this.latestParticipantId = participantId;
+    this.clearSessionUpgrade();
+    this.sessionUpgrade = { roomId, sequence, token, nonce: null };
+    // Bound the join/upgrade wait; expiry retains commands for an explicit retry.
+    this.sessionUpgradeTimeout = setTimeout(
+      () => this.clearSessionUpgrade(),
+      15_000,
+    );
+    return this.sendSessionUpgrade();
+  }
+
+  private clearSessionUpgrade() {
+    if (this.sessionUpgradeTimeout) clearTimeout(this.sessionUpgradeTimeout);
+    this.sessionUpgradeTimeout = null;
+    this.sessionUpgrade = null;
+  }
+
+  private sendSessionUpgrade() {
+    const upgrade = this.sessionUpgrade;
+    if (
+      !this.socket?.connected ||
+      !upgrade ||
+      upgrade.nonce ||
+      this.joinRequest ||
+      upgrade.roomId !== this.activeRoomId
+    )
+      return null;
     const nonce = crypto.randomUUID();
+    upgrade.nonce = nonce;
     this.socket.emit("command", {
-      roomId,
+      roomId: upgrade.roomId,
       nonce,
-      clientSequence: sequence,
-      command: { type: "upgrade_session", payload: { token } },
+      clientSequence: upgrade.sequence,
+      command: { type: "upgrade_session", payload: { token: upgrade.token } },
     });
     return nonce;
   }

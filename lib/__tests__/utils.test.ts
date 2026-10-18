@@ -34,6 +34,13 @@ describe("formatTime", () => {
     expect(formatTime(45.9)).toBe("0:45");
   });
 
+  it.each([Infinity, -Infinity])(
+    "handles nonfinite duration %s",
+    (duration) => {
+      expect(formatTime(duration)).toBe("0:00");
+    },
+  );
+
   it("should format extremely large durations correctly", () => {
     expect(formatTime(90000)).toBe("25:00:00");
   });

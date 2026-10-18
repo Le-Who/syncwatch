@@ -42,7 +42,7 @@ function clampStart(item: {
   startPosition?: number;
   duration: number;
 }): number {
-  let start = item.lastPosition || item.startPosition || 0;
+  let start = item.lastPosition ?? item.startPosition ?? 0;
   if (item.duration > 0 && start >= item.duration - 5) {
     start = 0;
     item.lastPosition = 0;
@@ -192,7 +192,7 @@ function createPlaylistItem(
     requesterId: participantId,
     author: payload.author,
     startPosition: payload.startPosition || 0,
-    lastPosition: 0,
+    lastPosition: payload.startPosition || 0,
     thumbnail: payload.thumbnail,
     aspectRatio: payload.aspectRatio,
     isTemporary: Boolean(payload.isTemporary),

@@ -12,7 +12,6 @@ import {
   Maximize,
 } from "lucide-react";
 import { Scrubber } from "@/components/Scrubber";
-import { QualityMenu } from "@/components/QualityMenu";
 import { PlayerMethods, PlaybackState } from "@/lib/types";
 import { useSettingsStore } from "@/lib/store";
 import fscreen from "fscreen";
@@ -33,6 +32,7 @@ interface PlayerControlBarProps {
   onNext: () => void;
   onSeekStart: () => void;
   onSeekEnd: (percent: number) => void;
+  onSeekCancel?: () => void;
 }
 
 export function PlayerControlBar({
@@ -51,6 +51,7 @@ export function PlayerControlBar({
   onNext,
   onSeekStart,
   onSeekEnd,
+  onSeekCancel,
 }: PlayerControlBarProps) {
   const emitCommand = useStore((s) => s.sendCommand);
   const { volume, muted, theaterMode, setVolume, setMuted, toggleTheaterMode } =
@@ -67,6 +68,7 @@ export function PlayerControlBar({
             canControl={canControl}
             onSeekStart={onSeekStart}
             onSeekEnd={onSeekEnd}
+            onSeekCancel={onSeekCancel}
           />
         </div>
 
@@ -212,13 +214,6 @@ export function PlayerControlBar({
           </div>
 
           <div className="flex items-center space-x-4">
-            {/* Quality Settings */}
-            <QualityMenu
-              currentMedia={currentMedia}
-              playerRef={playerRef}
-              playback={playback}
-            />
-
             {playback?.updatedBy && (
               <span className="text-theme-muted border-theme-border/30 hidden border-l pl-4 text-[10px] tracking-wider uppercase xl:inline-block">
                 CMD: {playback.status === "playing" ? "PLAY" : "PAUSE"}

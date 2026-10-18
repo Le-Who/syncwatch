@@ -33,7 +33,7 @@ describe("same NAT admission with the real local limiter", () => {
         from: () => ({
           select: () => ({
             eq: () => ({
-              single: async () => ({
+              maybeSingle: async () => ({
                 data: {
                   state: {
                     name: "Hydrated",

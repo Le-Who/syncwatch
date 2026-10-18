@@ -33,7 +33,6 @@ vi.mock("../lib/redis-rate-limit", () => ({
 vi.mock("../lib/redis-actor", () => ({
   getRedisRoom: vi.fn(),
   setRedisRoomCAS: vi.fn(),
-  publishRoomEvent: vi.fn().mockResolvedValue(true),
   pubClient: vi.fn().mockReturnValue(null),
 }));
 

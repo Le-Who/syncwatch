@@ -16,7 +16,8 @@ function expandNumericMask(value: string): string[] {
 
   const start = Number(match[1]);
   const end = Number(match[2]);
-  if (!Number.isInteger(start) || !Number.isInteger(end)) return [value];
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end))
+    return [value];
 
   const direction = end >= start ? 1 : -1;
   const count = Math.min(Math.abs(end - start) + 1, MAX_MASK_EXPANSION);
@@ -34,7 +35,10 @@ export function extractYouTubePlaylistId(url: string): string | null {
   try {
     const parsed = new URL(url);
     const host = parsed.hostname.toLowerCase();
-    if (!host.includes("youtube.com") && !host.includes("youtu.be")) {
+    if (
+      (parsed.protocol !== "http:" && parsed.protocol !== "https:") ||
+      !/(^|\.)(youtube\.com|youtu\.be)$/.test(host)
+    ) {
       return null;
     }
     return parsed.searchParams.get("list");
@@ -46,7 +50,8 @@ export function extractYouTubePlaylistId(url: string): string | null {
 export function extractStartPositionFromUrl(url: string): number {
   try {
     const parsed = new URL(url);
-    const raw = parsed.searchParams.get("t") || parsed.searchParams.get("start");
+    const raw =
+      parsed.searchParams.get("t") || parsed.searchParams.get("start");
     if (!raw) return 0;
     return parseTimecode(raw);
   } catch {
@@ -55,7 +60,10 @@ export function extractStartPositionFromUrl(url: string): number {
 }
 
 function parseTimecode(raw: string): number {
-  if (/^\d+$/.test(raw)) return Number(raw);
+  if (/^\d+$/.test(raw)) {
+    const seconds = Number(raw);
+    return Number.isFinite(seconds) ? seconds : 0;
+  }
 
   const hours = /(\d+)h/i.exec(raw)?.[1];
   const minutes = /(\d+)m/i.exec(raw)?.[1];

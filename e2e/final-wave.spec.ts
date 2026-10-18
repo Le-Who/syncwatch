@@ -15,7 +15,7 @@ import {
   DETERMINISTIC_MEDIA_TITLE,
 } from "./helpers/room";
 
-test("reselecting the same queue item recreates a ready and seekable provider", async ({
+test("reselecting the same queue item preserves its position in a new seekable provider", async ({
   browser,
 }) => {
   const room = await createRoomClients(browser, 1);
@@ -25,15 +25,29 @@ test("reselecting the same queue item recreates a ready and seekable provider", 
     await initializePlayback(client);
     await seekToFraction(client.page, 0.1);
     await expect.poll(() => mediaPosition(client.page)).toBeGreaterThan(80);
+    const savedPosition = await mediaPosition(client.page);
+    const previousProvider = await client.page
+      .locator("audio, video")
+      .first()
+      .elementHandle();
+    expect(previousProvider).not.toBeNull();
     await client.page
       .getByRole("listitem")
       .getByText(DETERMINISTIC_MEDIA_TITLE, { exact: true })
       .click();
+    await expect
+      .poll(() => previousProvider!.evaluate((element) => element.isConnected))
+      .toBe(false);
     await initializePlayback(client);
     await expect(
       client.page.getByRole("slider", { name: "Playback position" }),
     ).toHaveAttribute("aria-disabled", "false");
-    await expect.poll(() => mediaPosition(client.page)).toBeLessThan(3);
+    // Selecting an item resumes its saved position; mediaRun owns the remount.
+    await expect
+      .poll(async () =>
+        Math.abs((await mediaPosition(client.page)) - savedPosition),
+      )
+      .toBeLessThan(3);
     await seekToFraction(client.page, 0.2);
     await expect.poll(() => mediaPosition(client.page)).toBeGreaterThan(170);
   } finally {

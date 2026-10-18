@@ -90,7 +90,7 @@ describe("serialized room repository operations", () => {
         {
           cwd: process.cwd(),
           encoding: "utf8",
-          timeout: 10_000,
+          timeout: 30_000,
         },
       );
 
@@ -98,5 +98,8 @@ describe("serialized room repository operations", () => {
       expect(child.stdout).toContain("caller-caught-without-unhandled-tail");
       expect(child.stderr).not.toContain("expected-operation-failure");
     },
+    // Cold tsx startup under coverage can be slow on Windows. Keep both limits
+    // bounded, with enough time for the child's own deadline to report first.
+    35_000,
   );
 });

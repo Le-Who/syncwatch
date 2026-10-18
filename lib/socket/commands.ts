@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Server, Socket } from "socket.io";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { jwtVerify } from "jose";
-import { isSystemDegraded } from "../db-sync";
+import { isSystemDegraded, persistRoomState } from "../db-sync";
 import { checkRedisRateLimit } from "../redis-rate-limit";
 import { getJwtSecret } from "../jwt-config";
 import {
@@ -33,7 +33,7 @@ function emitAcknowledgement(
   callback?: AcknowledgementCallback,
 ) {
   socket.emit("command_ack", ack);
-  callback?.(ack);
+  if (typeof callback === "function") callback(ack);
 
   // Transitional compatibility for surfaces still subscribed to `error`.
   // The correlated acknowledgement is the authoritative response.
@@ -99,6 +99,7 @@ async function handleSessionUpgrade(
   context: SocketContext,
   envelope: RoomCommandEnvelope,
   jwtSecret: ReturnType<typeof getJwtSecret>,
+  supabase: SupabaseClient | null,
   eventBus?: RoomEventBus,
 ): Promise<CommandAcknowledgement> {
   if (!context.currentRoomId || !context.currentParticipantId) {
@@ -110,6 +111,21 @@ async function handleSessionUpgrade(
   if (envelope.command.type !== "upgrade_session") {
     return rejected(envelope.nonce, "INVALID_COMMAND");
   }
+
+  // Keep this operation bound to the identity that requested it, including
+  // while token verification and Redis operations are suspended.
+  const roomId = context.currentRoomId;
+  const sourceParticipantId = context.currentParticipantId;
+  const isConnected = () =>
+    socket.connected !== false &&
+    socket.disconnected !== true &&
+    !context.isDisconnected?.();
+  const isCurrent = () =>
+    isConnected() &&
+    context.currentRoomId === roomId &&
+    context.currentParticipantId === sourceParticipantId &&
+    socket.data.participantId === sourceParticipantId;
+  if (!isCurrent()) return rejected(envelope.nonce, "NOT_JOINED");
 
   let verifiedParticipantId: string;
   let verifiedNickname: string | undefined;
@@ -128,9 +144,10 @@ async function handleSessionUpgrade(
     return rejected(envelope.nonce, "INVALID_COMMAND");
   }
 
-  const sourceParticipantId = context.currentParticipantId;
   for (let attempt = 0; attempt < MAX_UPGRADE_RETRIES; attempt++) {
-    const room = await getRedisRoom(envelope.roomId);
+    if (!isCurrent()) return rejected(envelope.nonce, "NOT_JOINED");
+    const room = await getRedisRoom(roomId);
+    if (!isCurrent()) return rejected(envelope.nonce, "NOT_JOINED");
     if (!room || !room.participants[sourceParticipantId]) {
       return rejected(envelope.nonce, "NOT_PARTICIPANT");
     }
@@ -147,11 +164,29 @@ async function handleSessionUpgrade(
       Date.now(),
       socket.id,
     );
-    if (!(await setRedisRoomCAS(envelope.roomId, next, room.version))) {
+    if (!(await setRedisRoomCAS(roomId, next, room.version))) {
       await new Promise((resolve) =>
         setTimeout(resolve, 10 + Math.random() * 20),
       );
       continue;
+    }
+
+    persistRoomState(next, supabase);
+    if (!isCurrent()) {
+      // CAS may have committed after the original disconnect cleanup already
+      // looked for the old identity. Remove only this socket from its new one.
+      if (
+        !isConnected() ||
+        context.currentRoomId !== roomId ||
+        context.currentParticipantId !== verifiedParticipantId
+      ) {
+        try {
+          await context.disconnectParticipant?.(roomId, verifiedParticipantId);
+        } catch (error) {
+          console.error("Failed cleaning up stale session upgrade", error);
+        }
+      }
+      return rejected(envelope.nonce, "NOT_JOINED");
     }
 
     socket.data.participantId = verifiedParticipantId;
@@ -190,7 +225,7 @@ async function handleSessionUpgrade(
 export function handleCommandEvents(
   io: Server,
   socket: Socket,
-  _supabase: SupabaseClient | null,
+  supabase: SupabaseClient | null,
   context: SocketContext,
   commandService: RoomCommandService,
   eventBus?: RoomEventBus,
@@ -267,17 +302,33 @@ export function handleCommandEvents(
         }
 
         const envelope = parsed.data as RoomCommandEnvelope;
-        const ack =
-          envelope.command.type === "upgrade_session"
-            ? await handleSessionUpgrade(
-                io,
-                socket,
-                context,
-                envelope,
-                jwtSecret,
-                eventBus,
-              )
-            : await commandService.execute(context, envelope);
+        let ack: CommandAcknowledgement;
+        if (envelope.command.type === "upgrade_session") {
+          if (context.sessionUpgradeInFlight || context.isJoiningRoom?.()) {
+            emitAcknowledgement(
+              socket,
+              rejected(envelope.nonce, "CONTENTION"),
+              callback,
+            );
+            return;
+          }
+          context.sessionUpgradeInFlight = true;
+          try {
+            ack = await handleSessionUpgrade(
+              io,
+              socket,
+              context,
+              envelope,
+              jwtSecret,
+              supabase,
+              eventBus,
+            );
+          } finally {
+            context.sessionUpgradeInFlight = false;
+          }
+        } else {
+          ack = await commandService.execute(context, envelope);
+        }
         emitAcknowledgement(socket, ack, callback);
       } catch (error) {
         console.error("Command handling error", error);

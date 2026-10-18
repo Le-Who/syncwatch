@@ -1,8 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-  buildMediaAddCommand,
-  MediaComposeError,
-} from "@/lib/media-compose";
+import { buildMediaAddCommand, MediaComposeError } from "@/lib/media-compose";
 
 describe("buildMediaAddCommand", () => {
   it("builds a single add_item command with metadata, start time, and insert mode", async () => {
@@ -123,4 +120,36 @@ describe("buildMediaAddCommand", () => {
       new MediaComposeError("This URL is not supported by the player."),
     );
   });
+
+  it("rejects a non-HTTP playlist URL before fetching playlist metadata", async () => {
+    const fetcher = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ videos: [{ url: "https://youtu.be/abc" }] }),
+    }));
+
+    await expect(
+      buildMediaAddCommand("ftp://www.youtube.com/watch?list=PL123", {
+        fetcher,
+        canPlay: () => true,
+      }),
+    ).rejects.toEqual(
+      new MediaComposeError("Enter a valid HTTP or HTTPS media URL."),
+    );
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it.each(["youtube.com", "vimeo.com", "twitch.tv", "soundcloud.com"])(
+    "keeps direct media on a lookalike %s host as direct media",
+    async (domain) => {
+      const command = await buildMediaAddCommand(
+        `https://${domain}.example.org/video.mp4`,
+        { seed: { title: "Direct clip" }, canPlay: () => true },
+      );
+
+      expect(command.payload.provider).toBe("direct");
+      expect(command.payload.url).toBe(
+        `https://${domain}.example.org/video.mp4`,
+      );
+    },
+  );
 });

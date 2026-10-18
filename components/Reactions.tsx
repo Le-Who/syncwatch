@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { roomSocketService } from "@/lib/socket";
 import { Smile } from "lucide-react";
+import { parseReaction, REACTION_EMOJIS } from "@/lib/reactions";
 
 interface EmojiParticle {
   id: string;
@@ -11,8 +12,6 @@ interface EmojiParticle {
   duration: number;
 }
 
-const EMOJIS = ["🔥", "😂", "💖", "👀", "🤯", "💯"];
-
 export default function Reactions() {
   const [particles, setParticles] = useState<EmojiParticle[]>([]);
   const [isOpen, setIsOpen] = useState(false);
@@ -20,10 +19,12 @@ export default function Reactions() {
   useEffect(() => {
     const socket = roomSocketService.getSocket();
 
-    const handleReaction = (payload: { emoji: string }) => {
+    const handleReaction = (payload: unknown) => {
+      const reaction = parseReaction(payload);
+      if (!reaction) return;
       const newParticle = {
         id: crypto.randomUUID(),
-        emoji: payload.emoji,
+        emoji: reaction.emoji,
         x: Math.random() * 80 + 10, // 10% to 90%
         duration: 2.5 + Math.random() * 1.5,
       };
@@ -81,7 +82,7 @@ export default function Reactions() {
       <div className="absolute right-4 bottom-4 z-50 flex flex-col items-center md:top-1/2 md:bottom-auto md:-translate-y-1/2">
         {isOpen && (
           <div className="bg-theme-bg/80 border-theme-border/50 rounded-theme animate-in fade-in slide-in-from-bottom-2 mb-2 flex flex-col-reverse gap-2 border-2 p-2 shadow-lg backdrop-blur-xl">
-            {EMOJIS.map((emoji) => (
+            {REACTION_EMOJIS.map((emoji) => (
               <button
                 key={emoji}
                 onClick={() => {

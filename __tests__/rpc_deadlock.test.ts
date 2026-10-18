@@ -1,25 +1,22 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect } from "vitest";
 import { createClient } from "@supabase/supabase-js";
 import { randomUUID } from "crypto";
 
-// Test against local Supabase if running emulator, else fail fast or use project if configured securely
+// Opt in only against a disposable Supabase database, never ambient credentials.
 const SUPABASE_URL =
   process.env.NEXT_PUBLIC_SUPABASE_URL || "http://127.0.0.1:54321";
 const SUPABASE_SERVICE_ROLE_KEY =
   process.env.SUPABASE_SERVICE_ROLE_KEY ||
   process.env.SUPABASE_SERVICE_KEY ||
-  "dummy";
+  "";
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+const runDatabaseTest =
+  process.env.SYNCWATCH_TEST_DB_DEADLOCK === "1" &&
+  Boolean(SUPABASE_SERVICE_ROLE_KEY);
 
-describe("RPC Deadlock Test (sync_room_state)", () => {
+describe.skipIf(!runDatabaseTest)("RPC Deadlock Test (sync_room_state)", () => {
   it("should handle highly concurrent disjoint array updates without deadlocking", async () => {
-    if (!SUPABASE_SERVICE_ROLE_KEY || SUPABASE_SERVICE_ROLE_KEY === "dummy") {
-      console.warn(
-        "Skipping DB deadlock test because no service key is available",
-      );
-      return;
-    }
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
     const roomId = randomUUID();
     const ownerId = randomUUID();

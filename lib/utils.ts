@@ -1,5 +1,5 @@
 export const formatTime = (seconds: number | undefined | null): string => {
-  if (typeof seconds !== "number" || isNaN(seconds) || seconds < 0)
+  if (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds < 0)
     return "0:00";
   const totalSeconds = Math.max(0, Math.floor(seconds));
   const hh = Math.floor(totalSeconds / 3600);

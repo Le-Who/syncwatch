@@ -70,7 +70,7 @@ it("recovers seq100 from a correlated lower hydrated lifetime and retires old fr
     from: () => ({
       select: () => ({
         eq: () => ({
-          single: async () => ({ data: { state: durable }, error: null }),
+          maybeSingle: async () => ({ data: { state: durable }, error: null }),
         }),
       }),
     }),

@@ -40,7 +40,7 @@ const client = {
   from: () => ({
     select: (columns: string) => ({
       eq: (_column: string, id: string) => ({
-        single: async () => {
+        maybeSingle: async () => {
           try {
             return {
               data: (
