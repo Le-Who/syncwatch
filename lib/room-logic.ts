@@ -431,15 +431,18 @@ function advanceQueue(
   const eligible = room.playlist.filter(
     (item) => !current.isTemporary || item.id !== currentId,
   );
+  // Optimization: Map eligible items to a Set for O(1) filtering instead of O(N^2) .some() scans
+  const eligibleIds = new Set(eligible.map((item) => item.id));
   let played = (room.shufflePlayedIds ?? []).filter((id) =>
-    eligible.some((item) => item.id === id),
+    eligibleIds.has(id),
   );
   if (!played.includes(current.id)) played.push(current.id);
   let next: PlaylistItem | undefined;
   if (!natural || room.settings.autoplayNext) {
     next = eligible.find((item) => item.id === room.nextMediaId);
     if (!next && room.settings.shuffle) {
-      let remaining = eligible.filter((item) => !played.includes(item.id));
+      const playedSet = new Set(played);
+      let remaining = eligible.filter((item) => !playedSet.has(item.id));
       if (!remaining.length && room.settings.looping) {
         played = [];
         remaining = eligible.filter((item) => item.id !== currentId);
@@ -453,7 +456,7 @@ function advanceQueue(
   if (!next && !natural && !current.isTemporary) return false;
   room.playlist = eligible;
   room.shufflePlayedIds = played.filter((id) =>
-    eligible.some((item) => item.id === id),
+    eligibleIds.has(id),
   );
   if (next) {
     room.nextMediaId = null;
