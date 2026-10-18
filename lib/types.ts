@@ -255,9 +255,11 @@ export function normalizeRoomState(input: LegacyRoomStateInput): RoomState {
       ? input.nextMediaId
       : null,
     shufflePlayedIds: Array.isArray(input.shufflePlayedIds)
-      ? input.shufflePlayedIds.filter((id) =>
-          input.playlist?.some((item) => item.id === id),
-        )
+      ? (() => {
+          // Optimization: Map playlist items to a Set for O(1) filtering instead of O(N^2) .some() scans
+          const playlistIds = new Set(input.playlist?.map((item) => item.id) ?? []);
+          return input.shufflePlayedIds.filter((id) => playlistIds.has(id));
+        })()
       : [],
     leaderId:
       typeof input.leaderId === "string" && participants[input.leaderId]
