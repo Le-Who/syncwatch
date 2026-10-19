@@ -127,7 +127,12 @@ export default function Player() {
   }, []);
 
   useEffect(() => {
+    let lastTime = 0;
     const handleUserActivity = () => {
+      const now = Date.now();
+      if (now - lastTime < 200) return;
+      lastTime = now;
+
       wakeUp();
       if (idleTimeoutRef.current) clearTimeout(idleTimeoutRef.current);
       idleTimeoutRef.current = setTimeout(
@@ -142,10 +147,12 @@ export default function Player() {
       );
     };
 
-    window.addEventListener("mousemove", handleUserActivity);
-    window.addEventListener("keydown", handleUserActivity);
-    window.addEventListener("touchstart", handleUserActivity);
-    window.addEventListener("click", handleUserActivity);
+    const passiveOpts: AddEventListenerOptions = { passive: true };
+    // Reduces event calls from ~60Hz to ~5Hz while keeping UI responsiveness intact
+    window.addEventListener("mousemove", handleUserActivity, passiveOpts);
+    window.addEventListener("keydown", handleUserActivity, passiveOpts);
+    window.addEventListener("touchstart", handleUserActivity, passiveOpts);
+    window.addEventListener("click", handleUserActivity, passiveOpts);
 
     handleUserActivity();
 
