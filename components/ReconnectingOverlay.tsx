@@ -164,7 +164,7 @@ export function ReconnectingOverlay() {
           onClick={handleManualRetry}
           className="bg-theme-accent text-theme-bg rounded-theme flex items-center space-x-2 px-6 py-3 text-xs font-bold tracking-widest uppercase shadow-lg transition-all hover:scale-105 active:scale-95"
         >
-          <RefreshCw className="h-4 w-4" />
+          <RefreshCw className="h-4 w-4" aria-hidden="true" />
           <span>Retry Now</span>
         </button>
       </motion.div>

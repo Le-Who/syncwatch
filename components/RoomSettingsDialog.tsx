@@ -188,7 +188,7 @@ export default function RoomSettingsDialog({
               onClick={handleSave}
               className="bg-theme-accent text-theme-bg rounded-theme flex items-center space-x-2 px-5 py-2.5 text-xs font-bold tracking-widest shadow-[var(--theme-shadow)] transition-all hover:shadow-[var(--theme-shadow-hover)] active:translate-y-0.5 active:shadow-none"
             >
-              <Save className="h-4 w-4" />
+              <Save className="h-4 w-4" aria-hidden="true" />
               <span>SAVE</span>
             </button>
           )}
