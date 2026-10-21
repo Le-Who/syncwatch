@@ -21,8 +21,8 @@ export function UpNextOverlay({
           e.stopPropagation();
           onDismiss();
         }}
-        className="text-theme-muted hover:text-theme-text absolute top-1.5 right-1.5 rounded-full p-1 transition-colors"
-        title="Dismiss"
+        className="text-theme-muted hover:text-theme-text focus-visible:ring-theme-accent focus-visible:ring-offset-theme-bg absolute top-1.5 right-1.5 rounded-full p-1 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+        aria-label="Dismiss Up Next"
       >
         <X className="h-3.5 w-3.5" />
       </button>
@@ -67,9 +67,9 @@ export function UpNextOverlay({
           e.stopPropagation();
           onSkip();
         }}
-        className="text-theme-bg bg-theme-accent rounded-theme px-3 py-1.5 text-xs font-bold tracking-widest uppercase transition-all hover:brightness-110 hover:filter"
+        className="text-theme-bg bg-theme-accent rounded-theme focus-visible:ring-theme-accent focus-visible:ring-offset-theme-bg px-3 py-1.5 text-xs font-bold tracking-widest uppercase transition-all outline-none hover:brightness-110 hover:filter focus-visible:ring-2 focus-visible:ring-offset-2"
       >
-        Skip
+        Skip<span className="sr-only"> to next item</span>
       </button>
     </div>
   );
