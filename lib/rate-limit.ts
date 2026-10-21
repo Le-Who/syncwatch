@@ -1,3 +1,5 @@
+import ipaddr from "ipaddr.js";
+
 interface RateLimitRecord {
   count: number;
   resetTime: number;
@@ -70,14 +72,37 @@ function readHeader(headers: HeaderSource, name: string): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
+function parseForwardedFor(header: string | undefined): string | null {
+  if (!header) return null;
+  const ips = header.split(",").map((ip) => ip.trim());
+  for (let i = ips.length - 1; i >= 0; i--) {
+    const ip = ips[i];
+    try {
+      const parsed = ipaddr.process(ip);
+      const range = parsed.range();
+      // Skip known internal/bogon network types used by trusted proxies or private networks
+      if (
+        range !== "private" &&
+        range !== "loopback" &&
+        range !== "linkLocal"
+      ) {
+        return ip;
+      }
+    } catch {
+      // Ignore invalid IPs
+    }
+  }
+  return null;
+}
+
 export function getClientIp(
   headers: HeaderSource,
   directAddress: string = "unknown",
 ): string {
   if (process.env.TRUST_PROXY === "true") {
     const forwardedFor = readHeader(headers, "x-forwarded-for");
-    const firstAddress = forwardedFor?.split(",", 1)[0]?.trim();
-    if (firstAddress) return firstAddress;
+    const parsedIp = parseForwardedFor(forwardedFor);
+    if (parsedIp) return parsedIp;
   }
   return directAddress || "unknown";
 }
@@ -92,8 +117,8 @@ export function getAppRouteClientIp(headers: HeaderSource): string {
     readHeader(headers, "x-syncwatch-client-ip") || "unknown";
   if (process.env.TRUST_PROXY === "true") {
     const forwardedFor = readHeader(headers, "x-forwarded-for");
-    const firstAddress = forwardedFor?.split(",", 1)[0]?.trim();
-    if (firstAddress) return firstAddress;
+    const parsedIp = parseForwardedFor(forwardedFor);
+    if (parsedIp) return parsedIp;
   }
   return directAddress;
 }
