@@ -6,3 +6,7 @@
 ## 2026-08-29 - Extracted Playlist Search Form
 **Learning:** Large React components rendering massive O(N) lists (like a 500-item playlist) can severely bottleneck performance if they also own localized state that updates frequently (like a controlled text input). Any keystroke forces a re-render of the entire list.
 **Action:** Isolate frequently updating UI (like search bars or active playback controls) into separate, sibling or child components wrapped in `React.memo`. This prevents rapid state changes from polluting the parent render cycle and diffing the large list array.
+
+## 2025-02-28 - Optimizing Continuous DOM Events
+**Learning:** Continuous DOM events like `mousemove` and `keydown` mapped to expensive state updates or frequent timer resets can throttle the main thread on lower-end devices. Passive event listeners alone (`{ passive: true }`) only prevent scroll blocking; they do not reduce the volume of the event loop traffic.
+**Action:** Always wrap the actual handling of continuous interaction events in a quick, lightweight timestamp throttle (e.g., `Date.now() - lastTime < 200`) to reduce unnecessary function executions, while still attaching the listener with `{ passive: true }` to maintain scroll performance.
