@@ -20,8 +20,10 @@ const providerCallbacks = vi.hoisted(
 const providerPositions = vi.hoisted(() => new Map<string, number>());
 
 // Mock Zustand store hooks
-vi.mock("@/lib/store", () => {
+vi.mock("@/lib/store", async (importOriginal) => {
+  const actual = await importOriginal();
   return {
+    ...actual,
     useStore: vi.fn(),
     useSettingsStore: vi.fn(),
   };

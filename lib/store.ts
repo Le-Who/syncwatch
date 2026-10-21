@@ -7,6 +7,20 @@ import type { PlaybackHealth, RoomState } from "./types";
 import type { CommandAcknowledgement } from "./room-command-contract";
 import { reduceCanonicalRoomEvent } from "./room-event-reducer";
 
+const mediaIndexCache = new WeakMap<PlaylistItem[], Map<string, number>>();
+
+export function getMediaIndexCached(playlist: PlaylistItem[], mediaId: string) {
+  let map = mediaIndexCache.get(playlist);
+  if (!map) {
+    map = new Map();
+    for (let i = 0; i < playlist.length; i++) {
+      map.set(playlist[i].id, i);
+    }
+    mediaIndexCache.set(playlist, map);
+  }
+  return map.get(mediaId) ?? -1;
+}
+
 interface LocalSettingsState {
   volume: number;
   muted: boolean;
