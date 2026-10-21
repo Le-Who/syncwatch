@@ -1,4 +1,3 @@
-# Palette's Journal
-## 2024-05-24 - Accessibility Labels in Dialogs
-**Learning:** Modal close buttons using generic `<X />` icons lack accessible names by default in this component library.
-**Action:** Always verify icon-only buttons inside dialogs/modals have appropriate `aria-label` attributes.
+## 2024-05-14 - Accessibility for interactive list items
+**Learning:** In interactive lists (e.g., playlists), items that are clickable to play media shouldn't be `div` elements with `onClick` handlers. They need to be accessible via keyboard, which means they should be `button` elements, especially if they perform actions like playing a media item. When changing to a `button`, we also need to ensure it's keyboard focusable and styled properly.
+**Action:** Convert clickable `div` items in lists to semantic `<button type="button">` with proper focus styles (`outline-none focus-visible:ring-2`) and alignment classes (`text-left`) so they don't break the layout but provide keyboard accessibility.
