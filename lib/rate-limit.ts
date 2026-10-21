@@ -1,3 +1,5 @@
+import { isBogon } from "./ip";
+
 interface RateLimitRecord {
   count: number;
   resetTime: number;
@@ -76,8 +78,15 @@ export function getClientIp(
 ): string {
   if (process.env.TRUST_PROXY === "true") {
     const forwardedFor = readHeader(headers, "x-forwarded-for");
-    const firstAddress = forwardedFor?.split(",", 1)[0]?.trim();
-    if (firstAddress) return firstAddress;
+    if (forwardedFor) {
+      const addresses = forwardedFor.split(",").map((s) => s.trim());
+      for (let i = addresses.length - 1; i >= 0; i--) {
+        const ip = addresses[i];
+        if (ip && !isBogon(ip)) {
+          return ip;
+        }
+      }
+    }
   }
   return directAddress || "unknown";
 }
@@ -92,8 +101,15 @@ export function getAppRouteClientIp(headers: HeaderSource): string {
     readHeader(headers, "x-syncwatch-client-ip") || "unknown";
   if (process.env.TRUST_PROXY === "true") {
     const forwardedFor = readHeader(headers, "x-forwarded-for");
-    const firstAddress = forwardedFor?.split(",", 1)[0]?.trim();
-    if (firstAddress) return firstAddress;
+    if (forwardedFor) {
+      const addresses = forwardedFor.split(",").map((s) => s.trim());
+      for (let i = addresses.length - 1; i >= 0; i--) {
+        const ip = addresses[i];
+        if (ip && !isBogon(ip)) {
+          return ip;
+        }
+      }
+    }
   }
   return directAddress;
 }
