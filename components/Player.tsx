@@ -118,6 +118,7 @@ export default function Player() {
     useFlashback();
 
   const idleTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastActivityRef = useRef<number>(0);
 
   const wakeUp = useCallback(() => {
     const state = useStore.getState();
@@ -128,6 +129,11 @@ export default function Player() {
 
   useEffect(() => {
     const handleUserActivity = () => {
+      const now = Date.now();
+      // Throttle activity handling to once per second to avoid rapid timeout churn
+      if (now - lastActivityRef.current < 1000) return;
+      lastActivityRef.current = now;
+
       wakeUp();
       if (idleTimeoutRef.current) clearTimeout(idleTimeoutRef.current);
       idleTimeoutRef.current = setTimeout(
@@ -142,10 +148,10 @@ export default function Player() {
       );
     };
 
-    window.addEventListener("mousemove", handleUserActivity);
-    window.addEventListener("keydown", handleUserActivity);
-    window.addEventListener("touchstart", handleUserActivity);
-    window.addEventListener("click", handleUserActivity);
+    window.addEventListener("mousemove", handleUserActivity, { passive: true });
+    window.addEventListener("keydown", handleUserActivity, { passive: true });
+    window.addEventListener("touchstart", handleUserActivity, { passive: true });
+    window.addEventListener("click", handleUserActivity, { passive: true });
 
     handleUserActivity();
 
