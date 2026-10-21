@@ -1,0 +1,4 @@
+## 2025-02-28 - X-Forwarded-For Spoofing Bypass
+**Vulnerability:** The `getClientIp` and `getAppRouteClientIp` functions blindly parsed the `X-Forwarded-For` header by taking the leftmost IP address. This allowed attackers to bypass IP-based rate limiting by spoofing the header with arbitrary IP addresses.
+**Learning:** Next.js and typical server setups do not automatically validate `X-Forwarded-For` chains. Taking the leftmost IP assumes every proxy in the chain is trusted, which is never true on the public internet.
+**Prevention:** Always parse the `X-Forwarded-For` list from right to left, skipping known private/internal IP ranges (using the `isBogon` utility which uses `ipaddr.js`), and take the first public IP address encountered. This ensures that the IP evaluated is the one connecting to the outermost trusted proxy.
