@@ -49,11 +49,13 @@
 ### Task 1: Merge Parity as a Traceable Integration Checkpoint
 
 **Files:**
+
 - Merge: `codex/synctube-parity`
 - Preserve: `docs/superpowers/specs/2026-08-31-syncwatch-parity-multiplayer-design.md`
 - Preserve: `docs/superpowers/plans/2026-08-31-syncwatch-parity-multiplayer.md`
 
 **Interfaces:**
+
 - Consumes: audited parity commits `9e2bfa7` and `bcd16ed`.
 - Produces: one merge commit containing the parity product surface, followed by a recorded green parity baseline.
 
@@ -102,6 +104,7 @@ Expected: 216 tests pass, lint exits 0, and build exits 0. Record any changed co
 ### Task 2: Canonical Types, Command Contract, and N-Participant Permission Policy
 
 **Files:**
+
 - Create: `lib/room-command-contract.ts`
 - Modify: `lib/types.ts`
 - Modify: `lib/zod-schemas.ts`
@@ -114,6 +117,7 @@ Expected: 216 tests pass, lint exits 0, and build exits 0. Record any changed co
 - Create: `__tests__/helpers/room-fixtures.ts`
 
 **Interfaces:**
+
 - Consumes: parity `commandSchema`, `RoomState`, `getParticipantPermissions()`.
 - Produces: `RoomCommand`, `RoomCommandEnvelope`, `CommandAcknowledgement`, `CommandRejectionCode`, `CanonicalPlaybackStatus`, `normalizeRoomState()`, count-agnostic room fixtures, and one permission matrix used by server and UI.
 
@@ -127,21 +131,25 @@ import { roomCommandEnvelopeSchema } from "@/lib/room-command-contract";
 
 describe("room command envelope", () => {
   it("accepts a bounded command bound to one room", () => {
-    expect(roomCommandEnvelopeSchema.parse({
-      roomId: crypto.randomUUID(),
-      nonce: crypto.randomUUID(),
-      clientSequence: 7,
-      command: { type: "play", payload: { position: 12.5 } },
-    }).command.type).toBe("play");
+    expect(
+      roomCommandEnvelopeSchema.parse({
+        roomId: crypto.randomUUID(),
+        nonce: crypto.randomUUID(),
+        clientSequence: 7,
+        command: { type: "play", payload: { position: 12.5 } },
+      }).command.type,
+    ).toBe("play");
   });
 
   it("rejects an oversized room id", () => {
-    expect(() => roomCommandEnvelopeSchema.parse({
-      roomId: "x".repeat(129),
-      nonce: crypto.randomUUID(),
-      clientSequence: 1,
-      command: { type: "pause", payload: { position: 0 } },
-    })).toThrow();
+    expect(() =>
+      roomCommandEnvelopeSchema.parse({
+        roomId: "x".repeat(129),
+        nonce: crypto.randomUUID(),
+        clientSequence: 1,
+        command: { type: "pause", payload: { position: 0 } },
+      }),
+    ).toThrow();
   });
 });
 ```
@@ -159,19 +167,33 @@ Expected: FAIL because `room-command-contract.ts` does not exist.
 ```ts
 export function roomWithParticipants(
   participantCount: number,
-  options: { leaderId?: string | null; ownerId?: string; moderatorIds?: string[] } = {},
+  options: {
+    leaderId?: string | null;
+    ownerId?: string;
+    moderatorIds?: string[];
+  } = {},
 ): RoomState {
   const room = createEmptyRoom("room-test", "Test Room");
   const ownerId = options.ownerId ?? "p0";
   room.participants = Object.fromEntries(
     Array.from({ length: participantCount }, (_, index) => {
       const id = `p${index}`;
-      const role = id === ownerId
-        ? "owner"
-        : options.moderatorIds?.includes(id)
-          ? "moderator"
-          : "viewer";
-      return [id, { id, nickname: `Friend ${index + 1}`, role, joinedAt: index, lastSeen: index }];
+      const role =
+        id === ownerId
+          ? "owner"
+          : options.moderatorIds?.includes(id)
+            ? "moderator"
+            : "viewer";
+      return [
+        id,
+        {
+          id,
+          nickname: `Friend ${index + 1}`,
+          role,
+          joinedAt: index,
+          lastSeen: index,
+        },
+      ];
     }),
   );
   room.leaderId = options.leaderId ?? null;
@@ -213,7 +235,11 @@ for (const participantCount of [1, 3, 5, 25]) {
 }
 
 it("restricts viewers only while an active leader exists", () => {
-  const room = roomWithParticipants(5, { leaderId: "p2", ownerId: "p0", moderatorIds: ["p1"] });
+  const room = roomWithParticipants(5, {
+    leaderId: "p2",
+    ownerId: "p0",
+    moderatorIds: ["p1"],
+  });
   expect(getParticipantPermissions(room, "p0").canControlPlayback).toBe(true);
   expect(getParticipantPermissions(room, "p1").canControlPlayback).toBe(true);
   expect(getParticipantPermissions(room, "p2").canControlPlayback).toBe(true);
@@ -276,7 +302,9 @@ Define `PlaybackStatus` as `"playing" | "paused" | "ended"`, and add participant
 return {
   canAddPlaylist: Boolean(participant),
   canEditPlaylist: isOwnerOrMod,
-  canControlPlayback: Boolean(participant && (!hasActiveLeader || isLeader || isOwnerOrMod)),
+  canControlPlayback: Boolean(
+    participant && (!hasActiveLeader || isLeader || isOwnerOrMod),
+  ),
   canManageRoom: isOwnerOrMod,
   isOwner,
   isOwnerOrMod,
@@ -313,6 +341,7 @@ git commit -m "refactor: unify room command and permission contracts"
 ### Task 3: Event Bus and Participant Lifecycle for Redis and In-Memory Rooms
 
 **Files:**
+
 - Create: `lib/room-events.ts`
 - Create: `lib/room-event-bus.ts`
 - Create: `lib/participant-lifecycle.ts`
@@ -327,13 +356,17 @@ git commit -m "refactor: unify room command and permission contracts"
 - Test: `__tests__/server.test.ts`
 
 **Interfaces:**
+
 - Consumes: normalized `RoomState`, Socket.IO `Server`, Redis publish/subscribe clients.
 - Produces: exhaustive `RoomEvent`, `RoomEventBus.publish()`, `joinParticipant()`, `markParticipantDisconnected()`, and `removeParticipantAfterGrace()`.
 
 - [ ] **Step 1: Write failing event-bus parity tests**
 
 ```ts
-const event = { type: "participant_joined", participant: participant("p4") } as const;
+const event = {
+  type: "participant_joined",
+  participant: participant("p4"),
+} as const;
 await inMemoryBus.publish("room-a", event);
 expect(localEmit).toHaveBeenCalledOnce();
 
@@ -341,7 +374,11 @@ await redisBus.publish("room-a", event);
 expect(localEmit).toHaveBeenCalledOnce();
 expect(redisPublish).toHaveBeenCalledOnce();
 
-redisBus.handleRemote({ sourceNodeId: redisBus.nodeId, roomId: "room-a", event });
+redisBus.handleRemote({
+  sourceNodeId: redisBus.nodeId,
+  roomId: "room-a",
+  event,
+});
 expect(localEmit).toHaveBeenCalledOnce();
 ```
 
@@ -359,14 +396,24 @@ Expected: FAIL because the event bus does not exist.
 it("broadcasts every join and converges to five participants", () => {
   let room = createRoom("room-a");
   for (let index = 0; index < 5; index++) {
-    room = joinParticipant(room, participant(`p${index}`, index === 0 ? "owner" : "viewer"), index);
+    room = joinParticipant(
+      room,
+      participant(`p${index}`, index === 0 ? "owner" : "viewer"),
+      index,
+    );
   }
   expect(Object.keys(room.participants)).toHaveLength(5);
 });
 
 it("elects the oldest connected moderator after owner grace expires", () => {
-  const next = removeParticipantAfterGrace(roomWithOwnerAndFourFriends(), "owner", 20_000);
-  expect(Object.values(next.participants).filter((p) => p.role === "owner")).toHaveLength(1);
+  const next = removeParticipantAfterGrace(
+    roomWithOwnerAndFourFriends(),
+    "owner",
+    20_000,
+  );
+  expect(
+    Object.values(next.participants).filter((p) => p.role === "owner"),
+  ).toHaveLength(1);
   expect(next.participants.moderator0.role).toBe("owner");
 });
 ```
@@ -384,12 +431,20 @@ Expected: FAIL because lifecycle transitions are still embedded in the socket ha
 ```ts
 export type RoomEvent =
   | { type: "room_state"; room: RoomState; serverTime: number }
-  | { type: "playback_updated"; playback: CanonicalPlayback; serverTime: number }
+  | {
+      type: "playback_updated";
+      playback: CanonicalPlayback;
+      serverTime: number;
+    }
   | { type: "participant_joined"; participant: Participant }
   | { type: "participant_reconnected"; participant: Participant }
   | { type: "participant_disconnected"; participantId: string }
   | { type: "participant_left"; participantId: string; ownerId: string | null }
-  | { type: "participant_health"; participantId: string; health: PlaybackHealth };
+  | {
+      type: "participant_health";
+      participantId: string;
+      health: PlaybackHealth;
+    };
 ```
 
 Use an exhaustive `switch` with a `never` default in the Socket.IO emitter and Zustand reducer.
@@ -438,6 +493,7 @@ git commit -m "fix: converge multiplayer presence across room backends"
 ### Task 4: Room Repository and Command Service with Compact Playback Updates
 
 **Files:**
+
 - Create: `lib/room-repository.ts`
 - Create: `lib/room-command-service.ts`
 - Modify: `lib/socket/commands.ts`
@@ -451,6 +507,7 @@ git commit -m "fix: converge multiplayer presence across room backends"
 - Test: `__tests__/occ_thrashing.test.ts`
 
 **Interfaces:**
+
 - Consumes: `RoomCommandEnvelope`, `RoomEventBus`, permissions, pure room mutations, persistence scheduler.
 - Produces: `RoomRepository`, `RoomCommandService.execute(context, envelope)`, command acknowledgements, atomic playback updates, and serialized no-Redis behavior.
 
@@ -475,14 +532,22 @@ function envelope<T extends RoomCommand["type"]>(
 }
 
 it("applies play in memory and emits only compact playback", async () => {
-  const result = await service.execute(contextFor("room-a", "p0"), envelope("room-a", "play", { position: 8 }));
+  const result = await service.execute(
+    contextFor("room-a", "p0"),
+    envelope("room-a", "play", { position: 8 }),
+  );
   expect(result.status).toBe("applied");
-  expect(events).toEqual([expect.objectContaining({ type: "playback_updated" })]);
+  expect(events).toEqual([
+    expect.objectContaining({ type: "playback_updated" }),
+  ]);
   expect((await repository.get("room-a"))?.playback.status).toBe("playing");
 });
 
 it("rejects a command targeting a room the socket did not join", async () => {
-  const result = await service.execute(contextFor("room-a", "p0"), envelope("room-b", "pause", { position: 3 }));
+  const result = await service.execute(
+    contextFor("room-a", "p0"),
+    envelope("room-b", "pause", { position: 3 }),
+  );
   expect(result).toMatchObject({ status: "rejected", code: "ROOM_MISMATCH" });
 });
 ```
@@ -500,8 +565,13 @@ Expected: FAIL because the service and repository boundary do not exist.
 Assert that the same nonce is applied once, and that `video_ended` or `next` carrying an old `currentMediaId` is rejected without changing the queue.
 
 ```ts
-expect(await service.execute(ctx, command)).toMatchObject({ status: "applied" });
-expect(await service.execute(ctx, command)).toMatchObject({ status: "ignored", code: "DUPLICATE" });
+expect(await service.execute(ctx, command)).toMatchObject({
+  status: "applied",
+});
+expect(await service.execute(ctx, command)).toMatchObject({
+  status: "ignored",
+  code: "DUPLICATE",
+});
 expect(room.sequence).toBe(sequenceAfterFirstApply);
 ```
 
@@ -510,8 +580,16 @@ expect(room.sequence).toBe(sequenceAfterFirstApply);
 ```ts
 export interface RoomRepository {
   get(roomId: string): Promise<RoomState | null>;
-  compareAndSet(roomId: string, expectedVersion: number, next: RoomState): Promise<boolean>;
-  mutatePlayback(roomId: string, command: PlaybackCommand, actor: Participant): Promise<PlaybackMutationResult>;
+  compareAndSet(
+    roomId: string,
+    expectedVersion: number,
+    next: RoomState,
+  ): Promise<boolean>;
+  mutatePlayback(
+    roomId: string,
+    command: PlaybackCommand,
+    actor: Participant,
+  ): Promise<PlaybackMutationResult>;
   expire(roomId: string, ttlSeconds: number): Promise<void>;
 }
 
@@ -545,7 +623,9 @@ The Redis Lua result and in-memory pure mutation both increment the canonical se
 Add failing service tests for a 501st queue entry, duplicate URL, empty/oversized chat text, and chat history beyond the configured cap. The service returns `QUEUE_FULL` or `INVALID_COMMAND`; accepted chat uses server time and retains only the newest 200 messages.
 
 ```ts
-expect(await service.execute(ctx, addItemTo(roomWithQueueLength(500)))).toMatchObject({
+expect(
+  await service.execute(ctx, addItemTo(roomWithQueueLength(500))),
+).toMatchObject({
   status: "rejected",
   code: "QUEUE_FULL",
 });
@@ -575,6 +655,7 @@ git commit -m "refactor: centralize authoritative room commands"
 ### Task 5: Participant-Local Buffering and Playback Reconciliation
 
 **Files:**
+
 - Create: `lib/playback-health.ts`
 - Modify: `hooks/usePlayerEvents.ts`
 - Modify: `hooks/usePlaybackSync.ts`
@@ -588,6 +669,7 @@ git commit -m "refactor: centralize authoritative room commands"
 - Test: `components/__tests__/Player.test.tsx`
 
 **Interfaces:**
+
 - Consumes: canonical compact playback updates and provider callbacks.
 - Produces: `PlaybackHealthController`, coalesced health events, local buffering UI, monotonic reconciliation, and recovery-to-current-time behavior.
 
@@ -615,7 +697,10 @@ Expected: FAIL because `handleWaiting()` currently emits canonical buffering.
 ```ts
 it("hard-seeks to the current canonical position after a long local stall", () => {
   controller.waiting(10_000);
-  controller.playing(18_000, canonicalPlaying({ basePosition: 10, baseTimestamp: 10_000 }));
+  controller.playing(
+    18_000,
+    canonicalPlaying({ basePosition: 10, baseTimestamp: 10_000 }),
+  );
   expect(player.seekTo).toHaveBeenCalledWith(18, "seconds");
 });
 
@@ -636,7 +721,9 @@ export class PlaybackHealthController {
     this.health = next;
     return true;
   }
-  current(): PlaybackHealth { return this.health; }
+  current(): PlaybackHealth {
+    return this.health;
+  }
 }
 ```
 
@@ -674,6 +761,7 @@ git commit -m "fix: isolate buffering from the room timeline"
 ### Task 6: Player Recovery, One Composer, and Coherent Room UX
 
 **Files:**
+
 - Modify: `app/page.tsx`
 - Modify: `app/room/[id]/page.tsx`
 - Modify: `components/Player.tsx`
@@ -690,6 +778,7 @@ git commit -m "fix: isolate buffering from the room timeline"
 - Test: `components/__tests__/Player.test.tsx`
 
 **Interfaces:**
+
 - Consumes: permission policy, command acknowledgement, participant health, media composer services, ReactPlayer v3 adapters.
 - Produces: one responsive composer, touch/keyboard-operable playback, actionable local error recovery, and server-consistent role/leader actions.
 
@@ -701,10 +790,15 @@ it.each([
   { hasMedia: true, viewport: "desktop" },
   { hasMedia: false, viewport: "mobile" },
   { hasMedia: true, viewport: "mobile" },
-])("renders one media composer for $viewport with media=$hasMedia", ({ hasMedia }) => {
-  renderRoom({ hasMedia });
-  expect(screen.getAllByRole("textbox", { name: /youtube url or search/i })).toHaveLength(1);
-});
+])(
+  "renders one media composer for $viewport with media=$hasMedia",
+  ({ hasMedia }) => {
+    renderRoom({ hasMedia });
+    expect(
+      screen.getAllByRole("textbox", { name: /youtube url or search/i }),
+    ).toHaveLength(1);
+  },
+);
 ```
 
 Expected: FAIL on parity because multiple composers are visible.
@@ -718,10 +812,15 @@ it("keeps a provider error local and exposes retry", async () => {
   expect(sendCommand).not.toHaveBeenCalledWith("next", expect.anything());
 });
 
-it.each(["owner", "moderator"] as const)("allows %s to skip an unavailable item", (role) => {
-  renderPlayer({ providerError: true, role });
-  expect(screen.getByRole("button", { name: /skip unavailable video/i })).toBeVisible();
-});
+it.each(["owner", "moderator"] as const)(
+  "allows %s to skip an unavailable item",
+  (role) => {
+    renderPlayer({ providerError: true, role });
+    expect(
+      screen.getByRole("button", { name: /skip unavailable video/i }),
+    ).toBeVisible();
+  },
+);
 ```
 
 - [ ] **Step 3: Render one logical composer conditionally**
@@ -764,6 +863,7 @@ git commit -m "fix: make multiplayer room controls coherent"
 ### Task 7: Deterministic N-Client and Degraded-Network E2E
 
 **Files:**
+
 - Modify: `playwright.config.ts`
 - Modify: `e2e/helpers/room.ts`
 - Create: `e2e/helpers/network.ts`
@@ -774,13 +874,18 @@ git commit -m "fix: make multiplayer room controls coherent"
 - Modify: `e2e/README.md`
 
 **Interfaces:**
+
 - Consumes: accessible room UI, Socket.IO reconnect, compact playback events, Chromium CDP.
 - Produces: reusable `createRoomClients(count)`, `setLatency()`, `pulseOffline()`, and serial product-level acceptance tests.
 
 - [ ] **Step 1: Build an N-client room harness**
 
 ```ts
-export async function createRoomClients(browser: Browser, count: number, roomId = crypto.randomUUID()) {
+export async function createRoomClients(
+  browser: Browser,
+  count: number,
+  roomId = crypto.randomUUID(),
+) {
   const clients: RoomClient[] = [];
   for (let index = 0; index < count; index++) {
     const context = await browser.newContext();
@@ -810,7 +915,10 @@ export async function setLatency(page: Page, latencyMs: number) {
   return session;
 }
 
-export async function pulseOffline(context: BrowserContext, milliseconds: number) {
+export async function pulseOffline(
+  context: BrowserContext,
+  milliseconds: number,
+) {
   await context.setOffline(true);
   await new Promise((resolve) => setTimeout(resolve, milliseconds));
   await context.setOffline(false);
@@ -861,6 +969,7 @@ git commit -m "test: cover n-client rooms and degraded connections"
 ### Task 8: Focused Session, Rate-Limit, Dependency, and Documentation Hardening
 
 **Files:**
+
 - Modify: `app/api/auth/session/route.ts`
 - Modify: `lib/jwt-config.ts`
 - Modify: `lib/socket/setup.ts`
@@ -880,6 +989,7 @@ git commit -m "test: cover n-client rooms and degraded connections"
 - Test: `__tests__/server.test.ts`
 
 **Interfaces:**
+
 - Consumes: reconnectable HttpOnly session, Redis/local rate-limit adapter, current dependency audit.
 - Produces: server-issued participant identity, production JWT-secret enforcement, bounded local rate limiting, corrected 60-second windows, restored command limits, and documented dependency risk.
 
@@ -913,7 +1023,8 @@ Expected: FAIL because arbitrary IDs are currently signed and a default secret i
 ```ts
 it("allows exactly the configured number of events without Redis", async () => {
   const limiter = createRateLimiter({ redis: null, now: () => 1_000 });
-  for (let index = 0; index < 20; index++) expect(await limiter.check("ip", 20, 60_000)).toBe(true);
+  for (let index = 0; index < 20; index++)
+    expect(await limiter.check("ip", 20, 60_000)).toBe(true);
   expect(await limiter.check("ip", 20, 60_000)).toBe(false);
 });
 ```
@@ -961,10 +1072,12 @@ git commit -m "fix: harden friend-room session and runtime limits"
 ### Task 9: Real Redis Verification, Full Product Verification, and Audit Record
 
 **Files:**
+
 - Create: `docs/audits/2026-08-31-syncwatch-verification.md`
 - Modify: implementation files only when a new failing regression test identifies a root cause.
 
 **Interfaces:**
+
 - Consumes: all prior tasks and the acceptance criteria in the design spec.
 - Produces: fresh verification evidence, residual-risk record, reviewed diff, and a branch ready for the user's integration choice.
 
