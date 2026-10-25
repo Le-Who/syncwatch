@@ -4,5 +4,11 @@
 **Action:** Replace nested `.find()` searches with a pre-computed O(N) `Map` linking array identifiers to their respective items, drastically improving lookup speed to O(1).
 
 ## 2026-08-29 - Extracted Playlist Search Form
+
 **Learning:** Large React components rendering massive O(N) lists (like a 500-item playlist) can severely bottleneck performance if they also own localized state that updates frequently (like a controlled text input). Any keystroke forces a re-render of the entire list.
 **Action:** Isolate frequently updating UI (like search bars or active playback controls) into separate, sibling or child components wrapped in `React.memo`. This prevents rapid state changes from polluting the parent render cycle and diffing the large list array.
+
+## 2024-05-18 - Throttle Rapid DOM Events and Use Passive Listeners
+
+**Learning:** Continuous DOM events like `mousemove` or `keydown` can fire at ~60Hz. If they trigger React state reads (like `useStore.getState()`) or rapidly clear/set timeouts, they can bottleneck the main thread and hinder UI responsiveness. Additionally, active touch or scroll listeners block browser scrolling optimizations.
+**Action:** Always throttle high-frequency DOM event handlers using a simple timestamp check (e.g., `Date.now() - lastTime < 200`), and pass `const passiveOpts: AddEventListenerOptions = { passive: true };` to the event listeners to ensure scroll performance isn't degraded.
