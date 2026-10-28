@@ -9,10 +9,22 @@ interface SleepOverlayProps {
 export function SleepOverlay({ onWakeUp }: SleepOverlayProps) {
   return (
     <div
-      className="absolute inset-0 z-50 flex cursor-pointer flex-col items-center justify-center bg-black/90 backdrop-blur-md"
+      className="focus-visible:ring-theme-accent absolute inset-0 z-50 flex cursor-pointer flex-col items-center justify-center bg-black/90 backdrop-blur-md outline-none focus-visible:ring-2"
       onClick={onWakeUp}
+      role="button"
+      tabIndex={0}
+      aria-label="Wake up connection"
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onWakeUp();
+        }
+      }}
     >
-      <MonitorPlay className="text-theme-muted mb-6 h-16 w-16 opacity-50" />
+      <MonitorPlay
+        className="text-theme-muted mb-6 h-16 w-16 opacity-50"
+        aria-hidden="true"
+      />
       <h2 className="text-theme-text mb-2 text-2xl font-bold tracking-widest uppercase">
         Sleep Mode
       </h2>
