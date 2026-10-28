@@ -65,7 +65,7 @@ export default function ChatPanel() {
                       })}
                     </span>
                   </div>
-                  <p className="text-theme-text break-words text-sm leading-relaxed">
+                  <p className="text-theme-text text-sm leading-relaxed break-words">
                     {chat.message}
                   </p>
                 </div>
