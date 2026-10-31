@@ -127,7 +127,14 @@ export default function Player() {
   }, []);
 
   useEffect(() => {
+    // ⚡ Bolt Optimization: Throttle user activity listeners to ~5Hz (every 200ms)
+    // Reduces main thread overhead from Zustand getState() reads and timeout churn on every mousemove.
+    let lastActivityTime = 0;
     const handleUserActivity = () => {
+      const now = Date.now();
+      if (now - lastActivityTime < 200) return;
+      lastActivityTime = now;
+
       wakeUp();
       if (idleTimeoutRef.current) clearTimeout(idleTimeoutRef.current);
       idleTimeoutRef.current = setTimeout(
@@ -142,18 +149,20 @@ export default function Player() {
       );
     };
 
-    window.addEventListener("mousemove", handleUserActivity);
-    window.addEventListener("keydown", handleUserActivity);
-    window.addEventListener("touchstart", handleUserActivity);
-    window.addEventListener("click", handleUserActivity);
+    const passiveOpts: AddEventListenerOptions = { passive: true };
+
+    window.addEventListener("mousemove", handleUserActivity, passiveOpts);
+    window.addEventListener("keydown", handleUserActivity, passiveOpts);
+    window.addEventListener("touchstart", handleUserActivity, passiveOpts);
+    window.addEventListener("click", handleUserActivity, passiveOpts);
 
     handleUserActivity();
 
     return () => {
-      window.removeEventListener("mousemove", handleUserActivity);
-      window.removeEventListener("keydown", handleUserActivity);
-      window.removeEventListener("touchstart", handleUserActivity);
-      window.removeEventListener("click", handleUserActivity);
+      window.removeEventListener("mousemove", handleUserActivity, passiveOpts);
+      window.removeEventListener("keydown", handleUserActivity, passiveOpts);
+      window.removeEventListener("touchstart", handleUserActivity, passiveOpts);
+      window.removeEventListener("click", handleUserActivity, passiveOpts);
       if (idleTimeoutRef.current) clearTimeout(idleTimeoutRef.current);
     };
   }, [wakeUp]);
