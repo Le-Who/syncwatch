@@ -144,7 +144,7 @@ describe("trusted proxy client addresses", () => {
     });
     vi.stubEnv("TRUST_PROXY", "true");
 
-    expect(getClientIp(headers, "127.0.0.1")).toBe("203.0.113.7");
+    expect(getClientIp(headers, "127.0.0.1")).toBe("10.0.0.4");
   });
 
   it("uses the custom server's authoritative direct peer address by default", () => {
