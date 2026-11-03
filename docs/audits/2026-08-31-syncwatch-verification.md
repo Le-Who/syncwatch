@@ -493,18 +493,18 @@ evidence commits. The sole scoped reviewer examined that fix diff, the covering
 test/evidence reports, SQL/role boundaries and dependency ranges. It did not
 rerun broad suites, alter source/index/HEAD or spawn reviewers.
 
-| Finding | Scoped verdict |
-| --- | --- |
-| F1 delayed wrong-video playback commands | ADDRESSED |
-| F2 full/compact event reordering and read-only recovery | ADDRESSED |
-| F3 shared-NAT admission/reconnect | ADDRESSED |
-| F4 advertised queue advancement | NOT ADDRESSED — one Important residual, N1 |
-| F5 keyboard workflow | ADDRESSED |
-| F6 migration-backed persistence/hydration | ADDRESSED, local-engine boundary retained |
-| F7 pinned metadata egress | ADDRESSED |
-| F8 exact persistence RPC execution privileges | ADDRESSED, not a deployed-ACL claim |
-| M1–M5 useful UX/test-fidelity minors | ADDRESSED, provider provenance limit retained |
-| Lifetime/role/coordinator/provider recovery refinement | ADDRESSED |
+| Finding                                                 | Scoped verdict                                |
+| ------------------------------------------------------- | --------------------------------------------- |
+| F1 delayed wrong-video playback commands                | ADDRESSED                                     |
+| F2 full/compact event reordering and read-only recovery | ADDRESSED                                     |
+| F3 shared-NAT admission/reconnect                       | ADDRESSED                                     |
+| F4 advertised queue advancement                         | NOT ADDRESSED — one Important residual, N1    |
+| F5 keyboard workflow                                    | ADDRESSED                                     |
+| F6 migration-backed persistence/hydration               | ADDRESSED, local-engine boundary retained     |
+| F7 pinned metadata egress                               | ADDRESSED                                     |
+| F8 exact persistence RPC execution privileges           | ADDRESSED, not a deployed-ACL claim           |
+| M1–M5 useful UX/test-fidelity minors                    | ADDRESSED, provider provenance limit retained |
+| Lifetime/role/coordinator/provider recovery refinement  | ADDRESSED                                     |
 
 ### The one remaining defect
 
@@ -650,16 +650,16 @@ baseline logic and literal null-pointer assertions corroborate sensitivity.
 
 Controller independently verified the committed product tree:
 
-| Gate | Current result |
-| --- | --- |
-| Full unit with retained JSON | exit0; 507 passed, 0 failed, 9 intentionally skipped Redis cases; 59 actual test-file results, queue19/19 |
-| `pnpm lint`; `pnpm typecheck`; `pnpm build` | each exit0; Next16.3.8 and custom-server TypeScript |
-| `pnpm audit --prod --json` | exit0; 312 production dependencies, zero all severities |
-| Serial `pnpm exec playwright test --workers=1 --reporter=line,json` | exit0; 10 passed, 1 gated live skip, zero unexpected/flaky/global errors; 90.658s |
-| Headed complete live YouTube, first fresh run | exit1; native actor reaches paused but Play overlay does not converge within30s; 45.840s total |
-| Same complete live spec, unchanged code, `--trace=on` | exit0; entire add/play/pause/seek/late/reconnect/degraded flow passes; 46.048s |
-| Bounded read-only real-YouTube/socket pause diagnostic | exit1; first two native pause cycles converge, third loses the intent before transmission; 34.759s |
-| Same bounded diagnostic with read-only guard logpoints | exit1; third cycle lost again; current hook accepts, Player rejects at recent-seek guard (1308 ms < 1500 ms); 34.072s |
+| Gate                                                                | Current result                                                                                                        |
+| ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Full unit with retained JSON                                        | exit0; 507 passed, 0 failed, 9 intentionally skipped Redis cases; 59 actual test-file results, queue19/19             |
+| `pnpm lint`; `pnpm typecheck`; `pnpm build`                         | each exit0; Next16.3.8 and custom-server TypeScript                                                                   |
+| `pnpm audit --prod --json`                                          | exit0; 312 production dependencies, zero all severities                                                               |
+| Serial `pnpm exec playwright test --workers=1 --reporter=line,json` | exit0; 10 passed, 1 gated live skip, zero unexpected/flaky/global errors; 90.658s                                     |
+| Headed complete live YouTube, first fresh run                       | exit1; native actor reaches paused but Play overlay does not converge within30s; 45.840s total                        |
+| Same complete live spec, unchanged code, `--trace=on`               | exit0; entire add/play/pause/seek/late/reconnect/degraded flow passes; 46.048s                                        |
+| Bounded read-only real-YouTube/socket pause diagnostic              | exit1; first two native pause cycles converge, third loses the intent before transmission; 34.759s                    |
+| Same bounded diagnostic with read-only guard logpoints              | exit1; third cycle lost again; current hook accepts, Player rejects at recent-seek guard (1308 ms < 1500 ms); 34.072s |
 
 The default nine opt-in Redis cases previously ran against the owned real Redis
 instance in the final-wave gate. That adapter/Lua/persistence/provider source is
@@ -772,15 +772,15 @@ separate current proof, not a retroactive repair of that historical record.
 
 ### Fresh controller gates and real UX observations
 
-| Gate | Exact result and scope |
-| --- | --- |
-| Final default unit at `bbef424` | exit0;532passed/0failed/9intentionalRedis-skips,541total,59actualfiles; native70/70, queue19/19, actual-SQL persistence3/3 |
-| Final `pnpm lint`; `pnpm typecheck`; `pnpm build` at `bbef424` | each exit0; Next16.3.8 production build and custom-server TypeScript; generated declaration noise restored after shutdown/build |
-| Scoped Prettier; full branch whitespace; restored declaration checks | exit0; no remaining tracked build noise |
-| Controller production dependency audit | exit0;312productiondependencies;0at every severity; package/lock unchanged through final test-only revision |
-| Serial existing browser matrix at product `d70b5a5` | exit0;10passed/1gatedlive-skip,89.910436s;0unexpected/flaky/globalerrors; one attempt per case, retries0 |
-| Complete headed checked-in real YouTube flow at product `d70b5a5` | exit0;1passed,35.165004s; add/play/nativePause/seek/lateJoin/reconnect/degraded continuation; new traceON, no corrected-source replay |
-| Same bounded real YouTube Pause/socket diagnostic without debugger | exit0;1passed,35.111928s; all5cycles complete; each emits one nativePause, receives one matching appliedACK, and delivers canonical paused to all3clients |
+| Gate                                                                 | Exact result and scope                                                                                                                                    |
+| -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Final default unit at `bbef424`                                      | exit0;532passed/0failed/9intentionalRedis-skips,541total,59actualfiles; native70/70, queue19/19, actual-SQL persistence3/3                                |
+| Final `pnpm lint`; `pnpm typecheck`; `pnpm build` at `bbef424`       | each exit0; Next16.3.8 production build and custom-server TypeScript; generated declaration noise restored after shutdown/build                           |
+| Scoped Prettier; full branch whitespace; restored declaration checks | exit0; no remaining tracked build noise                                                                                                                   |
+| Controller production dependency audit                               | exit0;312productiondependencies;0at every severity; package/lock unchanged through final test-only revision                                               |
+| Serial existing browser matrix at product `d70b5a5`                  | exit0;10passed/1gatedlive-skip,89.910436s;0unexpected/flaky/globalerrors; one attempt per case, retries0                                                  |
+| Complete headed checked-in real YouTube flow at product `d70b5a5`    | exit0;1passed,35.165004s; add/play/nativePause/seek/lateJoin/reconnect/degraded continuation; new traceON, no corrected-source replay                     |
+| Same bounded real YouTube Pause/socket diagnostic without debugger   | exit0;1passed,35.111928s; all5cycles complete; each emits one nativePause, receives one matching appliedACK, and delivers canonical paused to all3clients |
 
 Every diagnostic cycle observed the actor's real iframe reach state2, then all
 three real iframes state2 with SyncWatch Play visible. The filtered capture has
@@ -798,19 +798,19 @@ controller verification record, not an unfiltered transcript.
 
 ### Binding acceptance criteria and reviewer cannot-verify disposition
 
-| Criterion | Current disposition |
-| --- | --- |
-| Useful main/parity integration and full audit | merge589c526 retained; fresh parity ancestor check0; original broad audit/final reviews plus authorized queue/native scoped closures complete |
-| 1 unit/lint/type/build | accepted: fresh final-source gates above all exit0 |
-| 2 five-context serial browser | accepted: actual five-client sessions, current permissions/presence/provider cases, unique room IDs through existing harness, workers1/retries0 |
-| 3 real YouTube full watch-together UX | accepted: complete fresh headed flow plus all five actual native-Pause propagation cycles; no pass inferred from old replay |
-| 4 one or more poor connections | accepted within tested boundary: five-browser scenario has2independently impaired/3healthy, healthy advancement and both recoveries; full live latency/offline recovery; recent-seek waiting/stale/rapid-ACK controls and N1/3/5/25 authoritative outcomes |
-| 5 Redis/no-Redis presence and handoff | current no-Redis browser/lifecycle cases pass; reviewed real Redis/Lua49-case gate (32realRedis+17lifecycle) and Redis browser retained on unchanged backend boundaries; no fresh Redis execution claimed for Player-only fix |
-| 6 shared permission policy and visible rejection | current full policy/service tests and five-client browser pass; native unauthorized/stale controls retained; roles/advisory readiness remain reviewed unchanged behavior |
-| 7 one composer desktop/mobile | both current actual-route browser cases pass, plus keyboard flow |
-| 8 arbitrary participant count/shared NAT | N1/3/5/25 and real25-session same-address admission/group recovery remain covered; current same-NAT identity/reload browser passes; no two-person special case or25-Chromium claim |
-| 9 security/dependencies | current audit0/312; reviewed identity/token/rate/metadata egress repairs and persistence RPC ACL/migration-backed3-case actual-SQL proof retained; no deployed ACL/REST claim |
-| 10 reviewed safe handoff | original findings and new scoped concerns closed; primary main7cf98bf/user-owned staged dist deletion preserved; human chooses integration next |
+| Criterion                                        | Current disposition                                                                                                                                                                                                                                        |
+| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Useful main/parity integration and full audit    | merge589c526 retained; fresh parity ancestor check0; original broad audit/final reviews plus authorized queue/native scoped closures complete                                                                                                              |
+| 1 unit/lint/type/build                           | accepted: fresh final-source gates above all exit0                                                                                                                                                                                                         |
+| 2 five-context serial browser                    | accepted: actual five-client sessions, current permissions/presence/provider cases, unique room IDs through existing harness, workers1/retries0                                                                                                            |
+| 3 real YouTube full watch-together UX            | accepted: complete fresh headed flow plus all five actual native-Pause propagation cycles; no pass inferred from old replay                                                                                                                                |
+| 4 one or more poor connections                   | accepted within tested boundary: five-browser scenario has2independently impaired/3healthy, healthy advancement and both recoveries; full live latency/offline recovery; recent-seek waiting/stale/rapid-ACK controls and N1/3/5/25 authoritative outcomes |
+| 5 Redis/no-Redis presence and handoff            | current no-Redis browser/lifecycle cases pass; reviewed real Redis/Lua49-case gate (32realRedis+17lifecycle) and Redis browser retained on unchanged backend boundaries; no fresh Redis execution claimed for Player-only fix                              |
+| 6 shared permission policy and visible rejection | current full policy/service tests and five-client browser pass; native unauthorized/stale controls retained; roles/advisory readiness remain reviewed unchanged behavior                                                                                   |
+| 7 one composer desktop/mobile                    | both current actual-route browser cases pass, plus keyboard flow                                                                                                                                                                                           |
+| 8 arbitrary participant count/shared NAT         | N1/3/5/25 and real25-session same-address admission/group recovery remain covered; current same-NAT identity/reload browser passes; no two-person special case or25-Chromium claim                                                                         |
+| 9 security/dependencies                          | current audit0/312; reviewed identity/token/rate/metadata egress repairs and persistence RPC ACL/migration-backed3-case actual-SQL proof retained; no deployed ACL/REST claim                                                                              |
+| 10 reviewed safe handoff                         | original findings and new scoped concerns closed; primary main7cf98bf/user-owned staged dist deletion preserved; human chooses integration next                                                                                                            |
 
 These rows resolve all seven original scoped-review cannot-verify items using
 controller-owned cross-task/current evidence, not by widening that reviewer.
