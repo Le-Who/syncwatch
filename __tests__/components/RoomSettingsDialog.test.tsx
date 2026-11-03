@@ -45,7 +45,9 @@ describe("RoomSettingsDialog", () => {
     expect(screen.queryByText(/Open Room/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Hybrid Room/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Controlled Room/i)).not.toBeInTheDocument();
-    expect(screen.queryByLabelText(/Append-only Queue/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByLabelText(/Append-only Queue/i),
+    ).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByLabelText(/Autoplay Next/i));
     fireEvent.click(screen.getByLabelText(/Loop Playlist/i));

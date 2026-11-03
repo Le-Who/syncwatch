@@ -251,14 +251,18 @@ export function normalizeRoomState(input: LegacyRoomStateInput): RoomState {
         ? input.mediaRun
         : 0,
     generation: input.generation || "legacy",
-    nextMediaId: input.playlist?.some((item) => item.id === input.nextMediaId)
+    nextMediaId: (input.playlist || []).some(
+      (item) => item.id === input.nextMediaId,
+    )
       ? input.nextMediaId
       : null,
-    shufflePlayedIds: Array.isArray(input.shufflePlayedIds)
-      ? input.shufflePlayedIds.filter((id) =>
-          input.playlist?.some((item) => item.id === id),
-        )
-      : [],
+    shufflePlayedIds: (() => {
+      if (!Array.isArray(input.shufflePlayedIds)) return [];
+      const playlistIds = new Set(
+        (input.playlist || []).map((item) => item.id),
+      );
+      return input.shufflePlayedIds.filter((id) => playlistIds.has(id));
+    })(),
     leaderId:
       typeof input.leaderId === "string" && participants[input.leaderId]
         ? input.leaderId

@@ -10,9 +10,9 @@ describe("cleanupStaleServiceWorkers", () => {
     const cleaned = await cleanupStaleServiceWorkers({
       serviceWorker: {
         controller: {},
-        getRegistrations: vi.fn().mockResolvedValue([
-          { scope: "http://localhost:3000/", unregister },
-        ]),
+        getRegistrations: vi
+          .fn()
+          .mockResolvedValue([{ scope: "http://localhost:3000/", unregister }]),
       },
       location: {
         origin: "http://localhost:3000",
@@ -37,9 +37,9 @@ describe("cleanupStaleServiceWorkers", () => {
     const cleaned = await cleanupStaleServiceWorkers({
       serviceWorker: {
         controller: null,
-        getRegistrations: vi.fn().mockResolvedValue([
-          { scope: "http://localhost:3000/", unregister },
-        ]),
+        getRegistrations: vi
+          .fn()
+          .mockResolvedValue([{ scope: "http://localhost:3000/", unregister }]),
       },
       location: {
         origin: "http://localhost:3000",
