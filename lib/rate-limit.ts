@@ -76,7 +76,8 @@ export function getClientIp(
 ): string {
   if (process.env.TRUST_PROXY === "true") {
     const forwardedFor = readHeader(headers, "x-forwarded-for");
-    const firstAddress = forwardedFor?.split(",", 1)[0]?.trim();
+    // Use right-most IP to prevent spoofing from client-provided XFF headers
+    const firstAddress = forwardedFor?.split(",").pop()?.trim();
     if (firstAddress) return firstAddress;
   }
   return directAddress || "unknown";
@@ -92,7 +93,8 @@ export function getAppRouteClientIp(headers: HeaderSource): string {
     readHeader(headers, "x-syncwatch-client-ip") || "unknown";
   if (process.env.TRUST_PROXY === "true") {
     const forwardedFor = readHeader(headers, "x-forwarded-for");
-    const firstAddress = forwardedFor?.split(",", 1)[0]?.trim();
+    // Use right-most IP to prevent spoofing from client-provided XFF headers
+    const firstAddress = forwardedFor?.split(",").pop()?.trim();
     if (firstAddress) return firstAddress;
   }
   return directAddress;
