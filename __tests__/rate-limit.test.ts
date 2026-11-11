@@ -138,9 +138,9 @@ describe("trusted proxy client addresses", () => {
     expect(getClientIp(headers, "127.0.0.1")).toBe("127.0.0.1");
   });
 
-  it("uses the first forwarded address when trusted forwarding is enabled", () => {
+  it("uses the last forwarded address when trusted forwarding is enabled", () => {
     const headers = new Headers({
-      "x-forwarded-for": "203.0.113.7, 10.0.0.4",
+      "x-forwarded-for": "10.0.0.4, 203.0.113.7",
     });
     vi.stubEnv("TRUST_PROXY", "true");
 
