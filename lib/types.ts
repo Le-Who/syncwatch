@@ -219,6 +219,9 @@ export function normalizeRoomState(input: LegacyRoomStateInput): RoomState {
     ]),
   );
 
+  const playlist = Array.isArray(input.playlist) ? input.playlist : [];
+  const playlistIds = new Set(playlist.map((item) => item.id));
+
   return {
     id: typeof input.id === "string" ? input.id : "",
     name: typeof input.name === "string" ? input.name : "",
@@ -251,13 +254,11 @@ export function normalizeRoomState(input: LegacyRoomStateInput): RoomState {
         ? input.mediaRun
         : 0,
     generation: input.generation || "legacy",
-    nextMediaId: input.playlist?.some((item) => item.id === input.nextMediaId)
+    nextMediaId: playlistIds.has(input.nextMediaId ?? "")
       ? input.nextMediaId
       : null,
     shufflePlayedIds: Array.isArray(input.shufflePlayedIds)
-      ? input.shufflePlayedIds.filter((id) =>
-          input.playlist?.some((item) => item.id === id),
-        )
+      ? input.shufflePlayedIds.filter((id) => playlistIds.has(id))
       : [],
     leaderId:
       typeof input.leaderId === "string" && participants[input.leaderId]
