@@ -1,4 +1,3 @@
-# Palette's Journal
-## 2024-05-24 - Accessibility Labels in Dialogs
-**Learning:** Modal close buttons using generic `<X />` icons lack accessible names by default in this component library.
-**Action:** Always verify icon-only buttons inside dialogs/modals have appropriate `aria-label` attributes.
+## 2025-02-12 - Decorative Icons Accessibility
+**Learning:** `lucide-react` does not apply `aria-hidden="true"` by default. Decorative or generic icons (e.g., `<X />`, `<Play />`) inside buttons (whether icon-only with `aria-label` or containing text) need `aria-hidden="true"` to prevent redundant or confusing screen reader announcements.
+**Action:** Always manually apply `aria-hidden="true"` to decorative icons inside buttons.
