@@ -43,7 +43,6 @@ interface AppState {
   connectionEpoch: number;
   connectionDeliveryFloor: number;
   participantId: string | null;
-  sessionToken: string | null;
   nickname: string;
   commandSequence: number;
   canonicalDeliveryVersion: number;
@@ -78,13 +77,6 @@ function handleConnected() {
       state.room.id,
       state.room.participants[state.participantId]?.nickname || "User",
       state.participantId,
-    );
-  }
-  if (state.sessionToken && state.room) {
-    roomSocketService.upgradeSession(
-      state.room.id,
-      state.commandSequence,
-      state.sessionToken,
     );
   }
 }
@@ -364,7 +356,6 @@ export const useStore = create<AppState>((set, get) => ({
   connectionEpoch: 0,
   connectionDeliveryFloor: 0,
   participantId: null,
-  sessionToken: null,
   nickname: "",
   commandSequence: 1,
   canonicalDeliveryVersion: 0,
@@ -412,30 +403,32 @@ export const useStore = create<AppState>((set, get) => ({
     try {
       const data = await Promise.race([
         (async () => {
-          const res = await fetch("/api/auth/session", {
+          const query = new URLSearchParams({ upgradeRoom: roomId });
+          const res = await fetch(`/api/auth/session?${query}`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ participantId: state.participantId }),
             signal: controller.signal,
           });
           return res.ok ? await res.json() : null;
         })(),
         cancellation,
       ]);
-      if (!data || !isCurrentSession()) return;
-      if (typeof data.participantId === "string") {
-        set({ participantId: data.participantId });
-        localStorage.setItem("participantId", data.participantId);
+      if (
+        !isCurrentSession() ||
+        typeof data?.participantId !== "string" ||
+        !data.participantId ||
+        typeof data.token !== "string" ||
+        !data.token
+      ) {
+        return;
       }
-      if (data.token) {
-        set({ sessionToken: data.token });
-        roomSocketService.upgradeSession(
-          roomId,
-          get().commandSequence + 1,
-          data.token,
-          get().participantId,
-        );
-      }
+      set({ participantId: data.participantId });
+      localStorage.setItem("participantId", data.participantId);
+      roomSocketService.upgradeSession(
+        roomId,
+        get().commandSequence + 1,
+        data.token,
+        data.participantId,
+      );
     } catch (e) {
       if (!controller.signal.aborted)
         console.warn("Failed to resync session", e);
@@ -450,12 +443,11 @@ export const useStore = create<AppState>((set, get) => ({
       const storedName = localStorage.getItem("nickname") || "";
       const storedId =
         localStorage.getItem("participantId") || crypto.randomUUID();
-      const storedToken = localStorage.getItem("sessionToken") || null;
+      localStorage.removeItem("sessionToken");
       localStorage.setItem("participantId", storedId);
       set({
         nickname: storedName,
         participantId: storedId,
-        sessionToken: storedToken,
       });
 
       if (process.env.NODE_ENV !== "production") {
@@ -501,58 +493,45 @@ export const useStore = create<AppState>((set, get) => ({
     const attempt = ++connectionAttempt;
     set({ isSleeping: false });
     let pId = get().participantId;
-    let sToken = get().sessionToken;
     if (!pId && typeof window !== "undefined") {
       pId = localStorage.getItem("participantId") || crypto.randomUUID();
-      sToken = localStorage.getItem("sessionToken") || null;
       localStorage.setItem("participantId", pId);
-      set({ participantId: pId, sessionToken: sToken });
+      set({ participantId: pId });
     }
 
     try {
       const res = await fetch("/api/auth/session", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ participantId: pId }),
       });
       if (attempt !== connectionAttempt) return null;
       if (!res.ok) {
         toast.error("Handshake failed. Features may be restricted.");
         return false;
-      } else {
-        const data = await res.json();
-        if (attempt !== connectionAttempt) return null;
-        const serverParticipantId =
-          typeof data.participantId === "string" ? data.participantId : pId;
-        if (serverParticipantId) {
-          pId = serverParticipantId;
-          set({ participantId: serverParticipantId });
-          if (typeof window !== "undefined") {
-            localStorage.setItem("participantId", serverParticipantId);
-          }
-        }
-        if (data.token) {
-          set({ sessionToken: data.token });
-          if (get().room?.id === roomId) {
-            roomSocketService.upgradeSession(
-              roomId,
-              get().commandSequence,
-              data.token,
-            );
-          }
-        }
-        roomSocketService.connect(
-          roomId,
-          nickname,
-          serverParticipantId as string,
-          data.token || sToken,
-        );
-        return true;
       }
+      const data = await res.json();
+      if (attempt !== connectionAttempt) return null;
+      if (typeof data.participantId !== "string" || !data.participantId) {
+        toast.error("Handshake failed. Features may be restricted.");
+        return false;
+      }
+      const serverParticipantId = data.participantId;
+      const state = get();
+      const needsLiveUpgrade =
+        state.isConnected &&
+        state.room?.id === roomId &&
+        (serverParticipantId !== state.participantId ||
+          roomSocketService.commandQueue.some((command) => command.roomId === roomId));
+      set({ participantId: serverParticipantId });
+      if (typeof window !== "undefined") {
+        localStorage.setItem("participantId", serverParticipantId);
+      }
+      roomSocketService.connect(roomId, nickname, serverParticipantId);
+      if (needsLiveUpgrade) void get().resyncSession();
+      return true;
     } catch (err) {
       if (attempt !== connectionAttempt) return null;
       console.warn("Could not establish secure session", err);
-      roomSocketService.connect(roomId, nickname, pId as string, sToken);
+      roomSocketService.connect(roomId, nickname, pId as string);
       return true;
     }
   },

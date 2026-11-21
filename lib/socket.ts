@@ -28,6 +28,7 @@ export class RoomSocketService {
     sequence: number;
     token: string;
     nonce: string | null;
+    retryTimer?: ReturnType<typeof setTimeout>;
   } | null = null;
   private sessionUpgradeTimeout: ReturnType<typeof setTimeout> | null = null;
 
@@ -35,7 +36,6 @@ export class RoomSocketService {
   public commandQueue: any[] = [];
   public lastCommand: any = null;
 
-  private latestSessionToken: string | null = null;
   private latestParticipantId: string | null = null;
 
   private readonly handleConnect = () => {
@@ -46,7 +46,7 @@ export class RoomSocketService {
   private readonly handleDisconnect = () => {
     this.snapshotRequest = null;
     this.joinRequest = null;
-    this.clearSessionUpgrade();
+    this.retireSessionUpgradeAttempt();
     this.emit("disconnected");
     if (this.pingInterval) clearInterval(this.pingInterval);
   };
@@ -128,6 +128,18 @@ export class RoomSocketService {
   ) => {
     const upgrade = this.sessionUpgrade;
     const completesUpgrade = upgrade?.nonce === acknowledgement.nonce;
+    if (
+      completesUpgrade &&
+      upgrade &&
+      acknowledgement.status === "rejected" &&
+      acknowledgement.code === "CONTENTION"
+    ) {
+      upgrade.retryTimer ??= setTimeout(() => {
+        this.retireSessionUpgradeAttempt();
+        this.sendSessionUpgrade();
+      }, 500);
+      return;
+    }
     if (completesUpgrade) this.clearSessionUpgrade();
     this.emit("command_ack", acknowledgement);
     if (this.lastCommand?.nonce === acknowledgement.nonce)
@@ -198,13 +210,8 @@ export class RoomSocketService {
         reconnectionAttempts: Infinity,
         reconnectionDelay: 1000,
         reconnectionDelayMax: 5000,
-        transports: ["websocket"],
-        auth: (cb) => {
-          cb({
-            token: this.latestSessionToken,
-            participantId: this.latestParticipantId,
-          });
-        },
+        transports: ["polling", "websocket"],
+        tryAllTransports: true,
       });
     }
     return this.socket;
@@ -246,13 +253,7 @@ export class RoomSocketService {
     this.eventsBound = false;
   }
 
-  public connect(
-    roomId: string,
-    nickname: string,
-    pId: string,
-    sessionToken: string | null,
-  ) {
-    this.latestSessionToken = sessionToken;
+  public connect(roomId: string, nickname: string, pId: string) {
     this.latestParticipantId = pId;
     const socket = this.getSocket();
     this.bindEvents();
@@ -268,8 +269,8 @@ export class RoomSocketService {
       this.commandQueue = [];
       this.lastCommand = null;
       this.clearSessionUpgrade();
-    } else if (this.sessionUpgrade) {
-      this.sessionUpgrade.nonce = null;
+    } else {
+      this.retireSessionUpgradeAttempt();
     }
     this.activeRoomId = roomId;
     this.snapshotRequest = { roomId, id: crypto.randomUUID() };
@@ -380,7 +381,6 @@ export class RoomSocketService {
     participantId = this.latestParticipantId,
   ) {
     if (roomId !== this.activeRoomId) return null;
-    this.latestSessionToken = token;
     this.latestParticipantId = participantId;
     this.clearSessionUpgrade();
     this.sessionUpgrade = { roomId, sequence, token, nonce: null };
@@ -394,7 +394,16 @@ export class RoomSocketService {
   private clearSessionUpgrade() {
     if (this.sessionUpgradeTimeout) clearTimeout(this.sessionUpgradeTimeout);
     this.sessionUpgradeTimeout = null;
+    this.retireSessionUpgradeAttempt();
     this.sessionUpgrade = null;
+  }
+
+  private retireSessionUpgradeAttempt() {
+    const upgrade = this.sessionUpgrade;
+    if (!upgrade) return;
+    clearTimeout(upgrade.retryTimer);
+    upgrade.retryTimer = undefined;
+    upgrade.nonce = null;
   }
 
   private sendSessionUpgrade() {

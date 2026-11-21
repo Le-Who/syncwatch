@@ -209,7 +209,6 @@ describe("useStore", () => {
         connectionEpoch: 0,
         connectionDeliveryFloor: 0,
         participantId: null,
-        sessionToken: null,
         nickname: "",
         commandSequence: 1,
         lastCommandAcknowledgement: null,
@@ -247,7 +246,6 @@ describe("useStore", () => {
       useStore.setState({
         room,
         participantId: "p0",
-        sessionToken: "token",
         commandSequence: room.sequence,
         canonicalDeliveryVersion: 7,
         isConnected: true,
@@ -279,7 +277,8 @@ describe("useStore", () => {
     expect(result.current.isConnected).toBe(true);
     expect(result.current.connectionEpoch).toBe(5);
     expect(roomSocketService.joinRoom).toHaveBeenCalledOnce();
-    expect(roomSocketService.upgradeSession).toHaveBeenCalledOnce();
+    expect(roomSocketService.upgradeSession).not.toHaveBeenCalled();
+    expect(localStorage.getItem("sessionToken")).toBeNull();
 
     act(() => onDisconnected?.());
     expect(result.current.connectionEpoch).toBe(6);
@@ -467,7 +466,7 @@ describe("useStore", () => {
     const onRoomEvent = vi.fn();
     service.onRoomEvent(onRoomEvent);
 
-    service.connect("room-a", "Friend", "p0", "token");
+    service.connect("room-a", "Friend", "p0");
     expect(socketDouble.listenerCounts().every((count) => count === 1)).toBe(
       true,
     );
@@ -475,7 +474,7 @@ describe("useStore", () => {
     expect(socketDouble.listenerCounts().every((count) => count === 0)).toBe(
       true,
     );
-    service.connect("room-a", "Friend", "p0", "token");
+    service.connect("room-a", "Friend", "p0");
     expect(socketDouble.listenerCounts().every((count) => count === 1)).toBe(
       true,
     );
@@ -494,7 +493,7 @@ describe("useStore", () => {
     const service = new actual.RoomSocketService();
     const onAcknowledgement = vi.fn();
     service.on("command_ack", onAcknowledgement);
-    service.connect("room-a", "Friend", "p0", "token");
+    service.connect("room-a", "Friend", "p0");
     socketDouble.emit.mockClear();
 
     const nonce = service.sendCommand("room-a", 7, "pause", {
@@ -525,7 +524,7 @@ describe("useStore", () => {
     const actual =
       await vi.importActual<typeof import("../socket")>("../socket");
     const service = new actual.RoomSocketService();
-    service.connect("room-a", "Friend", "p0", "token");
+    service.connect("room-a", "Friend", "p0");
     socketDouble.emit.mockClear();
 
     service.requestRoomState("room-a");
@@ -541,7 +540,7 @@ describe("useStore", () => {
     const actual =
       await vi.importActual<typeof import("../socket")>("../socket");
     const service = new actual.RoomSocketService();
-    service.connect("room-a", "Friend", "p0", "token");
+    service.connect("room-a", "Friend", "p0");
     socketDouble.emit.mockClear();
 
     service.sendParticipantHealth("buffering");
@@ -572,7 +571,7 @@ describe("useStore", () => {
         intentManager.acknowledgeServerNonce(event.playback.lastActionNonce);
       }
     });
-    client.connect(room.id, "p0", "p0", "token");
+    client.connect(room.id, "p0", "p0");
     socketDouble.emit.mockClear();
 
     const intentNonce = randomUUID();
@@ -754,7 +753,6 @@ describe("useStore", () => {
       "room-a",
       "Friend",
       serverParticipantId,
-      "server-session-token",
     );
     vi.unstubAllGlobals();
   });

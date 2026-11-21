@@ -32,7 +32,7 @@ describe("connection attempt lifetime", () => {
     vi.restoreAllMocks();
     vi.clearAllMocks();
     useStore.getState().disconnect();
-    useStore.setState({ participantId: "p0", sessionToken: "original-token" });
+    useStore.setState({ participantId: "p0" });
     localStorage.clear();
   });
 
@@ -61,7 +61,6 @@ describe("connection attempt lifetime", () => {
       await connection;
 
       expect(roomSocketService.connect).not.toHaveBeenCalled();
-      expect(useStore.getState().sessionToken).toBe("original-token");
       expect(useStore.getState().participantId).toBe("p0");
       expect(localStorage.getItem("participantId")).toBeNull();
     },
@@ -88,10 +87,8 @@ describe("connection attempt lifetime", () => {
         "room-b",
         "Bob",
         "new-id",
-        "new-token",
       );
       expect(useStore.getState().participantId).toBe("new-id");
-      expect(useStore.getState().sessionToken).toBe("new-token");
       expect(localStorage.getItem("participantId")).toBe("new-id");
     },
   );
@@ -112,7 +109,6 @@ describe("connection attempt lifetime", () => {
     await oldRecovery;
 
     expect(useStore.getState().participantId).toBe("new-id");
-    expect(useStore.getState().sessionToken).toBe("new-token");
     expect(roomSocketService.upgradeSession).not.toHaveBeenCalled();
   });
 
@@ -123,7 +119,6 @@ describe("connection attempt lifetime", () => {
 
       expect(await useStore.getState().connect("room-a", "Alice")).toBe(false);
       expect(roomSocketService.connect).not.toHaveBeenCalled();
-      expect(useStore.getState().sessionToken).toBe("original-token");
     },
   );
 });

@@ -1,12 +1,23 @@
 "use client";
 
-import { useTheme } from "@/components/ThemeProvider";
+import { themeStorageKey } from "@/lib/theme";
 import { Moon, Sparkles } from "lucide-react";
 import { motion } from "motion/react";
 
-export function ThemeToggle() {
-  const { theme, toggleTheme } = useTheme();
+function toggleTheme() {
+  const root = document.documentElement;
+  const theme = root.dataset.theme === "cyber" ? "cotton" : "cyber";
+  if (theme === "cyber") {
+    root.dataset.theme = theme;
+  } else {
+    delete root.dataset.theme;
+  }
+  try {
+    localStorage.setItem(themeStorageKey, theme);
+  } catch {}
+}
 
+export function ThemeToggle() {
   return (
     <motion.button
       onClick={toggleTheme}
@@ -15,32 +26,17 @@ export function ThemeToggle() {
       className="theme-panel group fixed right-6 bottom-6 z-50 flex cursor-pointer items-center justify-center overflow-hidden rounded-full p-3"
       aria-label="Toggle Theme"
     >
-      <div className="relative flex h-6 w-6 items-center justify-center">
-        <motion.div
-          initial={false}
-          animate={{
-            scale: theme === "cotton" ? 1 : 0,
-            opacity: theme === "cotton" ? 1 : 0,
-            rotate: theme === "cotton" ? 0 : -90,
-          }}
-          transition={{ duration: 0.3 }}
-          className="absolute text-pink-400"
-        >
+      <div
+        aria-hidden="true"
+        className="relative flex h-6 w-6 items-center justify-center"
+      >
+        <span className="theme-toggle-cotton absolute text-pink-400 transition-[opacity,transform] duration-300">
           <Sparkles className="h-6 w-6" />
-        </motion.div>
+        </span>
 
-        <motion.div
-          initial={false}
-          animate={{
-            scale: theme === "cyber" ? 1 : 0,
-            opacity: theme === "cyber" ? 1 : 0,
-            rotate: theme === "cyber" ? 0 : 90,
-          }}
-          transition={{ duration: 0.3 }}
-          className="absolute text-[#00E5FF]"
-        >
+        <span className="theme-toggle-cyber absolute text-[#00E5FF] transition-[opacity,transform] duration-300">
           <Moon className="h-6 w-6" />
-        </motion.div>
+        </span>
       </div>
 
       <span className="sr-only">Toggle Theme</span>

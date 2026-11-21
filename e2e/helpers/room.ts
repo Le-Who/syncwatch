@@ -342,7 +342,10 @@ export async function sendCommandViaSession(
     path: "/socket.io",
     transports: ["websocket"],
     reconnection: false,
-    auth: { token: sessionCookie.value, participantId },
+    extraHeaders: {
+      cookie: `${sessionCookie.name}=${sessionCookie.value}`,
+      origin,
+    },
   });
 
   try {

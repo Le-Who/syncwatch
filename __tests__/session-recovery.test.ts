@@ -113,7 +113,6 @@ beforeEach(() => {
     room,
     isConnected: true,
     participantId: "p0",
-    sessionToken: "old-session",
     isResyncing: false,
     commandSequence: 10,
     canonicalDeliveryVersion: 0,
@@ -122,7 +121,7 @@ beforeEach(() => {
     commandError: null,
     lastCommandAcknowledgement: null,
   });
-  roomSocketService.connect(room.id, "p0", "p0", "old-session");
+  roomSocketService.connect(room.id, "p0", "p0");
   finishJoin();
   transport.sent.length = 0;
   vi.stubGlobal(
@@ -349,7 +348,7 @@ it.each(["unrelated-nonce", "inactive-room"])(
     useStore.getState().sendCommand("seek", { position: 31 });
     const original = commands("seek")[0];
     if (kind === "inactive-room") {
-      roomSocketService.connect("other-room", "Other", "p0", "other-session");
+      roomSocketService.connect("other-room", "Other", "p0");
       useStore.getState().sendCommand("seek", { position: 32 });
     }
     let authRequests = 0;
@@ -519,7 +518,7 @@ it.each([
   },
 );
 
-it("waits for the matching rejoin snapshot before upgrading a reconnected session", () => {
+it("rejoins with its cookie without upgrading an ordinary reconnected session", () => {
   const room = useStore.getState().room!;
   transport.receive("disconnect");
   transport.receive("connect");
@@ -534,7 +533,7 @@ it("waits for the matching rejoin snapshot before upgrading a reconnected sessio
   });
   expect(commands("upgrade_session")).toEqual([]);
   finishJoin();
-  expect(commands("upgrade_session")).toHaveLength(1);
+  expect(commands("upgrade_session")).toEqual([]);
 });
 
 it("retains queued commands across a dropped upgrade and ignores its late acknowledgement", async () => {
@@ -557,6 +556,24 @@ it("retains queued commands across a dropped upgrade and ignores its late acknow
     nonce: currentUpgrade.nonce,
     status: "applied",
   });
+  expect(commands("seek")).toEqual([original]);
+});
+
+it("retries an upgrade that reaches the gateway before a delayed join finishes", async () => {
+  const original = queueSeek();
+  await useStore.getState().resyncSession();
+  const first = commands("upgrade_session")[0];
+  acknowledge({ nonce: first.nonce, status: "rejected", code: "CONTENTION" });
+  expect(roomSocketService.isSessionUpgradePending(original.roomId)).toBe(true);
+  expect(commands("seek")).toEqual([]);
+  await vi.advanceTimersByTimeAsync(500);
+
+  const retry = commands("upgrade_session").at(-1)!;
+  expect(retry.nonce).not.toBe(first.nonce);
+  expect(retry.command.payload).toEqual(first.command.payload);
+  acknowledge({ nonce: first.nonce, status: "applied" });
+  expect(commands("seek")).toEqual([]);
+  acknowledge({ nonce: retry.nonce, status: "applied" });
   expect(commands("seek")).toEqual([original]);
 });
 
@@ -745,13 +762,11 @@ it.each(["switch-room", "disconnect", "new-upgrade"])(
       useStore.setState({
         room,
         participantId: "new-room-participant",
-        sessionToken: "new-room-session",
       });
       roomSocketService.connect(
         room.id,
         "New",
         "new-room-participant",
-        "new-room-session",
       );
       finishJoin(room);
       if (action === "new-upgrade")
@@ -787,13 +802,11 @@ it.each(["switch-room", "disconnect"])(
       useStore.setState({
         room,
         participantId: "new-room-participant",
-        sessionToken: "new-room-session",
       });
       roomSocketService.connect(
         room.id,
         "New",
         "new-room-participant",
-        "new-room-session",
       );
       finishJoin(room);
     } else {
@@ -809,9 +822,6 @@ it.each(["switch-room", "disconnect"])(
     expect(commands()).toEqual([]);
     expect(useStore.getState().participantId).toBe(
       action === "switch-room" ? "new-room-participant" : "p0",
-    );
-    expect(useStore.getState().sessionToken).toBe(
-      action === "switch-room" ? "new-room-session" : "old-session",
     );
     expect(localStorage.getItem("participantId")).toBeNull();
   },

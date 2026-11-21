@@ -51,6 +51,7 @@ vi.mock("../lib/socket", () => {
       onRoomEvent: vi.fn(),
       offRoomEvent: vi.fn(),
       getSocket: () => ({ on: vi.fn(), off: vi.fn() }),
+      commandQueue: [],
       disconnect: vi.fn(() => listeners.get("disconnected")?.()),
       connect: vi.fn(),
       upgradeSession: vi.fn(),
@@ -160,7 +161,6 @@ it("returns to the join form after an HTTP auth error and allows a successful re
     "room-test",
     "Alice",
     "p0",
-    "retry-token",
   );
   expect(
     screen.queryByRole("button", { name: /join room/i }),
@@ -191,7 +191,6 @@ it("sleeps with the transport closed, retains the room, and wakes using current 
   act(() =>
     useStore.setState({
       participantId: "current-id",
-      sessionToken: "current-token",
       nickname: "Current name",
     }),
   );
@@ -202,13 +201,10 @@ it("sleeps with the transport closed, retains the room, and wakes using current 
     "room-test",
     "Current name",
     "current-id",
-    "current-token",
   );
   expect(screen.queryByText("Sleep Mode")).not.toBeInTheDocument();
   expect(screen.queryByText(/Initialize Stream Sync/i)).not.toBeInTheDocument();
-  expect(JSON.parse(vi.mocked(fetch).mock.calls[0][1]!.body as string)).toEqual(
-    { participantId: "current-id" },
-  );
+  expect(fetch).toHaveBeenCalledWith("/api/auth/session", { method: "POST" });
   warning.mockRestore();
 
   act(() => {

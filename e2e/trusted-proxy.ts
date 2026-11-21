@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 const CONTEXT_ID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const CONTEXT_HEADER = "x-syncwatch-e2e-client";
+const POLLING_ONLY_HEADER = "x-syncwatch-e2e-polling-only";
 
 export function createTrustedForwardedAddressResolver() {
   const addresses = new Map<string, string>();
@@ -34,6 +35,7 @@ function forwardedHeaders(
   const next = { ...headers };
   delete next["x-forwarded-for"];
   delete next[CONTEXT_HEADER];
+  delete next[POLLING_ONLY_HEADER];
 
   const address = resolveAddress(headers[CONTEXT_HEADER]);
   if (address) next["x-forwarded-for"] = address;
@@ -67,6 +69,20 @@ export function startTrustedProxy(options: {
   });
 
   proxy.on("upgrade", (incoming, socket, head) => {
+    if (incoming.url?.startsWith("/socket.io/")) {
+      const policy = incoming.headers[POLLING_ONLY_HEADER];
+      if (policy === "hold") {
+        socket.on("error", () => socket.destroy());
+        socket.resume();
+        return;
+      }
+      if (policy === "reject") {
+        socket.end(
+          "HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n",
+        );
+        return;
+      }
+    }
     const upstream = connect(options.targetPort, "127.0.0.1");
     upstream.on("connect", () => {
       const headers = forwardedHeaders(incoming.headers, resolveAddress);

@@ -36,6 +36,34 @@ export function isSocketOriginAllowed(
   }
 }
 
+export function isSocketRequestAllowed(
+  request: {
+    headers: {
+      origin?: string;
+      host?: string;
+      "sec-fetch-site"?: string | string[];
+    };
+    method?: string;
+    url?: string;
+  },
+  allowedOrigin: string,
+): boolean {
+  const { origin, host, "sec-fetch-site": site } = request.headers;
+  if (origin !== undefined) return isSocketOriginAllowed(origin, allowedOrigin);
+  if (
+    request.method !== "GET" ||
+    site !== "same-origin" ||
+    host?.toLowerCase() !== new URL(allowedOrigin).host ||
+    !request.url
+  ) {
+    return false;
+  }
+  return (
+    URL.parse(request.url, allowedOrigin)?.searchParams.get("transport") ===
+    "polling"
+  );
+}
+
 export function applyAuthoritativeClientIp(
   headers: Record<string, string | string[] | undefined>,
   peerAddress: string | undefined,

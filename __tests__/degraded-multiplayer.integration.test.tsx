@@ -383,7 +383,7 @@ describe("degraded multiplayer through authoritative commands", () => {
       occRollbackTick: 0,
       sendCommand: () => {},
     });
-    roomSocketService.connect(room.id, "p0", "p0", null);
+    roomSocketService.connect(room.id, "p0", "p0");
     integrationSocket.serverEmit("connect");
     expect(useStore.getState().isConnected).toBe(true);
     const view = render(<Player />);
@@ -614,7 +614,7 @@ async function runRecentSeekScenario(
     },
   });
   if (scenario === "resume-after-ack")
-    roomSocketService.connect(initial.id, actor, actor, null);
+    roomSocketService.connect(initial.id, actor, actor);
   const view = render(<Player />);
   fireEvent.click(
     screen.getByRole("button", { name: "Initialize Stream Sync" }),

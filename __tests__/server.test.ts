@@ -3,6 +3,7 @@
  */
 import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
 import { Server as NetServer } from "http";
+import { request as httpRequest } from "node:http";
 import Client, { Socket as ClientSocket } from "socket.io-client";
 import { AddressInfo } from "net";
 import { SignJWT } from "jose";
@@ -128,6 +129,7 @@ describe("server.ts Real Socket.IO Integration", () => {
 
   beforeAll(async () => {
     vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("ALLOW_LEGACY_SOCKET_TOKEN", "false");
     vi.stubEnv("JWT_SECRET", "default_local_secret_dont_use_in_prod");
     vi.stubEnv("NEXT_PUBLIC_APP_URL", TEST_ORIGIN);
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "");
@@ -269,19 +271,68 @@ describe("server.ts Real Socket.IO Integration", () => {
   });
 
   it("enforces production origin admission for polling and WebSocket handshakes", async () => {
-    const validToken = await tokenFor("production-origin-client");
+    const participantId = "production-origin-client";
+    const validToken = await tokenFor(participantId);
+    const cookie = `syncwatch_session=${validToken}`;
+    const host = new URL(TEST_ORIGIN).host;
+    const openUrl = new URL("/socket.io/?EIO=4&transport=polling", ioServerPath);
+    const requestPolling = (url: URL, proxyHost: string, close = false) =>
+      new Promise<{ status: number | undefined; packet: string }>(
+        (resolve, reject) => {
+          const request = httpRequest(
+            url,
+            {
+              method: close ? "POST" : "GET",
+              headers: {
+                host: proxyHost,
+                "sec-fetch-site": "same-origin",
+                cookie,
+              },
+            },
+            (response) => {
+              let packet = "";
+              response.setEncoding("utf8");
+              response.on("data", (chunk) => {
+                packet += chunk;
+              });
+              response.once("error", reject);
+              response.once("end", () =>
+                resolve({ status: response.statusCode, packet }),
+              );
+            },
+          );
+          request.once("error", reject);
+          request.end(close ? "1" : undefined);
+        },
+      );
+
+    const opened = await requestPolling(openUrl, host);
+    expect(opened.status).toBe(200);
+    expect(opened.packet).toMatch(/^0\{/);
+    const { sid } = JSON.parse(opened.packet.slice(1));
+    expect(sid).toEqual(expect.any(String));
+    const closeUrl = new URL(openUrl);
+    closeUrl.searchParams.set("sid", sid);
+    expect((await requestPolling(closeUrl, host, true)).status).toBe(200);
+    expect((await requestPolling(openUrl, openUrl.host)).status).toBe(403);
+
     const accepted = Client(ioServerPath, {
       path: "/socket.io",
       transports: ["polling"],
       forceNew: true,
-      extraHeaders: {
-        cookie: `syncwatch_session=${validToken}`,
-        origin: TEST_ORIGIN,
-      },
+      reconnection: false,
+      extraHeaders: { cookie, origin: TEST_ORIGIN },
     });
     presenceSockets.push(accepted);
     await waitForSocketEvent(accepted, "connect");
-    expect(accepted.connected).toBe(true);
+    const snapshot = waitForSocketEvent(accepted, "room_state");
+    accepted.emit("join_room", {
+      roomId: "production-origin-room",
+      nickname: "Friend",
+    });
+    expect((await snapshot).room.participants[participantId].role).toBe(
+      "owner",
+    );
 
     for (const [transport, origin] of [
       ["polling", undefined],
@@ -293,8 +344,9 @@ describe("server.ts Real Socket.IO Integration", () => {
         path: "/socket.io",
         transports: [transport],
         forceNew: true,
+        reconnection: false,
         extraHeaders: {
-          cookie: `syncwatch_session=${validToken}`,
+          cookie,
           ...(origin ? { origin } : {}),
         },
       });
@@ -302,6 +354,50 @@ describe("server.ts Real Socket.IO Integration", () => {
       await expect(
         waitForSocketEvent(rejected, "connect_error"),
       ).resolves.toBeDefined();
+    }
+  });
+
+  it("upgrades an established room socket using the scoped HTTP response", async () => {
+    const roomId = `live-session-${crypto.randomUUID()}`;
+    const endpoint = `${ioServerPath}/api/auth/session`;
+    const initial = await fetch(endpoint, { method: "POST" });
+    const { participantId: oldIdentity } = await initial.json();
+    const cookie = initial.headers.get("set-cookie")!.split(";", 1)[0];
+    const socket = Client(ioServerPath, {
+      transports: ["websocket"],
+      forceNew: true,
+      extraHeaders: { cookie, origin: TEST_ORIGIN },
+    });
+    try {
+      await waitForSocketEvent(socket, "connect");
+      const socketId = socket.id;
+      const snapshot = waitForSocketEvent(socket, "room_state");
+      socket.emit("join_room", { roomId, nickname: "Friend" });
+      expect((await snapshot).room.participants[oldIdentity].role).toBe("owner");
+
+      const response = await fetch(`${endpoint}?upgradeRoom=${roomId}`, {
+        method: "POST",
+      });
+      const { participantId, token } = await response.json();
+      expect(participantId).not.toBe(oldIdentity);
+      const upgraded = waitForSocketEvent(socket, "session_upgraded");
+      const acknowledged = waitForSocketEvent(socket, "command_ack");
+      const nonce = crypto.randomUUID();
+      socket.emit("command", {
+        roomId,
+        nonce,
+        clientSequence: 1,
+        command: { type: "upgrade_session", payload: { token } },
+      });
+
+      await expect(upgraded).resolves.toEqual({ participantId });
+      await expect(acknowledged).resolves.toMatchObject({ nonce, status: "applied" });
+      expect(socket.id).toBe(socketId);
+      const room = await getRedisRoom(roomId);
+      expect(room.participants).not.toHaveProperty(oldIdentity);
+      expect(room.participants[participantId].role).toBe("owner");
+    } finally {
+      socket.close();
     }
   });
 
@@ -509,15 +605,13 @@ describe("server.ts Real Socket.IO Integration", () => {
       path: "/socket.io",
       transports: ["websocket"],
       forceNew: true,
-      auth: { token: await tokenFor("health-sender") },
-      extraHeaders: { origin: TEST_ORIGIN },
+      extraHeaders: { origin: TEST_ORIGIN, cookie: `syncwatch_session=${await tokenFor("health-sender")}` },
     });
     const observer = Client(ioServerPath, {
       path: "/socket.io",
       transports: ["websocket"],
       forceNew: true,
-      auth: { token: await tokenFor("health-observer") },
-      extraHeaders: { origin: TEST_ORIGIN },
+      extraHeaders: { origin: TEST_ORIGIN, cookie: `syncwatch_session=${await tokenFor("health-observer")}` },
     });
     presenceSockets.push(sender, observer);
     await Promise.all([
@@ -565,8 +659,7 @@ describe("server.ts Real Socket.IO Integration", () => {
         path: "/socket.io",
         transports: ["websocket"],
         forceNew: true,
-        auth: { token: await tokenFor(`friend-${index}`) },
-        extraHeaders: { origin: TEST_ORIGIN },
+        extraHeaders: { origin: TEST_ORIGIN, cookie: `syncwatch_session=${await tokenFor(`friend-${index}`)}` },
       });
       presenceSockets.push(socket);
       socket.on("room_state", ({ room }) => {
@@ -613,8 +706,7 @@ describe("server.ts Real Socket.IO Integration", () => {
           path: "/socket.io",
           transports: ["websocket"],
           forceNew: true,
-          auth: { token: await tokenFor(id) },
-          extraHeaders: { origin: TEST_ORIGIN },
+          extraHeaders: { origin: TEST_ORIGIN, cookie: `syncwatch_session=${await tokenFor(id)}` },
         });
         presenceSockets.push(socket);
         await waitForSocketEvent(socket, "connect");

@@ -5,7 +5,7 @@ runs serially. Every friend is a fresh browser context, so cookies, local
 storage, media state, and Socket.IO transports are independent.
 
 ```powershell
-pnpm exec playwright test e2e/multiplayer-room.spec.ts e2e/degraded-network.spec.ts --workers=1
+pnpm exec playwright test e2e/multiplayer-room.spec.ts e2e/degraded-network.spec.ts e2e/room-transport.spec.ts --workers=1
 ```
 
 ## Deterministic provider boundary
@@ -25,6 +25,9 @@ The deterministic suite checks:
   leader control, and moderator control;
 - short and in-grace reconnects without duplicate participants, late join,
   deterministic owner handoff, missing-leader release, and continued playback;
+- cookie-only browser joins and reconnects while the test proxy rejects or
+  holds Socket.IO WebSocket upgrades, alongside a successful upgrade for an
+  unrestricted browser;
 - one visible media composer at 1280x720 and 390x844, before and after media;
 - one provider stalled at the media range boundary while another context has
   200/1200 ms HTTP jitter plus a real offline Socket.IO pulse; and

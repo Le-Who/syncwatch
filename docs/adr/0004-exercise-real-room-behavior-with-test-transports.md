@@ -15,6 +15,12 @@ connection to observe an enqueued fire-and-forget mark. That worker enumerates
 the global write-behind queue, so it requires an opt-in against a disposable
 Redis database. Ordinary Redis actor tests namespace and clean up their keys.
 
+The fast-path unit suite always uses the Redis test double. The separate Lua
+suite opts into a disposable Redis connection so it can observe Lua's version
+checks, permission conflicts, and serialized playback state. Redis Lua encodes
+empty arrays as objects, so the server normalizes room state both when it reads
+Redis and when a playback mutation returns.
+
 Browser acceptance uses the compiled room route as the web server readiness
 check to keep route compilation outside navigation timeouts. The same-NAT case
 omits the test proxy's distributed-IP marker so its browsers share one peer

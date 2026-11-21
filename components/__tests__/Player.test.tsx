@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, act } from "@testing-library/react";
+import { render, screen, fireEvent, act, within } from "@testing-library/react";
 import Player from "../Player";
 import { SyncStatusBadge } from "../SyncStatusBadge";
 import { vi, describe, beforeEach, afterEach, it, expect } from "vitest";
@@ -90,6 +90,11 @@ vi.mock("motion/react", () => ({
     div: (props: any) => <div {...props} />,
   },
 }));
+
+vi.mock(import("lucide-react"), async (importOriginal) => {
+  const icons = await importOriginal();
+  return { ...icons, Play: icons.CirclePlay };
+});
 
 import { useStore, useSettingsStore } from "@/lib/store";
 
@@ -539,7 +544,7 @@ describe("Player Component", () => {
     },
   );
 
-  it("should allow play/pause interactions if user has control", () => {
+  it("sends play when an owner activates the Play button in the controls", () => {
     mockStoreState({
       room: {
         currentMediaId: "1",
@@ -567,18 +572,17 @@ describe("Player Component", () => {
     });
 
     render(<Player />);
-
-
     fireEvent.click(screen.getByText(/Initialize Stream Sync/i));
+    mockSendCommand.mockClear();
 
-    const playButtonIcon = document.querySelector(".lucide-play");
-    expect(playButtonIcon).toBeInTheDocument();
-
-    if (playButtonIcon && playButtonIcon.parentElement) {
-      fireEvent.click(playButtonIcon.parentElement);
-    }
-
-    expect(mockSendCommand).toHaveBeenCalledWith("play", expect.any(Object));
+    const controls = screen.getByRole("group", { name: "Playback controls" });
+    fireEvent.click(
+      within(controls).getByRole("button", { name: "Play" }),
+    );
+    expect(mockSendCommand).toHaveBeenCalledExactlyOnceWith(
+      "play",
+      expect.any(Object),
+    );
   });
 
   it("should trigger a flashback seek when OCC rollback tick increments (TC-102)", () => {

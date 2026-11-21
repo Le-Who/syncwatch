@@ -21,7 +21,7 @@ import * as redisActor from "../lib/redis-actor";
 import * as redisLua from "../lib/redis-lua";
 import * as dbSync from "../lib/db-sync";
 import { Server, Socket } from "socket.io";
-import { SignJWT } from "jose";
+import { issueUpgradeToken } from "../lib/session-auth";
 import { PARTICIPANT_GRACE_MS } from "../lib/participant-lifecycle";
 import { RoomEventBus } from "../lib/room-event-bus";
 
@@ -116,12 +116,13 @@ describe("Room Handler Security & Auth Boundary", () => {
     vi.restoreAllMocks();
   });
 
-  const upgradeToken = (participantId: string, nickname: string) =>
-    new SignJWT({ participantId, nickname })
-      .setProtectedHeader({ alg: "HS256" })
-      .setIssuedAt()
-      .setExpirationTime("1h")
-      .sign(new TextEncoder().encode("default_local_secret_dont_use_in_prod"));
+  const upgradeToken = (participantId: string, nickname: string, roomId: string) =>
+    issueUpgradeToken(
+      participantId,
+      roomId,
+      new TextEncoder().encode("default_local_secret_dont_use_in_prod"),
+      nickname,
+    );
 
   it("returns a read-only snapshot for an authenticated room refresh", async () => {
     const roomId = "snapshot-refresh-room";
@@ -202,7 +203,7 @@ describe("Room Handler Security & Auth Boundary", () => {
     await socketEventHandlers.command({
       roomId,
       type: "upgrade_session",
-      payload: { token: await upgradeToken(accountId, "Account") },
+      payload: { token: await upgradeToken(accountId, "Account", roomId) },
       sequence: 2,
     });
 
@@ -275,7 +276,7 @@ describe("Room Handler Security & Auth Boundary", () => {
     await socketEventHandlers.command({
       roomId,
       type: "upgrade_session",
-      payload: { token: await upgradeToken(accountId, "Signed Account") },
+      payload: { token: await upgradeToken(accountId, "Signed Account", roomId) },
       sequence: 2,
     });
 
@@ -352,7 +353,7 @@ describe("Room Handler Security & Auth Boundary", () => {
     await socketEventHandlers.command({
       roomId,
       type: "upgrade_session",
-      payload: { token: await upgradeToken(targetId, "Committed Target") },
+      payload: { token: await upgradeToken(targetId, "Committed Target", roomId) },
       sequence: 2,
     });
 
@@ -449,7 +450,7 @@ describe("Room Handler Security & Auth Boundary", () => {
     await socketEventHandlers.command({
       roomId,
       type: "upgrade_session",
-      payload: { token: await upgradeToken(targetId, "Committed Target") },
+      payload: { token: await upgradeToken(targetId, "Committed Target", roomId) },
       sequence: 2,
     });
 
@@ -510,7 +511,7 @@ describe("Room Handler Security & Auth Boundary", () => {
     await socketEventHandlers.command({
       roomId,
       type: "upgrade_session",
-      payload: { token: await upgradeToken(targetId, "Never Committed") },
+      payload: { token: await upgradeToken(targetId, "Never Committed", roomId) },
       sequence: 2,
     });
 
@@ -580,7 +581,7 @@ describe("Room Handler Security & Auth Boundary", () => {
     await socketEventHandlers.command({
       roomId,
       type: "upgrade_session",
-      payload: { token: await upgradeToken(participantId, "After") },
+      payload: { token: await upgradeToken(participantId, "After", roomId) },
       sequence: 2,
     });
 
@@ -989,6 +990,21 @@ describe("Room Handler Security & Auth Boundary", () => {
 });
 
 describe("room state normalization", () => {
+  it("normalizes arrays encoded as empty objects by Redis Lua", () => {
+    const room = normalizeRoomState(
+      JSON.parse(
+        '{"playlist":{},"chat":{},"nextMediaId":"removed","shufflePlayedIds":["removed"]}',
+      ),
+    );
+
+    expect(room).toMatchObject({
+      playlist: [],
+      chat: [],
+      nextMediaId: null,
+      shufflePlayedIds: [],
+    });
+  });
+
   it("maps legacy buffering state and absent runtime fields to canonical defaults", () => {
     const room = normalizeRoomState({
       id: "legacy-room",

@@ -51,9 +51,6 @@
     "// eslint-disable-next-line react-hooks/exhaustive-deps"
   ],
   "components/Playlist.tsx": ["/* eslint-disable @next/next/no-img-element */"],
-  "components/ThemeProvider.tsx": [
-    "// eslint-disable-next-line react-hooks/set-state-in-effect"
-  ],
   "lib/__tests__/playback-intent-manager.test.ts": [
     "// @ts-ignore",
     "// @ts-ignore",
@@ -63,6 +60,5 @@
   ],
   "lib/types.ts": [
     "/** @deprecated Use CanonicalPlaybackStatus for in-memory room state. */"
-  ],
-  "postcss.config.mjs": ["/** @type {import('postcss-load-config').Config} */"]
+  ]
 }

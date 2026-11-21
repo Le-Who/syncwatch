@@ -90,6 +90,7 @@ pnpm start
 | `NEXT_PUBLIC_SUPABASE_URL`  | Yes        | URL of the Supabase instance.                                                                                                   |
 | `SUPABASE_SERVICE_ROLE_KEY` | Yes        | Admin key for server components to bypass RLS.                                                                                  |
 | `JWT_SECRET`                | Production | Cryptographic secret for signing session JWTs; startup fails in production when absent.                                         |
+| `ALLOW_LEGACY_SOCKET_TOKEN` | No         | Temporarily enables browser-readable session tokens and signed legacy Socket.IO authentication during a rolling migration. |
 | `NEXT_PUBLIC_APP_URL`       | Production | Canonical HTTP(S) origin used for Socket.IO CORS/origin enforcement and YouTube origin.                                         |
 | `REDIS_URL`                 | No         | URI for Redis. Without it, limits and room state are bounded and process-local; deploy Redis for shared production enforcement. |
 | `TRUST_PROXY`               | No         | Set to `true` only when a trusted proxy overwrites forwarded headers; otherwise direct peer addresses are used.                 |
@@ -97,21 +98,30 @@ pnpm start
 
 ## Operational Notes & Limitations
 
-- **Stateful Hosting Required**: SyncWatch relies on persistent WebSocket connections via Socket.IO. It **cannot** be hosted on traditional stateless serverless platforms (e.g., standard Vercel functions). It requires long-running Node.js processes (e.g., Render, Railway, AWS ECS).
+- **Stateful hosting required**. SyncWatch uses Socket.IO long-polling to open a room connection and upgrades to WebSocket when available. A proxy must preserve the public `Host` matching `NEXT_PUBLIC_APP_URL` and forward WebSocket upgrades. When multiple gateways are deployed, configure session affinity on `/socket.io/` so all polling requests for an Engine.IO session reach the same gateway. Redis shares room state and events across gateways.
 - **Graceful Shutdown**: The service captures `SIGTERM` and `SIGINT` to definitively flush the Redis write-behind queue memory buffer to Postgres before dying. Do not kill processes with `SIGKILL` or recent playlist changes may be lost.
 - **Provider API Quotas**: The system uses a headless worker script to scrape YouTube if the `YOUTUBE_API_KEY` quota exhausts. However, Twitch metadata entirely lacks an oEmbed fallback and relies on raw HTML parsing, which is brittle.
 - **Browser Autoplay Policies**: Modern browsers aggressively block autoplay without user interaction. SyncWatch forces a "Initialize Stream Sync" confirmation click before mounting `react-player`.
 - **Twitch Native Seek Quirks**: Twitch can emit asynchronous `PAUSE` events after timeline changes. SyncWatch uses the `PlaybackIntentManager` to recognize recent programmatic seeks and commands and filter these phantom pauses before they affect shared playback.
-- **Session and origin boundary**: The server issues a random participant identity and signs it into a 30-day HttpOnly, `SameSite=Lax` cookie. The client adopts that server-issued identity before joining or reconnecting, so a stale local browser identity cannot claim an existing room role. In production Socket.IO accepts only the normalized `NEXT_PUBLIC_APP_URL`; deploy TLS at the proxy and configure `TRUST_PROXY=true` only when that proxy sanitizes forwarding headers.
+- **Session and origin boundary**. The app receives a random server-issued identity and a 30-day HttpOnly, `SameSite=Lax` cookie. Socket.IO uses the cookie for normal joins and reconnects. An explicit live recovery requests a 30-second, room-specific proof for the existing connection. In production the gateway checks the canonical origin and admits an originless polling GET only with same-origin browser metadata and the configured public host. Deploy TLS at the proxy and enable `TRUST_PROXY` only when that proxy sanitizes forwarding headers.
+- **Legacy session migration**. Set `ALLOW_LEGACY_SOCKET_TOKEN=true` on all gateways while old browser bundles or supported cookie-less clients still need the legacy signed-token protocol. Cookie-less clients must continue to send the configured canonical origin. After those clients migrate, unset the flag across all gateways to keep new session credentials in HttpOnly cookies and require a scoped proof for live upgrades.
 - **Rate-limit behavior**: Auth/session is limited to 10 requests per 60 seconds, metadata/search to 20 per 60 seconds, playlists to 10 per 60 seconds, room joins to 50 per 60 seconds, and commands to 60 per 10 seconds. Rejected commands receive a nonce-correlated `RATE_LIMITED` acknowledgement and are not retried or snapshot-refreshed automatically.
 - **Dependency boundary**: YouTube fallback searches execute in a worker with a timeout to contain failed or slow scraping. That boundary limits one request's work but is not a blanket security guarantee; keep `yt-search` and its dependency tree under audit and prefer the YouTube API key path for production traffic.
 
 ## Testing Strategy
 
-- **Unit/Integration (`npm run test:coverage`)**: Uses Vitest to test pure logic (Zod schemas, drift math, Redis atomic playback behavior, and slow-path CAS).
+- **Unit and integration tests (`pnpm test`)**: Vitest runs deterministic tests including fast-path command logic with a Redis test double. Suites that need disposable services skip by default.
 - **E2E (`npx playwright test`)**: Tests full multi-browser web-socket synchronization workflows.
 
-Redis integration tests require `REDIS_URL`. The persistence queue suite also
+The production Lua suite runs compare-and-swap, permission races and playback
+commands against a disposable Redis database. Set `SYNCWATCH_TEST_REDIS_URL`
+to opt in.
+
+```bash
+pnpm exec cross-env SYNCWATCH_TEST_REDIS_URL=redis://127.0.0.1:6379/15 vitest run __tests__/integration/fast-path-redis.test.ts
+```
+
+Other Redis integration tests require `REDIS_URL`. The persistence queue suite also
 requires `SYNCWATCH_TEST_DB_SYNC_REDIS=1` and an empty, disposable Redis database:
 the real worker enumerates the pending queue. Its database RPC is a controlled
 test boundary; it does not write to Supabase.
@@ -119,6 +129,13 @@ test boundary; it does not write to Supabase.
 ```bash
 pnpm exec cross-env REDIS_URL=redis://127.0.0.1:6379/15 SYNCWATCH_TEST_DB_SYNC_REDIS=1 vitest run __tests__/integration/db-sync-redis.test.ts
 ```
+
+The Supabase concurrency suite requires a separate disposable database with
+the repository migrations applied. Its fixture needs `DELETE` on
+`public.rooms` for the test service role, in addition to the grants in the
+migrations. Set `SYNCWATCH_TEST_DB_DEADLOCK=1`, `SYNCWATCH_TEST_SUPABASE_URL`,
+and `SYNCWATCH_TEST_SUPABASE_SERVICE_ROLE_KEY` in the process environment, then
+run `pnpm exec vitest run __tests__/rpc_deadlock.test.ts`.
 
 ## Technical Debt & Improvement Backlog
 

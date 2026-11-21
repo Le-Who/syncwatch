@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import { Outfit } from "next/font/google";
 import { Toaster } from "sonner";
+import { ThemeToggle } from "@/components/ThemeToggle";
+import { ServiceWorkerCleanup } from "@/components/ServiceWorkerCleanup";
+import { themeStorageKey } from "@/lib/theme";
 import "./globals.css";
 
 const outfit = Outfit({
@@ -14,9 +17,12 @@ export const metadata: Metadata = {
   description: "Watch videos together with friends in perfect sync.",
 };
 
-import { ThemeProvider } from "@/components/ThemeProvider";
-import { ThemeToggle } from "@/components/ThemeToggle";
-import { ServiceWorkerCleanup } from "@/components/ServiceWorkerCleanup";
+const initializeTheme = `try {
+  if (localStorage.getItem(${JSON.stringify(themeStorageKey)}) === "cyber") {
+    document.documentElement.dataset.theme = "cyber";
+  }
+} catch {}`;
+
 export default function RootLayout({
   children,
 }: {
@@ -28,6 +34,9 @@ export default function RootLayout({
       className={`dark ${outfit.variable}`}
       suppressHydrationWarning
     >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: initializeTheme }} />
+      </head>
       <body
         className="bg-theme-bg text-theme-text font-theme selection:bg-theme-accent/30 antialiased transition-colors duration-500"
         suppressHydrationWarning
@@ -41,11 +50,9 @@ export default function RootLayout({
         ></div>
 
         <div className="theme-pattern"></div>
-        <ThemeProvider>
-          <ServiceWorkerCleanup />
-          {children}
-          <ThemeToggle />
-        </ThemeProvider>
+        <ServiceWorkerCleanup />
+        {children}
+        <ThemeToggle />
         <Toaster
           theme="dark"
           position="bottom-left"

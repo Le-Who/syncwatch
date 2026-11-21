@@ -28,7 +28,6 @@ describe("Zustand Store & OCC Flashback", () => {
       participantId: "test-user-1",
       commandSequence: 1,
       occRollbackTick: 0,
-      sessionToken: null,
       nickname: "TestUser",
     });
     vi.clearAllMocks();
@@ -50,6 +49,9 @@ describe("Zustand Store & OCC Flashback", () => {
       getItem: vi.fn((key: string) => mockStorage[key] || null),
       setItem: vi.fn((key: string, value: string) => {
         mockStorage[key] = value;
+      }),
+      removeItem: vi.fn((key: string) => {
+        delete mockStorage[key];
       }),
     });
 

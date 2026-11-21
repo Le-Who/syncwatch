@@ -21,18 +21,13 @@ import { RedisRoomRepository } from "../lib/room-repository";
 
 const TEST_RUN_ID = randomUUID().slice(0, 8);
 
-describe("Fast-Path OCC Logic", () => {
+describe("Fast-path OCC using the Redis test double", () => {
   const roomId = `test-fast-path-${TEST_RUN_ID}`;
   let redis: ReturnType<typeof getRedisClient>;
-  let usingMock = false;
 
-  beforeAll(async () => {
+  beforeAll(() => {
+    installRedisMock();
     redis = getRedisClient();
-    if (!redis) {
-      installRedisMock();
-      redis = getRedisClient();
-      usingMock = true;
-    }
   });
 
   beforeEach(async () => {
@@ -92,18 +87,9 @@ describe("Fast-Path OCC Logic", () => {
     } as any);
   });
 
-  afterAll(async () => {
-    if (usingMock) {
-      uninstallRedisMock();
-    } else if (redis) {
-      const keys = await redis.keys(`*${TEST_RUN_ID}*`);
-      if (keys.length > 0) {
-        await redis.del(...keys);
-      }
-    }
-  });
+  afterAll(uninstallRedisMock);
 
-  it("TC-Fast-1: Should correctly update state via Lua script on fast-path play mutation", async () => {
+  it("updates state through the Redis test double on fast-path play", async () => {
     const result = await executeFastMutation(
       roomId,
       "play",

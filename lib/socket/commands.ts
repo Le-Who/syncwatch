@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Server, Socket } from "socket.io";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { jwtVerify } from "jose";
+import { allowsLegacySocketToken, verifyUpgradeToken } from "../session-auth";
 import { isSystemDegraded, persistRoomState } from "../db-sync";
 import { checkRedisRateLimit } from "../redis-rate-limit";
 import { getJwtSecret } from "../jwt-config";
@@ -31,11 +31,12 @@ function emitAcknowledgement(
   socket: Socket,
   ack: CommandAcknowledgement,
   callback?: AcknowledgementCallback,
+  notifyLegacyError = true,
 ) {
   socket.emit("command_ack", ack);
   if (typeof callback === "function") callback(ack);
 
-  if (ack.status === "rejected") {
+  if (notifyLegacyError && ack.status === "rejected") {
     socket.emit("error", {
       message:
         ack.message ??
@@ -96,6 +97,7 @@ async function handleSessionUpgrade(
   context: SocketContext,
   envelope: RoomCommandEnvelope,
   jwtSecret: ReturnType<typeof getJwtSecret>,
+  allowLegacy: boolean,
   supabase: SupabaseClient | null,
   eventBus?: RoomEventBus,
 ): Promise<CommandAcknowledgement> {
@@ -125,16 +127,14 @@ async function handleSessionUpgrade(
   let verifiedParticipantId: string;
   let verifiedNickname: string | undefined;
   try {
-    const { payload } = await jwtVerify(
+    const identity = await verifyUpgradeToken(
       envelope.command.payload.token,
+      roomId,
       jwtSecret,
+      allowLegacy,
     );
-    if (typeof payload.participantId !== "string") {
-      return rejected(envelope.nonce, "INVALID_COMMAND");
-    }
-    verifiedParticipantId = payload.participantId;
-    verifiedNickname =
-      typeof payload.nickname === "string" ? payload.nickname : undefined;
+    verifiedParticipantId = identity.participantId;
+    verifiedNickname = identity.nickname;
   } catch {
     return rejected(envelope.nonce, "INVALID_COMMAND");
   }
@@ -224,6 +224,7 @@ export function handleCommandEvents(
   eventBus?: RoomEventBus,
 ) {
   const jwtSecret = getJwtSecret();
+  const allowLegacy = allowsLegacySocketToken();
   socket.on(
     "command",
     async (rawCommand: unknown, callback?: AcknowledgementCallback) => {
@@ -300,6 +301,7 @@ export function handleCommandEvents(
               socket,
               rejected(envelope.nonce, "CONTENTION"),
               callback,
+              false,
             );
             return;
           }
@@ -311,6 +313,7 @@ export function handleCommandEvents(
               context,
               envelope,
               jwtSecret,
+              allowLegacy,
               supabase,
               eventBus,
             );

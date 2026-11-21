@@ -1,7 +1,6 @@
 /** @vitest-environment node */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
-import { SignJWT } from "jose";
 import type { Server, Socket } from "socket.io";
 import { handleCommandEvents } from "../lib/socket/commands";
 import { handleConnectionEvents } from "../lib/socket/connection";
@@ -10,6 +9,8 @@ import { createEmptyRoom } from "../lib/room-handler";
 import { PARTICIPANT_GRACE_MS } from "../lib/participant-lifecycle";
 import { getRedisRoom, setRedisRoomCAS } from "../lib/redis-actor";
 import { persistRoomState } from "../lib/db-sync";
+import { getJwtSecret } from "../lib/jwt-config";
+import { issueUpgradeToken } from "../lib/session-auth";
 import type { RoomCommandService } from "../lib/room-command-service";
 import type { RoomEventBus } from "../lib/room-event-bus";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -37,6 +38,7 @@ function deferred<T>() {
 }
 
 describe("session upgrade command lifecycle", () => {
+  const roomId = "upgrade-room";
   let handlers: Record<string, (...args: unknown[]) => Promise<void>>;
   let socket: Socket;
   let context: SocketContext;
@@ -44,26 +46,25 @@ describe("session upgrade command lifecycle", () => {
   let supabase: SupabaseClient;
   let publish: ReturnType<typeof vi.fn>;
 
-  const tokenFor = (participantId: string) =>
-    new SignJWT({ participantId, nickname: "Account" })
-      .setProtectedHeader({ alg: "HS256" })
-      .setExpirationTime("1h")
-      .sign(new TextEncoder().encode("default_local_secret_dont_use_in_prod"));
   const commandFor = async (participantId = "account") => ({
-    roomId: "upgrade-room",
+    roomId,
     nonce: randomUUID(),
     clientSequence: 0,
     command: {
       type: "upgrade_session",
-      payload: { token: await tokenFor(participantId) },
+      payload: {
+        token: await issueUpgradeToken(participantId, roomId, getJwtSecret()),
+      },
     },
   });
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubEnv("JWT_SECRET", "test-session-upgrade-secret");
+    vi.stubEnv("ALLOW_LEGACY_SOCKET_TOKEN", undefined);
     handlers = {};
     context = {
-      currentRoomId: "upgrade-room",
+      currentRoomId: roomId,
       currentParticipantId: "fallback",
     };
     socket = {
@@ -76,7 +77,7 @@ describe("session upgrade command lifecycle", () => {
       handshake: { headers: {}, address: "127.0.0.1" },
       join: vi.fn(),
     } as unknown as Socket;
-    stored = createEmptyRoom("upgrade-room", "Upgrade");
+    stored = createEmptyRoom(roomId, "Upgrade");
     stored.participants.fallback = {
       id: "fallback",
       nickname: "Guest",
@@ -119,6 +120,7 @@ describe("session upgrade command lifecycle", () => {
     vi.clearAllTimers();
     vi.useRealTimers();
     vi.restoreAllMocks();
+    vi.unstubAllEnvs();
   });
 
   it("ignores a non-function acknowledgement argument without rejecting the handler", async () => {
@@ -299,7 +301,7 @@ describe("session upgrade command lifecycle", () => {
     });
     const pending = handlers.command(await commandFor());
     await committed.promise;
-    await handlers.join_room({ roomId: "upgrade-room", nickname: "Guest" });
+    await handlers.join_room({ roomId, nickname: "Guest" });
     result.resolve(true);
     await pending;
     expect(setRedisRoomCAS).toHaveBeenCalledTimes(1);
@@ -317,7 +319,7 @@ describe("session upgrade command lifecycle", () => {
       return read.promise;
     });
     const joining = handlers.join_room({
-      roomId: "upgrade-room",
+      roomId,
       nickname: "Guest",
     });
     await reading.promise;

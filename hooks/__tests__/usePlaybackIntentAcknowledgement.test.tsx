@@ -92,7 +92,7 @@ describe("usePlaybackIntentAcknowledgement", () => {
   beforeEach(() => {
     roomSocketService.disconnect();
     socketDouble.reset();
-    roomSocketService.connect("room-a", "Friend", "participant-1", null);
+    roomSocketService.connect("room-a", "Friend", "participant-1");
     manager = new PlaybackIntentManager();
     useStore.setState({
       lastCommandAcknowledgement: null,

@@ -16,10 +16,7 @@ const config = {
     "e2e/**/*.{ts,tsx}",
     "scripts/**/*.{js,mjs,cjs}",
   ],
-  ignoreDependencies: [
-    "postcss-load-config",
-    "tailwindcss",
-  ],
+  ignoreDependencies: ["tailwindcss"],
   rules: {
     types: "warn",
     exports: "warn",

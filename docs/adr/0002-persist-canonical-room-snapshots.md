@@ -14,5 +14,7 @@ queue writes a null media ID to the compatibility playback row, so readers
 observe the cleared selection.
 
 The live concurrency test writes real rows through this RPC. Run it with
-`SYNCWATCH_TEST_DB_DEADLOCK=1` against a disposable Supabase database with
-credentials for that database.
+`SYNCWATCH_TEST_DB_DEADLOCK=1` and dedicated test credentials against a
+disposable Supabase database. The test checks permission to delete its room
+before writing and removes that room and its dependent rows after the test.
+[Testing Strategy](../../README.md#testing-strategy) lists the test settings.

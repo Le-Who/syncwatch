@@ -168,7 +168,7 @@ export async function executeFastMutation(
 
       if (typeof result === "string") {
         if (result.startsWith("{")) {
-          return { success: true, state: JSON.parse(result) };
+          return { success: true, state: normalizeRoomState(JSON.parse(result)) };
         }
         if (result === "VERSION_CONFLICT") {
           await waitForAuthorizationRetry(attempt);

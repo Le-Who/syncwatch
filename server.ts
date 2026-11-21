@@ -11,7 +11,7 @@ import { emitRoomEventToSocketIo } from "./lib/room-events";
 import { pubClient } from "./lib/redis-actor";
 import {
   applyAuthoritativeClientIp,
-  isSocketOriginAllowed,
+  isSocketRequestAllowed,
   normalizeAppOrigin,
 } from "./lib/server-config";
 
@@ -98,7 +98,7 @@ app.prepare().then(async () => {
       callback(
         null,
         !allowedOrigin ||
-          isSocketOriginAllowed(request.headers.origin, allowedOrigin),
+          isSocketRequestAllowed(request, allowedOrigin),
       );
     },
     pingTimeout: 60000,

@@ -45,9 +45,8 @@ it("recovers seq100 from a correlated lower hydrated lifetime and retires old fr
     canonicalDeliveryVersion: 9,
     isConnected: true,
     participantId: "p0",
-    sessionToken: "friend-token",
   });
-  roomSocketService.connect(old.id, "p0", "p0", "friend-token");
+  roomSocketService.connect(old.id, "p0", "p0");
   const oldRequest = transport.emit.mock.calls.find(
     ([event]) => event === "join_room",
   )![1];
@@ -90,7 +89,6 @@ it("recovers seq100 from a correlated lower hydrated lifetime and retires old fr
     useStore.getState().connectionDeliveryFloor,
   );
   expect(useStore.getState().participantId).toBe("p0");
-  expect(useStore.getState().sessionToken).toBe("friend-token");
   const stable = useStore.getState().room;
   transport.receive("room_state", {
     room: { ...old, sequence: 101 },

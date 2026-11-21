@@ -58,7 +58,11 @@ export function PlayerControlBar({
     useSettingsStore();
 
   return (
-    <div className="font-theme absolute right-0 bottom-0 left-0 z-50 p-4 opacity-100 transition-opacity duration-300 md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100">
+    <div
+      role="group"
+      aria-label="Playback controls"
+      className="font-theme absolute right-0 bottom-0 left-0 z-50 p-4 opacity-100 transition-opacity duration-300 md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100"
+    >
       <div className="bg-theme-bg/80 border-theme-border/50 rounded-theme border-2 p-3 shadow-lg backdrop-blur-md">
         <div className="mb-3 flex items-center space-x-4">
           <Scrubber

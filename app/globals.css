@@ -176,6 +176,21 @@
   -webkit-backdrop-filter: none;
 }
 
+.theme-toggle-cyber {
+  opacity: 0;
+  transform: rotate(90deg) scale(0);
+}
+
+:root[data-theme="cyber"] .theme-toggle-cotton {
+  opacity: 0;
+  transform: rotate(-90deg) scale(0);
+}
+
+:root[data-theme="cyber"] .theme-toggle-cyber {
+  opacity: 1;
+  transform: none;
+}
+
 @keyframes breathe {
   0% {
     transform: scale(1);
