@@ -8,7 +8,6 @@ export type CanonicalRoomConsumer = {
   pendingPlayback?: CanonicalPlayback;
 };
 
-/** Applies the canonical room/playback event rules shared by client stores. */
 export function reduceCanonicalRoomEvent(
   state: CanonicalRoomConsumer,
   event: RoomEvent,

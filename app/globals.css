@@ -3,7 +3,6 @@
 @theme {
   --font-sans: var(--font-outfit), ui-sans-serif, system-ui, sans-serif;
 
-  /* Dynamic Theme Tokens */
   --color-theme-bg: var(--theme-bg);
   --color-theme-card: var(--theme-card);
   --color-theme-border: var(--theme-border);
@@ -37,7 +36,6 @@
   }
 
   :root {
-    /* Cotton Candy Glassmorphism (Default) */
     --theme-bg: #fff0f5;
     --theme-card: rgba(255, 255, 255, 0.55);
     --theme-border: rgba(244, 63, 117, 0.25);
@@ -53,7 +51,6 @@
   }
 
   [data-theme="cyber"] {
-    /* Cyber-Industrial Brutalist */
     --theme-bg: #050505;
     --theme-card: #111111;
     --theme-border: #00e5ff;
@@ -71,7 +68,6 @@
   }
 }
 
-/* Custom scrollbar for themes */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -90,18 +86,16 @@
   background: var(--theme-accent, rgba(255, 255, 255, 0.2));
 }
 
-/* Global Background Patterns */
 .theme-pattern {
   position: absolute;
   inset: 0;
   pointer-events: none;
   transition: all 0.5s ease;
-  will-change: transform, filter; /* GPU Optimization */
+  will-change: transform, filter;
   transform: translateZ(0);
 }
 
 :root .theme-pattern {
-  /* Cotton Candy: Ethereal Silk Mesh */
   background:
     radial-gradient(
       circle at 10% 20%,
@@ -142,11 +136,10 @@
 
 .animate-float-up {
   animation: float-up 3s ease-out forwards;
-  will-change: transform, opacity; /* GPU Optimization */
+  will-change: transform, opacity;
 }
 
 [data-theme="cyber"] .theme-pattern {
-  /* Cyber: Industrial Scanline/Grid */
   background:
     linear-gradient(rgba(0, 229, 255, 0.03) 1px, transparent 1px),
     linear-gradient(90deg, rgba(0, 229, 255, 0.03) 1px, transparent 1px);
@@ -154,7 +147,6 @@
   animation: none;
 }
 
-/* Glass/Brutalist Structural Logic */
 .theme-panel {
   background: var(--theme-card);
   border: 2px solid var(--theme-border);
@@ -172,10 +164,8 @@
 :root .theme-panel {
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
-  /* GPU Optimization for backdrop-filter rendering */
   will-change: transform;
   transform: translate3d(0, 0, 0);
-  /* Inner light reflection for glass */
   box-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.5),
     var(--theme-shadow);

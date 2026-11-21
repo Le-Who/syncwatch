@@ -1,5 +1,3 @@
--- Migration to create sync_room_state RPC for atomic room updates
-
 CREATE OR REPLACE FUNCTION sync_room_state(room_data jsonb)
 RETURNS void
 LANGUAGE plpgsql
@@ -14,7 +12,6 @@ BEGIN
   v_room_id := (room_data->>'id')::uuid;
   v_owner_id := (room_data->>'owner_id')::uuid;
 
-  -- 1. Upsert Room
   INSERT INTO rooms (id, name, settings, owner_id)
   VALUES (
     v_room_id,
@@ -27,15 +24,12 @@ BEGIN
     settings = EXCLUDED.settings,
     owner_id = EXCLUDED.owner_id;
 
-  -- 2. Sync Playlist (Delete missing, Upsert existing/new)
-  -- Delete items not in the new playlist
   DELETE FROM playlist_items
   WHERE room_id = v_room_id
   AND id NOT IN (
     SELECT (jsonb_array_elements(room_data->'playlist')->>'id')::uuid
   );
 
-  -- Upsert items
   FOR v_item IN SELECT * FROM jsonb_array_elements(room_data->'playlist')
   LOOP
     INSERT INTO playlist_items (
@@ -60,7 +54,6 @@ BEGIN
     v_index := v_index + 1;
   END LOOP;
 
-  -- 3. Sync Playback Snapshot
   INSERT INTO playback_snapshots (
     room_id, media_item_id, status, base_position, base_timestamp, rate, version, updated_by, updated_at
   )

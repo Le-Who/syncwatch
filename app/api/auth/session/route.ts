@@ -28,7 +28,6 @@ export async function POST(request: Request) {
           return sessionResponse(payload.participantId, existingToken);
         }
       } catch {
-        // Invalid session material is replaced without logging its contents.
       }
     }
 
@@ -62,7 +61,7 @@ export async function POST(request: Request) {
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
       path: "/",
-      maxAge: 60 * 60 * 24 * 30, // 30 days
+      maxAge: 60 * 60 * 24 * 30,
     });
 
     return response;

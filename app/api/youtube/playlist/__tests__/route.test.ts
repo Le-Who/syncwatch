@@ -41,12 +41,11 @@ describe("GET /api/youtube/playlist", () => {
         },
         {
           title: "Test Video 2",
-          videoId: "test_id_2", // Missing duration and thumbnail to test Zod catch defaults
+          videoId: "test_id_2",
         },
       ],
     };
 
-    // @ts-ignore
     vi.mocked(yts).mockResolvedValue(mockYtsResponse as any);
 
     const req = createRequest(
@@ -65,7 +64,6 @@ describe("GET /api/youtube/playlist", () => {
     expect(data.title).toBe("My Awesome Playlist");
     expect(data.videos).toHaveLength(2);
 
-    // First video matches exactly
     expect(data.videos[0]).toEqual({
       title: "Test Video 1",
       url: "https://www.youtube.com/watch?v=test_id_1",
@@ -73,7 +71,6 @@ describe("GET /api/youtube/playlist", () => {
       thumbnail: "https://img.youtube.com/vi/test_id_1/hqdefault.jpg",
     });
 
-    // Second video tests the Zod `catch` fallback mechanisms
     expect(data.videos[1]).toEqual({
       title: "Test Video 2",
       url: "https://www.youtube.com/watch?v=test_id_2",
@@ -84,9 +81,8 @@ describe("GET /api/youtube/playlist", () => {
 
   it("should handle completely missing playlist title gracefully", async () => {
     const mockYtsResponse = {
-      videos: [], // No title field
+      videos: [],
     };
-    // @ts-ignore
     vi.mocked(yts).mockResolvedValue(mockYtsResponse as any);
 
     const req = createRequest(
@@ -100,7 +96,6 @@ describe("GET /api/youtube/playlist", () => {
   });
 
   it("should fall back to parsing YouTube playlist HTML if yt-search throws an error", async () => {
-    // @ts-ignore
     vi.mocked(yts).mockRejectedValue(new Error("yts crashed"));
     vi.stubGlobal(
       "fetch",

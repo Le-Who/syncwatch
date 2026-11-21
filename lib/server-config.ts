@@ -36,11 +36,6 @@ export function isSocketOriginAllowed(
   }
 }
 
-/**
- * The custom Node server is the only component that can observe the direct
- * TCP peer. It replaces this internal header before an App Route sees the
- * request, so a client cannot choose the direct-mode rate-limit bucket.
- */
 export function applyAuthoritativeClientIp(
   headers: Record<string, string | string[] | undefined>,
   peerAddress: string | undefined,

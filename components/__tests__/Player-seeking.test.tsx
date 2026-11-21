@@ -18,8 +18,6 @@ vi.mock("@/lib/store", () => ({
   useSettingsStore: vi.fn(),
 }));
 
-// Keep Player's command, permission, and reconciliation paths real. Only the
-// external iframe is replaced with a seekable provider boundary.
 vi.mock("next/dynamic", async () => {
   const React = await import("react");
   return {
@@ -53,7 +51,6 @@ function providerAt(position: number, duration: number) {
     },
     seekTo(position: number) {
       this.position = position;
-      // Twitch pauses when scrubbing, including programmatic seeks.
       this.paused = true;
     },
     play() {

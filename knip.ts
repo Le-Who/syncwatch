@@ -17,8 +17,8 @@ const config = {
     "scripts/**/*.{js,mjs,cjs}",
   ],
   ignoreDependencies: [
-    "postcss-load-config", // JSDoc type in postcss.config.mjs, supplied by Next.
-    "tailwindcss", // CSS @import in app/globals.css is not detected by Knip.
+    "postcss-load-config",
+    "tailwindcss",
   ],
   rules: {
     types: "warn",

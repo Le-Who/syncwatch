@@ -23,8 +23,6 @@ const a = "20000000-0000-4000-8000-000000000001";
 const b = "20000000-0000-4000-8000-000000000002";
 const owner = "30000000-0000-4000-8000-000000000001";
 let db: PGlite;
-// Only the transport is adapted: every RPC and selected field runs against
-// tables created by the checked-in SQL, never a synthesized state response.
 const client = {
   rpc: async (_name: string, args: any) => {
     try {

@@ -18,7 +18,6 @@ export class LRUCache<K, V> {
       return undefined;
     }
 
-    // Refresh position for LRU
     this.cache.delete(key);
     this.cache.set(key, item);
     return item.value;

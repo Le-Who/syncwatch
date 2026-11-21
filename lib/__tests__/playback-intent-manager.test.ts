@@ -77,11 +77,9 @@ describe("PlaybackIntentManager", () => {
       manager.markCommandEmitted("playing", 10.5, "nonce123");
       expect(manager.getExpectedStatus("fallback")).toBe("playing");
 
-      // Nonce ACK timeout is 3000ms, so at 2000ms we're still within the window
       vi.advanceTimersByTime(2000);
       expect(manager.getExpectedStatus("fallback")).toBe("playing");
 
-      // After 3000ms total the nonce ACK safety-net expires
       vi.advanceTimersByTime(1000);
       expect(manager.getExpectedStatus("fallback")).toBe("fallback");
     });
@@ -101,8 +99,8 @@ describe("PlaybackIntentManager", () => {
       expect(manager.isRecentProgrammaticSeek()).toBe(true);
       expect(manager.isRecentProgrammaticSeek(300)).toBe(false);
 
-      vi.advanceTimersByTime(1200); // Total 1500ms
-      expect(manager.isRecentProgrammaticSeek()).toBe(false); // Default threshold is 1500ms
+      vi.advanceTimersByTime(1200);
+      expect(manager.isRecentProgrammaticSeek()).toBe(false);
     });
 
     it("should respect custom thresholds for programmatic seeks", () => {
@@ -148,32 +146,21 @@ describe("PlaybackIntentManager", () => {
       expect(manager.isInMediaTransition()).toBe(true);
 
       vi.advanceTimersByTime(10000);
-      // Even without the auto-expiry timeout running, the manual check isInMediaTransition will return false and clear it
       vi.advanceTimersByTime(1);
       expect(manager.isInMediaTransition()).toBe(false);
     });
 
     it("should only hit 10s hard timeout when 8s soft timeout isn't triggered or failed", () => {
-      // Setup a situation where the soft timeout of 8s somehow didn't clear the transition.
-      // E.g., if another transition was started, but with a different logic/error.
       manager.setMediaTransition("media1");
 
-      // Advance to 8 seconds - the 8s soft timeout will fire and set _mediaTransitionId to null.
-      // But we want to test the 10s timeout. To do so, we bypass the 8s timeout effect
-      // by setting the id back manually.
       vi.advanceTimersByTime(8000);
 
-      // The 8s timeout fired. Let's pretend it didn't clear the ID (simulating a bug or edge case).
       // @ts-ignore
       manager._mediaTransitionId = "media1";
 
-      // We are past 8s, so soft timeout fired.
-      // Now we advance past 10s from the original timestamp.
       vi.advanceTimersByTime(2001);
 
-      // The hard timeout block in `isInMediaTransition` should catch it
       expect(manager.isInMediaTransition()).toBe(false);
-      // Verify the state is cleared
       // @ts-ignore
       expect(manager._mediaTransitionId).toBeNull();
     });
@@ -201,7 +188,6 @@ describe("PlaybackIntentManager", () => {
       manager.setMediaTransition("media1");
       expect(clearTimeoutSpy).not.toHaveBeenCalled();
 
-      // Setting another transition should clear the first timeout
       manager.setMediaTransition("media2");
       expect(clearTimeoutSpy).toHaveBeenCalledTimes(1);
 
@@ -215,20 +201,15 @@ describe("PlaybackIntentManager", () => {
 
       manager.setMediaTransition("media1");
 
-      // Fast forward slightly, then change to media2
       vi.advanceTimersByTime(2000);
 
-      // This will set a new transition, clearing the old timeout, and creating a new one
       manager.setMediaTransition("media2");
 
-      // Advance to where the first timeout would have fired if not cleared
       vi.advanceTimersByTime(6000);
 
-      // Should still be in transition for media2
       expect(manager.isInMediaTransition()).toBe(true);
       expect(consoleWarnSpy).not.toHaveBeenCalled();
 
-      // Advance past media2's timeout
       vi.advanceTimersByTime(2000);
 
       expect(consoleWarnSpy).toHaveBeenCalledWith(
@@ -243,22 +224,17 @@ describe("PlaybackIntentManager", () => {
     it("should gracefully handle clearMediaTransition when timeout is null", () => {
       manager.setMediaTransition("media1");
 
-      // Remove timeout manually
       // @ts-ignore
       manager.mediaTransitionTimeout = null;
 
-      // Shouldn't throw
       manager.clearMediaTransition("media1");
 
-      // Verify transition is cleared
       expect(manager.isInMediaTransition()).toBe(false);
     });
 
     it("should not clear timeout if media id doesn't match in setTimeout", () => {
-      // Test the `if (this._mediaTransitionId === mediaId)` branch in setTimeout
       manager.setMediaTransition("media1");
 
-      // Manually set _mediaTransitionId to something else but keep the timeout running
       // @ts-ignore
       manager._mediaTransitionId = "media2";
 
@@ -266,13 +242,10 @@ describe("PlaybackIntentManager", () => {
         .spyOn(console, "warn")
         .mockImplementation(() => {});
 
-      // Advance to trigger the 8s timeout created for "media1"
       vi.advanceTimersByTime(8000);
 
-      // Warning shouldn't be logged because IDs don't match
       expect(consoleWarnSpy).not.toHaveBeenCalled();
 
-      // ID shouldn't be null
       // @ts-ignore
       expect(manager._mediaTransitionId).toBe("media2");
 

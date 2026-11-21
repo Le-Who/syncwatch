@@ -11,15 +11,12 @@ import { setupPubSubListeners } from "../../lib/socket/pubsub";
 import { RoomState } from "../../lib/types";
 import { randomUUID } from "node:crypto";
 
-// We require a real Redis instance (like the one in .env.local) to test Lua scripts.
-// We use a unique namespace per test run to prevent CI collisions.
 const TEST_RUN_ID = randomUUID().slice(0, 8);
 const redis = process.env.REDIS_URL ? getRedisClient() : null;
 
 describe.skipIf(!redis)("Redis actor integration tests", () => {
   afterAll(async () => {
     if (redis) {
-      // Clean up all keys generated in this isolated test run
       const keys = await redis.keys(`*${TEST_RUN_ID}*`);
       if (keys.length > 0) {
         await redis.del(...keys);
@@ -189,7 +186,6 @@ describe.skipIf(!redis)("Redis actor integration tests", () => {
 
     await setRedisRoom(roomId, initialState);
 
-    // CAS loop: read → mutate → save (matches production code path)
     const room = (await getRedisRoom(roomId)) as RoomState;
     const baseVersion = room.version;
     const changed = applyAddItem(

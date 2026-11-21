@@ -21,7 +21,7 @@ export default defineConfig({
       args: [
         "--use-gl=egl",
         "--disable-dev-shm-usage",
-        "--disable-gpu", // Fallback for pure headless
+        "--disable-gpu",
       ],
     },
   },
@@ -37,7 +37,6 @@ export default defineConfig({
   webServer: [
     {
       command: "pnpm exec tsx server.ts",
-      // Wait for the room route to compile before timing browser navigation.
       url: "http://localhost:3002/room/e2e-warmup",
       env: {
         PORT: "3002",

@@ -1,8 +1,5 @@
--- Supabase Schema for SyncWatch
-
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- Rooms table
 CREATE TABLE IF NOT EXISTS rooms (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   name TEXT NOT NULL,
@@ -12,7 +9,6 @@ CREATE TABLE IF NOT EXISTS rooms (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Room Members table
 CREATE TABLE IF NOT EXISTS room_members (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   room_id UUID REFERENCES rooms(id) ON DELETE CASCADE,
@@ -24,7 +20,6 @@ CREATE TABLE IF NOT EXISTS room_members (
   UNIQUE(room_id, user_id)
 );
 
--- Playlist Items table
 CREATE TABLE IF NOT EXISTS playlist_items (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   room_id UUID REFERENCES rooms(id) ON DELETE CASCADE,
@@ -37,7 +32,6 @@ CREATE TABLE IF NOT EXISTS playlist_items (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Playback Snapshots table (for persistence if server restarts)
 CREATE TABLE IF NOT EXISTS playback_snapshots (
   room_id UUID PRIMARY KEY REFERENCES rooms(id) ON DELETE CASCADE,
   media_item_id UUID REFERENCES playlist_items(id) ON DELETE SET NULL,
@@ -50,7 +44,6 @@ CREATE TABLE IF NOT EXISTS playback_snapshots (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Activity Log table
 CREATE TABLE IF NOT EXISTS activity_log (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   room_id UUID REFERENCES rooms(id) ON DELETE CASCADE,
@@ -60,11 +53,6 @@ CREATE TABLE IF NOT EXISTS activity_log (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Indexes
 CREATE INDEX IF NOT EXISTS idx_room_members_room_id ON room_members(room_id);
 CREATE INDEX IF NOT EXISTS idx_playlist_items_room_id ON playlist_items(room_id);
 CREATE INDEX IF NOT EXISTS idx_activity_log_room_id ON activity_log(room_id);
-
--- Note: The application currently uses an in-memory server-authoritative model 
--- for real-time synchronization to minimize latency and database writes. 
--- These tables can be used to persist room state periodically or when rooms become inactive.

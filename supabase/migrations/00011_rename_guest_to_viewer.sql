@@ -1,17 +1,10 @@
--- Migration 00011: Rename 'guest' to 'viewer'
--- Eliminates legacy fallback terminology to clarify read-only participants
--- Fully idempotent: safe to run multiple times.
-
--- 1. Update existing records (idempotent: 0 rows affected on re-run)
 UPDATE public.room_members 
 SET role = 'viewer' 
 WHERE role = 'guest';
 
--- 2. Drop the old constraint (idempotent via IF EXISTS)
 ALTER TABLE public.room_members 
 DROP CONSTRAINT IF EXISTS room_members_role_check;
 
--- 3. Add the new constraint (idempotent via pg_constraint check)
 DO $$
 BEGIN
   IF NOT EXISTS (

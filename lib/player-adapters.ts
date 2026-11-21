@@ -103,8 +103,6 @@ export function applyTwitchEventProxy(
 ) {
   const noCleanup = () => {};
   try {
-    // Note: react-player v3's getInternalPlayer() may not return the iframe wrapper,
-    // instead the ref itself might point to the <twitch-video> web component.
     const twitchEl =
       (realPlayerRef.current && realPlayerRef.current.getInternalPlayer
         ? realPlayerRef.current.getInternalPlayer("twitch")

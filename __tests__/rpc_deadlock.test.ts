@@ -2,7 +2,6 @@ import { describe, it, expect } from "vitest";
 import { createClient } from "@supabase/supabase-js";
 import { randomUUID } from "crypto";
 
-// Opt in only against a disposable Supabase database, never ambient credentials.
 const SUPABASE_URL =
   process.env.NEXT_PUBLIC_SUPABASE_URL || "http://127.0.0.1:54321";
 const SUPABASE_SERVICE_ROLE_KEY =
@@ -22,7 +21,6 @@ describe.skipIf(!runDatabaseTest)("RPC Deadlock Test (sync_room_state)", () => {
     const ownerId = randomUUID();
     const vids = Array.from({ length: 15 }, () => randomUUID());
 
-    // Initial base state
     await supabase.rpc("sync_room_state", {
       p_room_id: roomId,
       p_owner_id: ownerId,
@@ -42,8 +40,6 @@ describe.skipIf(!runDatabaseTest)("RPC Deadlock Test (sync_room_state)", () => {
       },
     });
 
-    // Create 10 concurrent requests that try to insert/update the exact same videos in completely DIFFERENT orders.
-    // In a row-by-row FOR loop without a parent lock, this guarantees an AB/BA deadlock.
     const tasks = Array.from({ length: 10 }).map((_, i) => {
       const shuffledVids = [...vids].sort(() => Math.random() - 0.5);
 
@@ -80,7 +76,6 @@ describe.skipIf(!runDatabaseTest)("RPC Deadlock Test (sync_room_state)", () => {
 
     const results = await Promise.allSettled(tasks);
 
-    // If deadlocks happen, Supabase/Postgres returns an error code 40P01 (deadlock_detected)
     const failures = results.filter(
       (r) =>
         r.status === "rejected" || (r.status === "fulfilled" && r.value.error),

@@ -1,18 +1,3 @@
-/**
- * redis-mock.ts — Zero-dependency in-process Redis mock for CI environments.
- *
- * Patches `globalThis.redisClient` with a minimal mock that supports:
- *   get, set, del, keys, expire, eval (basic Lua-like dispatch), multi, zcard, zadd, zrangebyscore, zrem, zremrangebyscore
- *
- * The `eval` method handles the CAS and Fast-Mutation Lua scripts by
- * re-implementing their logic in JavaScript (since Lua can't run in-process).
- *
- * Usage in tests:
- *   import { installRedisMock, uninstallRedisMock } from "../__tests__/helpers/redis-mock";
- *   beforeAll(() => installRedisMock());
- *   afterAll(() => uninstallRedisMock());
- */
-
 const store = new Map<string, string>();
 const expiries = new Map<string, NodeJS.Timeout>();
 const sortedSets = new Map<string, Map<string, number>>();
@@ -33,7 +18,6 @@ const mockRedis = {
   get: async (key: string) => store.get(key) ?? null,
 
   set: async (key: string, value: string, ...args: any[]) => {
-    // Handle SET key value PX ttl NX
     if (args.includes("NX") && store.has(key)) return null;
     store.set(key, value);
     const pxIdx = args.indexOf("PX");
@@ -74,7 +58,6 @@ const mockRedis = {
     return 1;
   },
 
-  // Sorted sets (minimal for db-sync queue)
   zadd: async (key: string, score: number, member: string) => {
     if (!sortedSets.has(key)) sortedSets.set(key, new Map());
     sortedSets.get(key)!.set(member, score);
@@ -119,7 +102,6 @@ const mockRedis = {
     return count;
   },
 
-  // Multi (returns results in ioredis format: [error, result])
   multi: () => {
     const queue: Array<() => Promise<any>> = [];
     const chain = {
@@ -154,14 +136,9 @@ const mockRedis = {
   duplicate: () => mockRedis,
   publish: async () => 0,
 
-  /**
-   * eval — Re-implements Lua scripts in JavaScript.
-   * Detects the script type by checking for key patterns in the Lua source.
-   */
   eval: async (script: string, numKeys: number, ...args: any[]) => {
     const key = args[0] as string;
 
-    // CAS script (setRedisRoomCAS)
     if (
       script.includes("decoded.version") &&
       script.includes("tonumber(ARGV[2])")
@@ -182,7 +159,6 @@ const mockRedis = {
       return 0;
     }
 
-    // Fast-path mutation script (executeFastMutation)
     if (script.includes("mutation_type") && script.includes("cjson.decode")) {
       const mutationType = args[1] as string;
       const payload = JSON.parse(args[2] as string);
@@ -232,8 +208,6 @@ const mockRedis = {
         return "STALE_MEDIA";
 
       if (mutationType === "buffering") {
-        // Legacy compatibility command: participant-local buffering never
-        // changes canonical room playback.
       } else if (["play", "seek"].includes(mutationType)) {
         if (typeof payload.position === "number" && payload.position >= 0) {
           if (
@@ -241,7 +215,6 @@ const mockRedis = {
             room.playback.status === "playing" &&
             !payload.forceSeek
           ) {
-            // strictly ignore
           } else {
             if (mutationType === "play") room.playback.status = "playing";
             room.playback.basePosition = payload.position;

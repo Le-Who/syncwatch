@@ -200,10 +200,8 @@ export default function RoomPage() {
 
   return (
     <>
-      {/* B5: Reconnection overlay — shows over room UI when connection drops */}
       {!isSleeping && <ReconnectingOverlay />}
       <div className="text-theme-text font-theme selection:bg-theme-accent selection:text-theme-bg flex h-dvh flex-col overflow-hidden bg-transparent">
-        {/* Header */}
         <header className="border-theme-border bg-theme-card relative z-30 flex h-[72px] shrink-0 items-center gap-4 border-b-4 px-4 shadow-[0_4px_32px_var(--color-theme-shadow)] backdrop-blur-xl lg:px-6">
           <div className="relative z-10 flex shrink-0 items-center space-x-6">
             <Link
@@ -301,9 +299,7 @@ export default function RoomPage() {
           </div>
         )}
 
-        {/* Main Content */}
         <div className="relative mt-1 flex flex-1 flex-col overflow-hidden bg-transparent lg:flex-row">
-          {/* Player Area */}
           <div className="relative z-10 flex min-h-[35vh] flex-1 flex-col p-2 transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] lg:min-h-0 lg:p-4">
             <div className="border-theme-border/50 bg-theme-bg rounded-theme shadow-theme relative h-full w-full overflow-hidden border-2">
               <Player />
@@ -311,7 +307,6 @@ export default function RoomPage() {
             </div>
           </div>
 
-          {/* Sidebar */}
           <div
             className={`group/sidebar z-20 flex shrink-0 flex-col transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] ${
               theaterMode
@@ -331,7 +326,6 @@ export default function RoomPage() {
                   : "theme-panel"
               }`}
             >
-              {/* Tabs */}
               <div className="border-theme-border flex shrink-0 border-b-2">
                 <button
                   onClick={() => setActiveTab("playlist")}
@@ -370,7 +364,6 @@ export default function RoomPage() {
                 </button>
               </div>
 
-              {/* Tab Content Area */}
               <div className="relative flex-1 overflow-y-auto bg-transparent p-2">
                 {activeTab === "playlist" ? (
                   <Playlist />
@@ -381,7 +374,6 @@ export default function RoomPage() {
                 )}
               </div>
 
-              {/* Decorative Footer */}
               <div className="border-theme-border/30 bg-theme-bg/30 flex h-6 items-center justify-between border-t px-3">
                 <div className="flex space-x-1">
                   <div className="bg-theme-accent h-1.5 w-1.5 animate-pulse rounded-full"></div>

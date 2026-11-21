@@ -24,7 +24,6 @@ export default function Home() {
 
   return (
     <main className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden p-4 select-none sm:p-8">
-      {/* Primary Center Card - Uses Theme Engine .theme-panel */}
       <motion.div
         initial={{ opacity: 0, scale: 0.95, filter: "brightness(0.5)", z: 0 }}
         animate={{ opacity: 1, scale: 1, filter: "brightness(1)", z: 0 }}
@@ -32,7 +31,6 @@ export default function Home() {
         style={{ willChange: "transform, filter, opacity" }}
         className="theme-panel relative z-10 w-full max-w-lg p-8 sm:p-12"
       >
-        {/* Top Decorative Strip */}
         <div className="bg-theme-accent absolute top-0 left-0 h-1 w-full animate-pulse rounded-t-[inherit]" />
         <div className="bg-theme-accent text-theme-bg absolute -top-[14px] left-4 rounded-full px-3 py-[2px] text-[10px] font-bold tracking-widest uppercase">
           SYS_INIT

@@ -24,7 +24,6 @@ describe("Socket Service OCC Rollback", () => {
   });
 
   it("TC-01: Should trigger occRollback on VERSION_CONFLICT error", () => {
-    // 1. Arrange: grab error callback
     let errorCallback: any = null;
 
     useStore.getState().init();
@@ -40,10 +39,8 @@ describe("Socket Service OCC Rollback", () => {
 
     const initialTick = useStore.getState().occRollbackTick;
 
-    // 2. Act
     errorCallback({ message: "VERSION_CONFLICT" });
 
-    // 3. Assert
     expect(useStore.getState().occRollbackTick).toBe(initialTick + 1);
   });
 

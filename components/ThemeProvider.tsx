@@ -24,7 +24,6 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       setThemeState(savedTheme);
       document.documentElement.setAttribute("data-theme", savedTheme);
     } else {
-      // Default to cotton
       document.documentElement.removeAttribute("data-theme");
     }
   }, []);
@@ -42,9 +41,6 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const toggleTheme = () => {
     setTheme(theme === "cotton" ? "cyber" : "cotton");
   };
-  // Prevent flash or hydration mismatch by rendering invisible until mounted,
-  // or just render children directly (we chose to just render children directly
-  // since the background is handled by CSS and might flash briefly, but it's okay).
 
   return (
     <ThemeContext.Provider

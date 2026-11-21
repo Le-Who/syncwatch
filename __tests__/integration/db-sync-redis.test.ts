@@ -20,8 +20,6 @@ import { setRedisRoom } from "../../lib/redis-actor";
 import { getRedisClient } from "../../lib/redis-rate-limit";
 import { roomWithParticipants } from "../helpers/room-fixtures";
 
-// Worker/flush enumerate a global queue. Opt in only against a disposable Redis
-// database; ordinary REDIS_URL integration runs must not acknowledge shared work.
 const redis =
   process.env.SYNCWATCH_TEST_DB_SYNC_REDIS === "1" && process.env.REDIS_URL
     ? getRedisClient()
@@ -52,15 +50,11 @@ async function fixture(name = "Initial") {
   rooms.push(room.id);
   await setRedisRoom(room.id, room);
   markRoomForSync(room.id);
-  // markRoomForSync intentionally does not await its Redis write. PING is a
-  // barrier on the same connection, so the test observes its completed mark.
   await redis!.ping();
   return room;
 }
 
 function workerTick(client: SupabaseClient) {
-  // Run one actual scheduled callback and await all its real Redis commands.
-  // Timer cadence is covered by the default worker tests; no Redis API is mocked.
   const schedule = vi.spyOn(globalThis, "setInterval");
   const timer = startDbSyncWorker(client);
   if (timer) clearInterval(timer);

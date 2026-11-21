@@ -31,7 +31,6 @@ beforeEach(() => {
   vi.spyOn(dns, "lookup").mockResolvedValue([
     { address: "8.8.8.8", family: 4 },
   ] as any);
-  // Prevent the old unsafe fetch boundary from reaching a network during RED.
   vi.stubGlobal(
     "fetch",
     vi.fn(
@@ -82,7 +81,6 @@ it("pins the checked public address into the actual HTTP lookup and keeps hostna
     url: new URL("https://media.example/video.mp4"),
   });
   expect(dials[0].options.agent).toBe(false);
-  // A second lookup would now resolve privately; dialing still uses the pin.
   vi.mocked(dns.lookup).mockResolvedValue([
     { address: "127.0.0.1", family: 4 },
   ] as any);

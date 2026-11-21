@@ -5,11 +5,6 @@ import { useStore } from "@/lib/store";
 import { WifiOff, RefreshCw } from "lucide-react";
 import { motion } from "motion/react";
 
-/**
- * Lightweight external store for reconnection state.
- * Avoids React 19 "set-state-in-effect" lint violations by keeping
- * mutable countdown/retry state outside the React tree.
- */
 const reconnectStore = {
   wasConnected: false,
   countdown: 5,
@@ -59,7 +54,6 @@ const reconnectStore = {
   },
 };
 
-// Stable snapshot reference for useSyncExternalStore
 let cachedSnapshot = reconnectStore.getSnapshot();
 function getSnapshot() {
   const next = reconnectStore.getSnapshot();
@@ -73,10 +67,6 @@ function getSnapshot() {
   return cachedSnapshot;
 }
 
-/**
- * B5: Reconnecting overlay shown when WebSocket connection is lost.
- * Displays animated reconnecting state with auto-retry countdown and manual retry button.
- */
 export function ReconnectingOverlay() {
   const isConnected = useStore((s) => s.isConnected);
   const room = useStore((s) => s.room);
@@ -90,7 +80,6 @@ export function ReconnectingOverlay() {
     getSnapshot,
   );
 
-  // Track connection established
   useEffect(() => {
     if (isConnected) {
       reconnectStore.markConnected();
@@ -101,7 +90,6 @@ export function ReconnectingOverlay() {
     }
   }, [isConnected]);
 
-  // Auto-retry countdown timer
   useEffect(() => {
     if (isConnected || !wasConnected || !room) return;
 
@@ -122,7 +110,6 @@ export function ReconnectingOverlay() {
     };
   }, [isConnected, wasConnected, room, nickname, connect]);
 
-  // Don't show if never connected or currently connected
   if (isConnected || !wasConnected) return null;
 
   const handleManualRetry = () => {

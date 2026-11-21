@@ -198,9 +198,8 @@ export class RoomSocketService {
         reconnectionAttempts: Infinity,
         reconnectionDelay: 1000,
         reconnectionDelayMax: 5000,
-        transports: ["websocket"], // Force WebSocket to bypass Playwright HTTP interception quirks
+        transports: ["websocket"],
         auth: (cb) => {
-          // Send token in handshake to bypass strict cookie limits in isolated testing environments
           cb({
             token: this.latestSessionToken,
             participantId: this.latestParticipantId,
@@ -270,8 +269,6 @@ export class RoomSocketService {
       this.lastCommand = null;
       this.clearSessionUpgrade();
     } else if (this.sessionUpgrade) {
-      // A new join retires the old upgrade acknowledgement, even in the same
-      // room. The desired upgrade resumes with a fresh nonce after this join.
       this.sessionUpgrade.nonce = null;
     }
     this.activeRoomId = roomId;
@@ -285,7 +282,6 @@ export class RoomSocketService {
     });
   }
 
-  /** Requests a read-only authoritative room snapshot for the active socket. */
   public requestRoomState(roomId: string) {
     if (!this.socket?.connected || roomId !== this.activeRoomId) return;
     this.snapshotRequest = { roomId, id: crypto.randomUUID() };
@@ -388,7 +384,6 @@ export class RoomSocketService {
     this.latestParticipantId = participantId;
     this.clearSessionUpgrade();
     this.sessionUpgrade = { roomId, sequence, token, nonce: null };
-    // Bound the join/upgrade wait; expiry retains commands for an explicit retry.
     this.sessionUpgradeTimeout = setTimeout(
       () => this.clearSessionUpgrade(),
       15_000,
@@ -440,7 +435,6 @@ export class RoomSocketService {
           offsets.push(offset);
           if (offsets.length > 10) offsets.shift();
 
-          // Trimmed mean (discard min/max)
           const sorted = [...offsets].sort((a, b) => a - b);
           let sum = 0;
           let count = 0;

@@ -29,7 +29,6 @@ type PlaybackSyncProps = {
   onReconciled?: () => void;
 };
 
-/** Reconciles this provider to monotonic canonical playback without room writes. */
 export function usePlaybackSync(props: PlaybackSyncProps) {
   const driftRef = useRef(0);
   const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -139,8 +138,6 @@ export function usePlaybackSync(props: PlaybackSyncProps) {
         return;
       }
 
-      // Task 4's exact event/ACK path remains authoritative. Polling is only an
-      // idempotent safety net and never blocks newer canonical reconciliation.
       current.intentManager.acknowledgeServerNonce(playback.lastActionNonce);
 
       const media = current.getCurrentMedia();
@@ -157,9 +154,6 @@ export function usePlaybackSync(props: PlaybackSyncProps) {
       });
       driftRef.current = decision.drift;
 
-      // A native pause is awaiting validation. Keep this local provider
-      // paused until it is either cancelled by another native Play or sent
-      // to the room; otherwise the old canonical Play creates a false echo.
       if (
         current.intentManager.isPauseDebouncePending() &&
         decision.shouldPlay

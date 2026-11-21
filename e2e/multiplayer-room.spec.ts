@@ -38,7 +38,6 @@ test.describe("deterministic friend rooms", () => {
       await addDeterministicMedia(room.clients[0]);
       await Promise.all(room.clients.map(initializePlayback));
 
-      // Before a leader exists, a viewer is allowed to control playback.
       await playbackControl(room.clients[4].page, "Play").click();
       await Promise.all(
         room.clients.map(({ page }) => expectCanonicalStatus(page, "playing")),
@@ -61,8 +60,6 @@ test.describe("deterministic friend rooms", () => {
         }),
       );
 
-      // The UI is correctly disabled, while a lower-level command using this
-      // participant's genuine browser-issued session proves the exact ACK.
       await expect(
         playbackControl(room.clients[4].page, "Pause"),
       ).toBeDisabled();
@@ -89,13 +86,11 @@ test.describe("deterministic friend rooms", () => {
         participantCard(room.clients[0].page, "Friend 3"),
       ).toContainText("moderator");
 
-      // Active leader pause reaches every healthy participant.
       await playbackControl(room.clients[1].page, "Pause").click();
       await Promise.all(
         room.clients.map(({ page }) => expectCanonicalStatus(page, "paused")),
       );
 
-      // The room owner retains playback authority while Friend 2 is leader.
       await playbackControl(room.clients[0].page, "Play").click();
       await Promise.all(
         room.clients.map(({ page }) => expectCanonicalStatus(page, "playing")),
@@ -105,7 +100,6 @@ test.describe("deterministic friend rooms", () => {
         room.clients.map(({ page }) => expectCanonicalStatus(page, "paused")),
       );
 
-      // A moderator may also control while another participant is leader.
       await playbackControl(room.clients[2].page, "Play").click();
       await Promise.all(
         room.clients.map(({ page }) => expectCanonicalStatus(page, "playing")),
@@ -159,8 +153,6 @@ test.describe("deterministic friend rooms", () => {
         participantCard(room.clients[0].page, "Friend 1 Reconnected"),
       ).toContainText("owner");
 
-      // This exceeds the client's first clock heartbeat while remaining inside
-      // the 15-second participant grace window.
       await pulseOffline(room.clients[1].context, 3_500);
       await expectReconnected(room.clients[1].page, async () => {
         await renameParticipantAndExpect(

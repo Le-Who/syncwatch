@@ -1,6 +1,5 @@
 "use client";
 
-// default-passive-events removed: Global monkey-patches are dangerous for Radix UI Sliders -> Symptom Masking
 
 import {
   useEffect,
@@ -99,8 +98,8 @@ export default function Player() {
 
   const { volume, muted, theaterMode, setVolume, setMuted, toggleTheaterMode } =
     useSettingsStore();
-  const playerRef = useRef<PlayerMethods | null>(null); // React component wrapper ref
-  const realPlayerRef = useRef<PlayerMethods | null>(null); // Actual ReactPlayer instance
+  const playerRef = useRef<PlayerMethods | null>(null);
+  const realPlayerRef = useRef<PlayerMethods | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [playing, setPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
@@ -158,7 +157,6 @@ export default function Player() {
     };
   }, [wakeUp]);
 
-  // Removed ResizeObserver dimensions
 
   const [intentManager] = useState(() => new PlaybackIntentManager());
   const nativePauseResumeRef = useRef<{
@@ -223,7 +221,6 @@ export default function Player() {
       isDocumentVisibleRef.current = document.visibilityState === "visible";
     };
     document.addEventListener("visibilitychange", handleVisibilityChange);
-    // Set initial value inside useEffect to ensure it runs only on client
     handleVisibilityChange();
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
@@ -269,15 +266,12 @@ export default function Player() {
         try {
           player.play();
         } catch {
-          // Twitch may still reject if the embed is not visible yet; sync loop retries.
         }
       }
     }
   }, [providerName]);
 
   const performProgrammaticSeek = (position: number, force = false) => {
-    // Soft Mode Guarantee: If we are in "echo protection" (last action was ours),
-    // never perform hard seeks during this interval, only drift math updates.
     if (!force && intentManager.isIgnoringNativeEvents()) return;
 
     nativePauseResumeRef.current = null;
@@ -287,7 +281,6 @@ export default function Player() {
     seekPlayerTo(playerRef.current, position, provider);
   };
 
-  // Track upNext dismissal per media item
   const [upNextDismissedForMedia, setUpNextDismissedForMedia] = useState<
     string | null
   >(null);
@@ -300,14 +293,10 @@ export default function Player() {
     healthController.beginMedia(currentMediaId ?? null);
     setUpNextDismissedForMedia(null);
 
-    // STATE-BASED MEDIA TRANSITION GUARD: Block native play/pause events until
-    // onReady fires for this specific media ID. This replaces the old blunt 3s timer.
-    // YouTube iframe fires a pause during load — this guard catches it precisely.
     if (currentMediaId) {
       intentManager.setMediaTransition(currentMediaId);
       sendCommand("media_ready", { mediaId: currentMediaId, ready: false });
     }
-    // Safety net: 1.5s ignoreEventsFor as fallback in case onReady never fires
     intentManager.ignoreEventsFor(1500);
   }, [
     currentMediaId,
@@ -318,13 +307,10 @@ export default function Player() {
     sendCommand,
   ]);
 
-  // Handle Server-Side OCC Rejections (Race Condition Flashback)
   useEffect(() => {
     if (occRollbackTick > 0 && playback && currentMediaId && canControl) {
       console.warn("OCC Rollback Triggered! Reverting optimistic UI state.");
-      // The local player state (playing/paused/position) is wrong.
       const accurateCurrentTime = getAccurateTime();
-      // Calculate where the server actually is *right now* mathematically
       const { expectedPosition } = calculateDrift(
         playback.status,
         playback.basePosition,
@@ -334,14 +320,12 @@ export default function Player() {
         playback.rate,
       );
 
-      // Flashback animation for the user to understand they "lost the click race"
       registerPossibleFlashback(
         accurateCurrentTime,
         expectedPosition,
         currentMediaId,
       );
 
-      // Hard apply the server truth
       intentManager.ignoreEventsFor(2000);
       setPlaying(playback.status === "playing");
       performProgrammaticSeek(expectedPosition);
@@ -357,12 +341,9 @@ export default function Player() {
     setMounted(true);
   }, []);
 
-  // Removed ResizeObserver effect
 
-  // In strict server state, we don't emit commands from native events
   const emitCommand = useCallback(
     (type: string, payload: any) => {
-      // BACKGROUND TAB FIX: Block false-positive pause/seek events from throttled tabs
       if (
         !isDocumentVisibleRef.current &&
         payload?.fromNative &&
@@ -370,13 +351,8 @@ export default function Player() {
       ) {
         return;
       }
-      // Respect existing nonce if provided (e.g. from usePlaybackSync sync_correction),
-      // otherwise generate a fresh one for UI-driven actions.
       const nonce = payload?.nonce || crypto.randomUUID();
 
-      // Normalize command types to playback statuses for getExpectedStatus comparisons
-      // ("play" → "playing", "pause" → "paused") so guards like
-      // `expectedStatus !== "playing"` work correctly.
       const statusMap: Record<string, string> = {
         play: "playing",
         pause: "paused",
@@ -433,7 +409,6 @@ export default function Player() {
       pos = playback.basePosition;
     }
 
-    // Bypass iframe autoplay restrictions for Twitch by calling play synchronously during the click event
     playTwitchDuringUserGesture();
 
     emitCommand("play", { position: pos });
@@ -449,9 +424,6 @@ export default function Player() {
     const nativePause = nativePauseResumeRef.current;
     nativePauseResumeRef.current = null;
     const currentRoom = useStore.getState().room;
-    // Only a current, emitted native Pause can authorize a rapid resume inside
-    // the seek window. A later seek clears this correlation, including paused
-    // seeks whose synthetic Play must remain suppressed.
     const resumesNativePause =
       providerName === "youtube" &&
       healthController.canAcceptProviderEvents() &&
@@ -464,8 +436,6 @@ export default function Player() {
         ((currentRoom?.sequence ?? -1) > nativePause.sequence &&
           currentRoom?.playback.status === "paused" &&
           currentRoom.playback.lastActionNonce === nativePause.nonce));
-    // Canonical reconciliation holds the provider paused during the native
-    // pause debounce, so an intervening Play is a fresh local resume.
     intentManager.clearPauseDebounce();
     healthController.set("ready");
     setPlaying(true);
@@ -478,14 +448,10 @@ export default function Player() {
       return;
     }
 
-    // YouTube native controls should not lose deliberate play clicks during the
-    // short post-command ACK window.
     if (providerName !== "youtube" && intentManager.shouldBlockNativeEvent()) {
       return;
     }
 
-    // [Problem 1 Fix/Race Condition Fix]: Rely on local Optimistic UI identity if recent action fired,
-    // otherwise fallback to websocket state.
     const expectedStatus = intentManager.getExpectedStatus(playback?.status);
 
     if (canControl && expectedStatus !== "playing") {
@@ -496,9 +462,6 @@ export default function Player() {
   const handleNativePause = useEventCallback(() => {
     intentManager.clearPauseDebounce();
 
-    // A recent canonical seek alone does not identify a synthetic YouTube
-    // Pause. Its current-provider health gate and deferred validation still
-    // reject unavailable/stale events; other providers retain seek suppression.
     if (
       intentManager.isInMediaTransition() ||
       intentManager.isUserDraggingScrubber() ||
@@ -512,9 +475,6 @@ export default function Player() {
       return;
     }
 
-    // A3 Fix: Twitch fires a ghost PAUSE after seek ops. Its async pipeline
-    // can delay the event beyond the standard shouldBlockNativeEvent window.
-    // Use a wider 2500ms seek-detection window specifically for Twitch.
     if (
       providerName === "twitch" &&
       (intentManager.isRecentProgrammaticSeek(2500) ||
@@ -539,7 +499,6 @@ export default function Player() {
       ) {
         return;
       }
-      // Look at local state first
       const currentPlayback = useStore.getState().room?.playback;
       const expectedStatus = intentManager.getExpectedStatus(
         currentPlayback?.status,
@@ -597,7 +556,6 @@ export default function Player() {
     playerEvents.handleNativePause,
   ]);
 
-  // C1: Keyboard seek handler
   const handleKeyboardSeek = useCallback(
     (delta: number) => {
       const currentPos = getAccurateTime();
@@ -606,7 +564,6 @@ export default function Player() {
         0,
         duration > 0 ? Math.min(duration, target) : target,
       );
-      // P6: Allow user play/pause clicks during seek ignore window
       intentManager.ignoreEventsFor(2000, true);
       const provider = providerName;
       let seekTarget = realPlayerRef.current;
@@ -636,7 +593,6 @@ export default function Player() {
     ],
   );
 
-  // C2: Double-click fullscreen toggle
   const toggleFullscreen = useCallback(() => {
     if (fscreen.fullscreenEnabled && containerRef.current) {
       if (fscreen.fullscreenElement) {
@@ -669,13 +625,10 @@ export default function Player() {
     setSeeking(false);
     const newPosition = percent * duration;
 
-    // Register flashback for large jumps
     if (currentMediaId && canControl) {
       registerPossibleFlashback(getAccurateTime(), newPosition, currentMediaId);
     }
 
-    // **INTENT MASK**: Vital for preventing rewind rollback. Drop native buffering events caused by this manual seek.
-    // P6: Allow user play/pause clicks during this window
     intentManager.ignoreEventsFor(2000, true);
 
     const provider = providerName;
@@ -685,7 +638,6 @@ export default function Player() {
       provider,
     );
     if (didSeekRealPlayer) {
-      // Explicitly call .play() since Twitch pauses on seek
       const realPlayer = realPlayerRef.current;
       if (
         playing &&
@@ -733,7 +685,6 @@ export default function Player() {
     currentMediaId && (permissions?.isLeader || permissions?.isOwnerOrMod),
   );
 
-  // formatTime is now imported from @/lib/utils
 
   const nextItem = useStore(
     useShallow((s) => {
@@ -760,7 +711,7 @@ export default function Player() {
           prev.show === shouldShow &&
           (!shouldShow || Math.ceil(prev.remaining) === Math.ceil(remaining))
         ) {
-          return prev; // Avoid unnecessary re-renders
+          return prev;
         }
         return { show: shouldShow, remaining };
       });
@@ -779,7 +730,6 @@ export default function Player() {
     );
   }
 
-  // (Hooks merged upwards, see top of render)
 
   const timeRemaining = upNextState.remaining;
   const showUpNext = upNextState.show && nextItem !== null;
@@ -793,10 +743,8 @@ export default function Player() {
       <div
         className="relative h-full min-h-[40vh] w-full flex-1 md:min-h-full"
         onClick={() => {
-          // Click outside player area — no-op (quality menu is now self-contained)
         }}
         onDoubleClick={(e) => {
-          // C2: Double-click to toggle fullscreen (ignore if clicking controls)
           const target = e.target as HTMLElement;
           if (target.closest("button") || target.closest("input")) return;
           toggleFullscreen();
@@ -864,7 +812,6 @@ export default function Player() {
           )}
         </div>
 
-        {/* Up Next Overlay Layer */}
         {showUpNext && upNextDismissedForMedia !== currentMediaId && (
           <UpNextOverlay
             timeRemaining={timeRemaining}
@@ -874,23 +821,19 @@ export default function Player() {
           />
         )}
 
-        {/* Universal Sync Status Badge — visible for ALL providers */}
         <SyncStatusBadge
           driftRef={driftRef}
           playbackHealth={playbackHealth}
           reconnecting={isReconnecting}
         />
 
-        {/* Thematic Scanline Overlay */}
         {currentMedia.provider?.toLowerCase() !== "youtube" && (
           <div className="pointer-events-none absolute inset-0 z-0 bg-[linear-gradient(rgba(0,0,0,0)_50%,rgba(0,0,0,0.1)_50%)] bg-size-[100%_4px] opacity-30 mix-blend-overlay" />
         )}
 
-        {/* Interaction overlay - Blocks native interaction but allows custom controls */}
         {currentMedia.provider?.toLowerCase() !== "youtube" &&
           currentMedia.provider?.toLowerCase() !== "twitch" && (
             <>
-              {/* Main click capture layer */}
               <button
                 type="button"
                 aria-label={playing ? "Pause" : "Play"}
@@ -916,12 +859,10 @@ export default function Player() {
 
         {isBuffering && playing && !error && <BufferingOverlay />}
 
-        {/* PAUSED Overlay */}
         {!playing && isReady && !error && userJoined && (
           <PausedOverlay canControl={canControl} onPlay={handlePlay} />
         )}
 
-        {/* User Gesture Guard Overlay */}
         {!userJoined && (
           <UserGestureGuard
             onActivate={() => {
@@ -934,11 +875,9 @@ export default function Player() {
           />
         )}
 
-        {/* Smart Sleep Mode Overlay */}
         {isSleeping && <SleepOverlay onWakeUp={wakeUp} />}
       </div>
 
-      {/* Custom Controls Panel */}
       {currentMedia.provider?.toLowerCase() !== "youtube" &&
         currentMedia.provider?.toLowerCase() !== "twitch" && (
           <PlayerControlBar

@@ -10,8 +10,8 @@ const ytSearchQuerySchema = z.string().min(1);
 const ytSearchVideoSchema = z.object({
   title: z.string(),
   url: z.string(),
-  seconds: z.number().int().nonnegative().catch(0), // Fallback if missing
-  thumbnail: z.string().url().catch(""), // Fallback if missing
+  seconds: z.number().int().nonnegative().catch(0),
+  thumbnail: z.string().url().catch(""),
   author: z.object({ name: z.string() }).catch({ name: "Unknown" }),
 });
 
@@ -21,7 +21,6 @@ const ytSearchResponseSchema = z.object({
 
 const searchCache = new LRUCache<string, any>(200, 1000 * 60 * 60);
 
-// Circuit Breaker
 class CircuitBreaker {
   private failures = 0;
   private lastFailureTime = 0;
@@ -33,7 +32,7 @@ class CircuitBreaker {
   isOpen(): boolean {
     if (this.failures >= this.threshold) {
       if (Date.now() - this.lastFailureTime > this.resetTimeoutMs) {
-        this.failures = 0; // Half-open
+        this.failures = 0;
         return false;
       }
       return true;
@@ -51,9 +50,8 @@ class CircuitBreaker {
   }
 }
 
-const ytSearchBreaker = new CircuitBreaker(5, 60000); // 1 minute lockout after 5 consecutive failures
+const ytSearchBreaker = new CircuitBreaker(5, 60000);
 
-// Worker Thread isolation for yt-search to prevent unbounded lingering promises
 const workerCode = `
   import { parentPort, workerData } from 'node:worker_threads';
   import { createRequire } from 'node:module';
@@ -164,7 +162,6 @@ export async function GET(request: Request) {
 
   const q = qResult.data;
 
-  // 1. Check Cache (L1)
   const cached = searchCache.get(q);
   if (cached) {
     return NextResponse.json({ videos: cached });
@@ -174,7 +171,6 @@ export async function GET(request: Request) {
     let rawResult;
     const googleApiKey = process.env.YOUTUBE_API_KEY;
 
-    // 2. Circuit Breaker + Primary API Selector
     if (googleApiKey && !ytSearchBreaker.isOpen()) {
       try {
         rawResult = await searchWithGoogleApi(q, googleApiKey);
@@ -185,8 +181,6 @@ export async function GET(request: Request) {
         rawResult = await searchYoutubeWithWorker(q, 5000);
       }
     } else {
-      // Either we have no API key, OR the breaker for the Google API is OPEN.
-      // In this case, we rely purely on the worker.
       try {
         rawResult = await searchYoutubeWithWorker(q, 5000);
       } catch (e) {
@@ -198,10 +192,8 @@ export async function GET(request: Request) {
       }
     }
 
-    // 3. Validate Response Shape using Zod
     const parsedData = ytSearchResponseSchema.parse(rawResult);
 
-    // 4. Transform Output
     const videos = parsedData.videos.slice(0, 5).map((v) => ({
       title: v.title,
       url: v.url,
@@ -210,7 +202,6 @@ export async function GET(request: Request) {
       author: v.author?.name ?? "Unknown",
     }));
 
-    // 5. Update Cache
     searchCache.set(q, videos);
 
     return NextResponse.json({ videos });

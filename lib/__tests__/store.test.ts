@@ -81,7 +81,6 @@ vi.mock("../socket", () => {
 
 describe("useSettingsStore", () => {
   beforeEach(() => {
-    // Reset local storage
     localStorage.clear();
   });
 
@@ -201,7 +200,6 @@ describe("useStore", () => {
     localStorage.clear();
     const { result } = renderHook(() => useStore());
     act(() => {
-      // Clear state manually for clean runs
       useStore.setState({
         room: null,
         fullRoomSequence: undefined,
@@ -832,7 +830,6 @@ describe("useStore", () => {
         isConnected: true,
         room: { id: "room1", sequence: 1 } as any,
       });
-      // Nonce is now injected by emitCommand (Player.tsx), not sendCommand.
       result.current.sendCommand("play", {
         position: 10,
         nonce: "upstream-nonce",

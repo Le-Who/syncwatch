@@ -60,7 +60,6 @@ export function PlayerControlBar({
   return (
     <div className="font-theme absolute right-0 bottom-0 left-0 z-50 p-4 opacity-100 transition-opacity duration-300 md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100">
       <div className="bg-theme-bg/80 border-theme-border/50 rounded-theme border-2 p-3 shadow-lg backdrop-blur-md">
-        {/* Timeline */}
         <div className="mb-3 flex items-center space-x-4">
           <Scrubber
             playerRef={playerRef}
@@ -74,7 +73,6 @@ export function PlayerControlBar({
 
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-6">
-            {/* Play/Pause */}
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -95,7 +93,6 @@ export function PlayerControlBar({
               )}
             </button>
 
-            {/* Next */}
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -108,7 +105,6 @@ export function PlayerControlBar({
               <SkipForward className="h-5 w-5 fill-current" />
             </button>
 
-            {/* Undo Seek (Flashback) */}
             {canControl &&
               flashbacks.some((f) => f.mediaId === currentMediaId) && (
                 <button
@@ -127,7 +123,6 @@ export function PlayerControlBar({
                 </button>
               )}
 
-            {/* Playback Speed */}
             <div className="group/speed relative flex items-center space-x-2">
               <button
                 aria-label="Playback speed"
@@ -165,7 +160,6 @@ export function PlayerControlBar({
               </div>
             </div>
 
-            {/* Volume */}
             <div className="group/volume relative flex items-center space-x-3">
               <button
                 onClick={(e) => {
@@ -203,7 +197,6 @@ export function PlayerControlBar({
               </div>
             </div>
 
-            {/* Meta */}
             <div className="bg-theme-accent text-theme-bg ml-4 hidden rounded-full px-3 py-0.5 text-[10px] font-bold tracking-wider uppercase shadow-sm md:flex">
               {currentMedia?.provider}
             </div>
@@ -224,7 +217,6 @@ export function PlayerControlBar({
               </span>
             )}
 
-            {/* Theater Mode */}
             <button
               onClick={toggleTheaterMode}
               aria-label={
@@ -240,7 +232,6 @@ export function PlayerControlBar({
               <MonitorPlay className="h-5 w-5" />
             </button>
 
-            {/* Fullscreen */}
             <button
               onClick={() => {
                 if (fscreen.fullscreenEnabled && containerRef.current) {

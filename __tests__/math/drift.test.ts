@@ -4,14 +4,11 @@ import { calculateDrift } from "../../lib/utils";
 
 describe("Calculate Drift (lib/utils.ts)", () => {
   it("TC-01: Correctly calculates expected position when playing", () => {
-    // Media was at 10.0 seconds at server time 1000. It is now 1500. Rate is 1.0.
-    // It should be at 10.5 seconds.
     const { expectedPosition, drift } = calculateDrift(
       "playing",
       10.0,
       1000,
       1500,
-      // Local position is 10.2 (we are 300ms behind the expected 10.5)
       10.2,
       1.0,
     );
@@ -26,12 +23,11 @@ describe("Calculate Drift (lib/utils.ts)", () => {
       10.0,
       1000,
       1500,
-      10.8, // Local position kept drifting (ReactPlayer bug)
+      10.8,
       1.0,
     );
 
     expect(expectedPosition).toBe(10.0);
-    // Drift is expected position (10.0) compared to local (10.8) -> 0.8s
     expect(drift).toBeCloseTo(0.8, 2);
   });
 });
@@ -52,7 +48,6 @@ describe("Playback Rate Adjustment (lib/drift-math.ts)", () => {
   });
 
   it("TC-04: Ignores adjustment for iframe providers (YouTube, Twitch, Vimeo)", () => {
-    // Iframes manage their own low-level clock buffering, we shouldn't pitch-shift them
     const { rate } = calculatePlaybackRate(
       1.0,
       10.0,
@@ -65,7 +60,6 @@ describe("Playback Rate Adjustment (lib/drift-math.ts)", () => {
   });
 
   it("TC-05: Returns to normal rate if drift is MASSIVE (> 3 seconds)", () => {
-    // Huge drift -> hard seek is incoming. Do not speed up to 1.05.
     const { rate, isAdjusting } = calculatePlaybackRate(
       4.5,
       10.0,
@@ -79,7 +73,6 @@ describe("Playback Rate Adjustment (lib/drift-math.ts)", () => {
   });
 
   it("TC-05b: Returns to normal rate and stops adjusting if drift is MASSIVE (> 3 seconds) even if previously adjusting", () => {
-    // Huge drift -> hard seek is incoming. Must reset isAdjusting to false.
     const { rate, isAdjusting } = calculatePlaybackRate(
       4.5,
       10.0,
@@ -88,15 +81,13 @@ describe("Playback Rate Adjustment (lib/drift-math.ts)", () => {
       false,
       false,
       undefined,
-      true, // previously adjusting
+      true,
     );
     expect(rate).toBe(1.0);
     expect(isAdjusting).toBe(false);
   });
 
   it("TC-06: ACCELERATES playback if local position is BEHIND expected position (drift > 0.6s, not previously adjusting)", () => {
-    // Expected = 12.0s. Local = 11.0s. Drift = 1.0s. Not previously adjusting.
-    // Hysteresis: starts at 0.6s when not previously adjusting.
     const { rate, isAdjusting } = calculatePlaybackRate(
       1.0,
       11.0,
@@ -110,7 +101,6 @@ describe("Playback Rate Adjustment (lib/drift-math.ts)", () => {
   });
 
   it("TC-07: DECELERATES playback if local position is AHEAD of expected position (drift > 0.6s)", () => {
-    // Expected = 11.0s. Local = 12.0s. Drift = 1.0s.
     const { rate, isAdjusting } = calculatePlaybackRate(
       1.0,
       12.0,
@@ -124,7 +114,6 @@ describe("Playback Rate Adjustment (lib/drift-math.ts)", () => {
   });
 
   it("TC-08: EXACT sync returns normal rate", () => {
-    // Drift = 0.1s (which is < 0.3 threshold)
     const { rate } = calculatePlaybackRate(
       0.1,
       10.0,
@@ -136,9 +125,7 @@ describe("Playback Rate Adjustment (lib/drift-math.ts)", () => {
     expect(rate).toBe(1.0);
   });
 
-  // Hysteresis tests
   it("TC-09: Does NOT start correction at 0.5s drift when not previously adjusting (hysteresis)", () => {
-    // Drift = 0.55s, below the 0.6s start threshold
     const { rate, isAdjusting } = calculatePlaybackRate(
       0.55,
       10.0,
@@ -154,7 +141,6 @@ describe("Playback Rate Adjustment (lib/drift-math.ts)", () => {
   });
 
   it("TC-10: CONTINUES correction at 0.4s drift when previously adjusting (hysteresis)", () => {
-    // Drift = 0.4s, above the 0.3s stop threshold, previously adjusting
     const { rate, isAdjusting } = calculatePlaybackRate(
       0.4,
       10.0,
@@ -170,7 +156,6 @@ describe("Playback Rate Adjustment (lib/drift-math.ts)", () => {
   });
 
   it("TC-11: STOPS correction at 0.2s drift even when previously adjusting (hysteresis)", () => {
-    // Drift = 0.2s, below the 0.3s stop threshold
     const { rate, isAdjusting } = calculatePlaybackRate(
       0.2,
       10.0,
@@ -186,7 +171,6 @@ describe("Playback Rate Adjustment (lib/drift-math.ts)", () => {
   });
 
   it("TC-12: Does NOT start correction at exact CORRECTION_START (0.6s) boundary", () => {
-    // Drift = 0.6s, exactly at the start threshold
     const { rate, isAdjusting } = calculatePlaybackRate(
       0.6,
       10.0,
@@ -202,7 +186,6 @@ describe("Playback Rate Adjustment (lib/drift-math.ts)", () => {
   });
 
   it("TC-13: STARTS correction just above CORRECTION_START (0.61s) boundary", () => {
-    // Drift = 0.61s, just above the start threshold
     const { rate, isAdjusting } = calculatePlaybackRate(
       0.61,
       10.0,
@@ -218,7 +201,6 @@ describe("Playback Rate Adjustment (lib/drift-math.ts)", () => {
   });
 
   it("TC-14: STOPS correction at exact CORRECTION_STOP (0.3s) boundary even when previously adjusting", () => {
-    // Drift = 0.3s, exactly at the stop threshold
     const { rate, isAdjusting } = calculatePlaybackRate(
       0.3,
       10.0,
@@ -234,7 +216,6 @@ describe("Playback Rate Adjustment (lib/drift-math.ts)", () => {
   });
 
   it("TC-15: CONTINUES correction just above CORRECTION_STOP (0.31s) boundary when previously adjusting", () => {
-    // Drift = 0.31s, just above the stop threshold
     const { rate, isAdjusting } = calculatePlaybackRate(
       0.31,
       10.0,

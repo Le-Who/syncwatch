@@ -37,26 +37,21 @@ describe("Redis Rate Limit & Persistence Fallbacks", () => {
   });
 
   it("TC-01: Should return true (fail open) if no Redis is configured", async () => {
-    // Arrange & Act
     const result = await checkRedisRateLimit("ws:command:127.0.0.1", 10, 60000);
 
-    // Assert
     expect(result).toBe(true);
     expect(getRedisClient()).toBeNull();
   });
 
   it("TC-02: Should evaluate limits via multi block when Redis is present", async () => {
-    // Arrange
     process.env.REDIS_URL = "redis://localhost:6379";
 
-    // Act
     const allowed = await checkRedisRateLimit(
       "ws:command:192.168.1.1",
       10,
       60000,
     );
 
-    // Assert
     expect(allowed).toBe(true);
   });
 

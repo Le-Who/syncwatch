@@ -6,10 +6,6 @@ interface UserGestureGuardProps {
   onActivate: () => void;
 }
 
-/**
- * Overlay requiring user gesture to enable autoplay (browser policy).
- * Must be clicked before the player can begin playback.
- */
 export function UserGestureGuard({ onActivate }: UserGestureGuardProps) {
   return (
     <div className="pointer-events-auto absolute inset-0 z-40 flex flex-col items-center justify-center bg-black/80 backdrop-blur-md">

@@ -1,7 +1,6 @@
 import { z } from "zod";
 
 export const commandSchema = z.discriminatedUnion("type", [
-  // Fast Path
   z.object({
     type: z.literal("play"),
     payload: z.object({
@@ -56,7 +55,6 @@ export const commandSchema = z.discriminatedUnion("type", [
     }),
   }),
 
-  // Slow Path
   z.object({
     type: z.literal("add_item"),
     payload: z
@@ -140,7 +138,6 @@ export const commandSchema = z.discriminatedUnion("type", [
     payload: z.object({ token: z.string() }),
   }),
 
-  // Legacy Commands (now fully implemented)
   z.object({
     type: z.literal("update_duration"),
     payload: z.object({

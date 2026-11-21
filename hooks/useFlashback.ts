@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from "react";
 
-const FLASHBACK_THRESHOLD_SEC = 15; // Расстояние для детектирования миссклика
+const FLASHBACK_THRESHOLD_SEC = 15;
 const MAX_FLASHBACKS = 5;
 
 export interface FlashbackPoint {
@@ -11,7 +11,6 @@ export interface FlashbackPoint {
 
 export function useFlashback() {
   const [flashbacks, setFlashbacks] = useState<FlashbackPoint[]>([]);
-  // Undo returns a position synchronously; React may defer render updates.
   const stackRef = useRef<FlashbackPoint[]>([]);
 
   const registerPossibleFlashback = useCallback(

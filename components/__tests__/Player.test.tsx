@@ -19,7 +19,6 @@ const providerCallbacks = vi.hoisted(
 );
 const providerPositions = vi.hoisted(() => new Map<string, number>());
 
-// Mock Zustand store hooks
 vi.mock("@/lib/store", () => {
   return {
     useStore: vi.fn(),
@@ -27,7 +26,6 @@ vi.mock("@/lib/store", () => {
   };
 });
 
-// Mock dynamic import of react-player and motion
 vi.mock("next/dynamic", async () => {
   const React = await import("react");
   return {
@@ -60,7 +58,6 @@ vi.mock("next/dynamic", async () => {
             data-youtube-controls={String(props.config?.youtube?.controls)}
             data-youtube-disablekb={String(props.config?.youtube?.disablekb)}
           >
-            {/* Mock events needed by tests */}
             <button
               data-testid="loadedmetadata-event"
               onClick={() =>
@@ -120,7 +117,6 @@ describe("Player Component", () => {
     vi.useRealTimers();
     consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    // Default mock implementation
     (useSettingsStore as any).mockReturnValue({
       volume: 0.8,
       muted: false,
@@ -489,7 +485,6 @@ describe("Player Component", () => {
   it.each([300, 1308])(
     "emits one native YouTube Pause at seek age %sms after production reconciliation",
     (seekAgeMs) => {
-      // Wrong branch: treating a recent canonical seek as proof of a synthetic Pause.
       vi.useFakeTimers();
       vi.setSystemTime(10_000);
       const url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
@@ -527,7 +522,6 @@ describe("Player Component", () => {
       );
       fireEvent.click(screen.getByTestId("loadedmetadata-event"));
       act(() => vi.advanceTimersByTime(500));
-      // Reconciliation actually sought the provider to the hand-derived canonical target.
       expect(providerPositions.get(url)).toBe(20.5);
       mockSendCommand.mockClear();
       act(() => vi.advanceTimersByTime(seekAgeMs));
@@ -574,25 +568,16 @@ describe("Player Component", () => {
 
     render(<Player />);
 
-    // To test the strict one-way data flow, we must interact with the Custom Controls,
-    // not the underlying mock ReactPlayer events (unless nativeInteraction is true).
 
-    // First, user must join the room manually to dismiss "Initialize Stream Sync"
     fireEvent.click(screen.getByText(/Initialize Stream Sync/i));
 
-    // The play button is inside the custom controls. It toggles playing state.
-    // It's a button containing the Play icon. We can find it by its role or wait for it.
-    // Let's use getByRole button but there are multiple buttons.
-    // We can just find the SVG with lucide-play
     const playButtonIcon = document.querySelector(".lucide-play");
     expect(playButtonIcon).toBeInTheDocument();
 
-    // The parent button of the icon is what has the onClick handler
     if (playButtonIcon && playButtonIcon.parentElement) {
       fireEvent.click(playButtonIcon.parentElement);
     }
 
-    // Should emit "play" command
     expect(mockSendCommand).toHaveBeenCalledWith("play", expect.any(Object));
   });
 
@@ -615,7 +600,7 @@ describe("Player Component", () => {
       participantId: "user1",
       sendCommand: mockSendCommand,
       serverClockOffset: 0,
-      occRollbackTick: 1, // trigger rollback
+      occRollbackTick: 1,
     });
 
     render(<Player />);

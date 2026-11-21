@@ -25,13 +25,12 @@ export default function Reactions() {
       const newParticle = {
         id: crypto.randomUUID(),
         emoji: reaction.emoji,
-        x: Math.random() * 80 + 10, // 10% to 90%
+        x: Math.random() * 80 + 10,
         duration: 2.5 + Math.random() * 1.5,
       };
 
       setParticles((prev) => [...prev, newParticle]);
 
-      // Remove after animation completes
       setTimeout(() => {
         setParticles((prev) => prev.filter((p) => p.id !== newParticle.id));
       }, 4000);
@@ -47,7 +46,6 @@ export default function Reactions() {
     const socket = roomSocketService.getSocket();
     socket.emit("reaction", { emoji });
 
-    // Play locally too
     const newParticle = {
       id: crypto.randomUUID(),
       emoji,
@@ -62,7 +60,6 @@ export default function Reactions() {
 
   return (
     <>
-      {/* Particles Layer */}
       <div className="pointer-events-none absolute inset-0 z-40 overflow-hidden">
         {particles.map((p) => (
           <div
@@ -78,7 +75,6 @@ export default function Reactions() {
         ))}
       </div>
 
-      {/* Reaction Controls */}
       <div className="absolute right-4 bottom-4 z-50 flex flex-col items-center md:top-1/2 md:bottom-auto md:-translate-y-1/2">
         {isOpen && (
           <div className="bg-theme-bg/80 border-theme-border/50 rounded-theme animate-in fade-in slide-in-from-bottom-2 mb-2 flex flex-col-reverse gap-2 border-2 p-2 shadow-lg backdrop-blur-xl">

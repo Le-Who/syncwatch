@@ -476,8 +476,6 @@ describe("usePlaybackSync", () => {
     onReconciled.mockClear();
 
     act(() => {
-      // This delivery happened before the socket dropped, but after the last
-      // sync tick. It must be part of the disconnect floor, not reconnect proof.
       room.currentMediaId = "media-b";
       room.playlist.push({
         id: "media-b",

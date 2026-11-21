@@ -40,9 +40,7 @@ interface AppState {
   serverClockOffset: number;
   isConnected: boolean;
   isSleeping: boolean;
-  /** Monotonic transport generation, advanced once when a live socket drops. */
   connectionEpoch: number;
-  /** Canonical delivery version observed synchronously at the socket drop. */
   connectionDeliveryFloor: number;
   participantId: string | null;
   sessionToken: string | null;
@@ -59,7 +57,6 @@ interface AppState {
   resyncSession: () => Promise<void>;
   setNickname: (name: string) => void;
   setLocalPlaybackHealth: (health: PlaybackHealth) => void;
-  /** True when dispatched, false for HTTP rejection, null when superseded. */
   connect: (roomId: string, nickname: string) => Promise<boolean | null>;
   disconnect: () => void;
   suspendConnection: () => void;
@@ -408,8 +405,6 @@ export const useStore = create<AppState>((set, get) => ({
       controller.abort();
       rejectCancellation(new Error("Session recovery cancelled"));
     };
-    // Bound both response headers and JSON parsing, including transports that
-    // finish after cancellation. Expiry permits manual retry without replay.
     const deadline = setTimeout(cancel, 15_000);
     const unsubscribe = useStore.subscribe(() => {
       if (!isCurrentSession()) cancel();
@@ -557,7 +552,6 @@ export const useStore = create<AppState>((set, get) => ({
     } catch (err) {
       if (attempt !== connectionAttempt) return null;
       console.warn("Could not establish secure session", err);
-      // Fallback
       roomSocketService.connect(roomId, nickname, pId as string, sToken);
       return true;
     }
@@ -575,8 +569,6 @@ export const useStore = create<AppState>((set, get) => ({
   },
   suspendConnection: () => {
     connectionAttempt += 1;
-    // Keep the canonical room and mounted player so activity can reconnect.
-    // Set sleep first: the retry overlay must not reopen this transport.
     set({ isSleeping: true });
     roomSocketService.disconnect();
     set({ isConnected: false });
@@ -589,7 +581,6 @@ export const useStore = create<AppState>((set, get) => ({
       commandSequence: s.commandSequence + 1,
     }));
 
-    // P4 Fix: Read the UPDATED sequence from the store after set()
     const newSequence = get().commandSequence;
 
     roomSocketService.sendCommand(

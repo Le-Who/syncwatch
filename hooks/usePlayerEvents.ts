@@ -25,11 +25,6 @@ export interface UsePlayerEventsOptions {
   handleNativePause: () => void;
 }
 
-/**
- * Extracts shared player event handlers used by ReactPlayer-backed providers.
- *
- * This hook keeps provider lifecycle events centralized.
- */
 export function usePlayerEvents({
   intentManager,
   healthController,
@@ -71,7 +66,6 @@ export function usePlayerEvents({
     [],
   );
 
-  /** Shared readiness logic after provider metadata is available. */
   const handleReady = useCallback(
     (rPlayer: PlayerMethods | null | undefined, isTwitch: boolean) => {
       if (!isCurrentProviderEpoch()) return;
@@ -89,7 +83,6 @@ export function usePlayerEvents({
       const duration = getPlayerDuration(realPlayerRef.current, provider);
       if (duration > 0) setDuration(duration);
 
-      // Clear state-based transition guard for this media
       if (currentMediaId) {
         intentManager.clearMediaTransition(currentMediaId);
         useStore.getState().sendCommand("media_ready", {
@@ -111,7 +104,6 @@ export function usePlayerEvents({
     ],
   );
 
-  /** Shared onError logic */
   const handleError = useCallback(
     (e: unknown) => {
       if (!isCurrentProviderEpoch()) return;
@@ -127,7 +119,6 @@ export function usePlayerEvents({
     [currentMediaId, healthController, isCurrentProviderEpoch, setError],
   );
 
-  /** Shared onSeek logic — filters programmatic seeks */
   const handleSeek = useCallback(
     (seconds: number, isTwitch: boolean) => {
       if (!canAcceptProviderEvent()) return;
@@ -137,8 +128,6 @@ export function usePlayerEvents({
       if (canControl) {
         emitCommand("seek", { position: seconds, fromNative: true });
 
-        // Twitch native player auto-pauses when scrubbing.
-        // If we were playing before the scrub, auto-resume after a short delay.
         if (isTwitch && playing) {
           intentManager.ignoreEventsFor(2000);
           const timer = setTimeout(() => {
@@ -161,7 +150,6 @@ export function usePlayerEvents({
     ],
   );
 
-  /** Shared onDurationChange — handles both Twitch (direct number) and ReactPlayer (event) */
   const handleDurationChange = useCallback(
     (durOrEvent: number | any) => {
       if (!isCurrentProviderEpoch()) return;
@@ -194,7 +182,6 @@ export function usePlayerEvents({
     ],
   );
 
-  /** Shared onEnded handler */
   const handleEnded = useCallback(() => {
     if (!canAcceptProviderEvent()) return;
     if (canControl) {
@@ -202,13 +189,11 @@ export function usePlayerEvents({
     }
   }, [canAcceptProviderEvent, canControl, currentMediaId, emitCommand]);
 
-  /** Shared onWaiting/buffering handler */
   const handleWaiting = useCallback(() => {
     if (!isCurrentProviderEpoch()) return;
     healthController.set("buffering");
   }, [healthController, isCurrentProviderEpoch]);
 
-  /** Shared onPlaying handler (buffer recovery) */
   const handlePlaying = useCallback(() => {
     if (!isCurrentProviderEpoch()) return;
     healthController.set("ready");

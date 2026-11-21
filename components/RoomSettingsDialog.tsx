@@ -52,7 +52,6 @@ export default function RoomSettingsDialog({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      {/* Cinematic overlay */}
       <div
         className="bg-theme-bg/60 absolute inset-0 backdrop-blur-md"
         onClick={onClose}

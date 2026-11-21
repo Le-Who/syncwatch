@@ -17,7 +17,6 @@ vi.mock("../lib/redis-rate-limit", () => ({
   getRedisClient: () => null,
 }));
 
-// Adapt the external Redis boundary to the same real repository used by commands.
 vi.mock("../lib/redis-actor", () => ({
   getRedisRoom: (roomId: string) => repository.get(roomId),
   setRedisRoomCAS: async (roomId: string, next: RoomState, version: number) => {

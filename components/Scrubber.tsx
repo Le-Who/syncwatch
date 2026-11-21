@@ -34,9 +34,7 @@ export function Scrubber({
 
   const [isScrubbing, setIsScrubbing] = useState(false);
 
-  // Exclusively track UI scrubbing position locally to prevent jumping during drag
   const scrubPercentRef = useRef<number>(0);
-  // P5 Fix: Throttle formatTime — only re-format when the floored second changes
   const lastFormattedSecondRef = useRef<number>(-1);
 
   useLayoutEffect(() => {
@@ -50,15 +48,12 @@ export function Scrubber({
     seekHandlersRef.current.onSeekCancel?.();
   }, []);
 
-  // A drag belongs to the permission and duration it started with. Release it
-  // before a changed scope (or unmount) can accept a document-level pointerup.
   useLayoutEffect(() => () => cancelDrag(), [canControl, duration, cancelDrag]);
 
   useEffect(() => {
     let animationFrameId: number;
     let isMounted = true;
 
-    // The core render loop for the high-frequency scrubber, detached from React state
     const updateProgress = () => {
       if (!isMounted) return;
 
@@ -68,7 +63,6 @@ export function Scrubber({
         progressBarRef.current &&
         timeDisplayRef.current
       ) {
-        // Read directly from the HTML5 media element or ReactPlayer instance
         const currentTime = playerRef.current.getCurrentTime
           ? playerRef.current.getCurrentTime()
           : playerRef.current.currentTime || 0;
@@ -82,7 +76,6 @@ export function Scrubber({
           if (progressBarRef.current) {
             progressBarRef.current.style.width = `${percent}%`;
           }
-          // P5 Fix: Only call formatTime when the floored second changes (~1/s vs 60/s)
           const flooredSecond = Math.floor(currentTime);
           if (
             timeDisplayRef.current &&
@@ -241,9 +234,7 @@ export function Scrubber({
         onPointerMove={handlePointerMoveHover}
         onPointerLeave={handlePointerLeaveHover}
       >
-        {/* Track */}
         <div className="bg-theme-bg/80 border-theme-border/50 group/timeline relative h-4 w-full cursor-pointer overflow-hidden rounded-full border shadow-inner transition-all hover:h-5">
-          {/* Progress fill */}
           <div
             ref={progressBarRef}
             className="from-theme-accent/80 to-theme-accent absolute top-0 left-0 h-full rounded-r-full bg-linear-to-r shadow-[0_0_12px_var(--color-theme-accent)] transition-transform duration-75"
@@ -254,7 +245,6 @@ export function Scrubber({
           />
         </div>
 
-        {/* Hover Time Badge */}
         <div
           ref={hoverBadgeRef}
           className="rounded-theme border-theme-accent/40 bg-theme-bg/95 text-theme-accent pointer-events-none absolute -top-10 z-10 -translate-x-1/2 border px-3 py-1.5 text-xs font-bold whitespace-nowrap opacity-0 shadow-[0_0_15px_rgba(0,0,0,0.8)] backdrop-blur-md transition-opacity"

@@ -1,12 +1,3 @@
-/**
- * PlaybackIntentManager — Guards against spurious native player events.
- *
- * Core mechanism: When the client emits a command (play/pause/seek), we
- * record the nonce. Native events are blocked until the server returns the
- * correlated terminal command ACK or canonical playback event, OR a
- * safety-net timeout expires. This replaces fragile wall-clock heuristics
- * with deterministic server acknowledgement.
- */
 import type { CommandAcknowledgement } from "./room-command-contract";
 
 export type PlaybackIntentCompletion = "playback_update" | "command_ack";
@@ -31,21 +22,13 @@ export class PlaybackIntentManager {
   private pauseDebounce: NodeJS.Timeout | null = null;
   private providerEventEpoch = 0;
 
-  // State-based media transition guard (replaces blunt timer)
   private _mediaTransitionId: string | null = null;
   private _mediaTransitionTimestamp: number = 0;
 
-  // ── Nonce-based ACK Pipeline ──────────────────────────────────────
-  /** The nonce we are currently waiting to be acknowledged by the server. */
   private _pendingNonce: string | null = null;
-  /** Timestamp when the pending nonce was set. Used for safety-net timeout. */
   private _pendingNonceTimestamp: number = 0;
-  /** Applied fast commands require canonical playback state; slow commands
-   *  can finish from their correlated acknowledgement alone. */
   private _pendingCompletion: PlaybackIntentCompletion = "playback_update";
   private _pendingBaseline: PlaybackIntentBaseline | null = null;
-  /** Safety-net timeout (ms): if no ACK arrives within this window, unblock.
-   *  This covers lost packets and socket reconnections. */
   private static readonly NONCE_ACK_TIMEOUT_MS = 3000;
 
   public setUserDraggingScrubber(isDragging: boolean) {
@@ -93,13 +76,6 @@ export class PlaybackIntentManager {
     this.lastProgrammaticSeek = Date.now();
   }
 
-  /**
-   * Suppress native player events for `ms` milliseconds.
-   * @param passThroughUserActions When true, user-initiated play/pause clicks
-   *   are NOT suppressed during this window — only programmatic/buffer events are.
-   *   This prevents the "eaten click" UX bug where a user clicks play/pause
-   *   during a post-seek ignore window and nothing happens.
-   */
   public ignoreEventsFor(ms: number, passThroughUserActions: boolean = false) {
     this.ignoreNativeEventsUntil = Date.now() + ms;
     this._allowUserActionsDuringIgnore = passThroughUserActions;
@@ -109,16 +85,10 @@ export class PlaybackIntentManager {
     return Date.now() < this.ignoreNativeEventsUntil;
   }
 
-  /**
-   * Begin a state-based transition. Native events are blocked until
-   * `clearMediaTransition(mediaId)` is called with the same ID.
-   * A 10-second hard timeout prevents permanent lockout.
-   */
   public setMediaTransition(mediaId: string) {
     this._mediaTransitionId = mediaId;
     this._mediaTransitionTimestamp = Date.now();
 
-    // Active auto-expiry: clears the guard if onReady never fires (e.g., player crash)
     if (this.mediaTransitionTimeout) {
       clearTimeout(this.mediaTransitionTimeout);
     }
@@ -134,10 +104,6 @@ export class PlaybackIntentManager {
     }, 8000);
   }
 
-  /**
-   * Called from onReady — clears the transition guard only if
-   * the ready event is for the media we're actually transitioning to.
-   */
   public clearMediaTransition(mediaId: string) {
     if (this._mediaTransitionId === mediaId) {
       this._mediaTransitionId = null;
@@ -150,7 +116,6 @@ export class PlaybackIntentManager {
 
   public isInMediaTransition(): boolean {
     if (!this._mediaTransitionId) return false;
-    // Hard timeout: 10s safety net prevents permanent lockout
     if (Date.now() - this._mediaTransitionTimestamp > 10000) {
       this._mediaTransitionId = null;
       return false;
@@ -158,15 +123,9 @@ export class PlaybackIntentManager {
     return true;
   }
 
-  // ── Nonce ACK Methods ─────────────────────────────────────────────
 
-  /**
-   * Returns true if we are waiting for a server ACK for a recently emitted
-   * command. This is the primary guard that replaces `isRecentCommand(ms)`.
-   */
   public isAwaitingServerAck(): boolean {
     if (!this._pendingNonce) return false;
-    // Safety-net: expire after timeout so we never permanently block
     if (
       Date.now() - this._pendingNonceTimestamp >=
       PlaybackIntentManager.NONCE_ACK_TIMEOUT_MS
@@ -179,12 +138,6 @@ export class PlaybackIntentManager {
     return true;
   }
 
-  /**
-   * Called when canonical playback arrives from the server. If the server's
-   * lastActionNonce matches our pending nonce, the command is ACKed
-   * and we clear the block. We also set a brief ignore window to
-   * absorb any trailing native events from the seek/play.
-   */
   public acknowledgeServerNonce(serverNonce?: string): void {
     if (serverNonce && this._pendingNonce === serverNonce) {
       this._pendingNonce = null;
@@ -192,16 +145,10 @@ export class PlaybackIntentManager {
       this._pendingBaseline = null;
       this.lastCommandEmitTime = Number.NEGATIVE_INFINITY;
       this.lastStateEmitted = null;
-      // Brief post-ACK cooldown to absorb trailing native events
       this.ignoreEventsFor(500);
     }
   }
 
-  /**
-   * Completes terminal command outcomes without waiting for a playback event
-   * that will never be published. Applied fast playback commands remain
-   * pending until their canonical `playback_updated` arrives.
-   */
   public acknowledgeCommand(acknowledgement: CommandAcknowledgement): void {
     if (this._pendingNonce !== acknowledgement.nonce) return;
     if (
@@ -218,19 +165,12 @@ export class PlaybackIntentManager {
     this.ignoreEventsFor(500);
   }
 
-  /**
-   * @param isUserInitiated When true, the event came from a deliberate user action
-   *   (e.g., clicking play/pause button). User-initiated events bypass the
-   *   time-based ignore window when `_allowUserActionsDuringIgnore` is active.
-   */
   public shouldBlockNativeEvent(isUserInitiated: boolean = false): boolean {
-    // User clicks always pass through if the ignore window was set with passthrough
     if (
       isUserInitiated &&
       this._allowUserActionsDuringIgnore &&
       this.isIgnoringNativeEvents()
     ) {
-      // Clear the ignore window since user took deliberate action
       this.ignoreNativeEventsUntil = 0;
       return false;
     }
@@ -289,7 +229,6 @@ export class PlaybackIntentManager {
     }, ms);
   }
 
-  /** Release every timer/guard owned by this Player instance. */
   public dispose() {
     if (this.mediaTransitionTimeout) {
       clearTimeout(this.mediaTransitionTimeout);
@@ -313,7 +252,6 @@ export class PlaybackIntentManager {
   public getExpectedStatus(
     fallbackStatus: string | undefined,
   ): string | undefined {
-    // Use nonce-based check first (deterministic), then fallback to time-based
     if (
       this._pendingNonce &&
       this.isAwaitingServerAck() &&

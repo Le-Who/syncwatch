@@ -9,7 +9,6 @@ import { SignJWT } from "jose";
 import { PARTICIPANT_GRACE_MS } from "../lib/participant-lifecycle";
 import { getRedisRoom } from "../lib/redis-actor";
 
-// 1. Mock Next.js to bypass heavy build compilation
 vi.mock("next", () => {
   return {
     default: () => ({
@@ -21,7 +20,6 @@ vi.mock("next", () => {
             method: req.method,
             headers: new Headers(req.headers as Record<string, string>),
             body: req,
-            // Node request streams require this for a streamed body.
             duplex: "half",
           } as RequestInit);
           const response = await POST(request);
@@ -39,7 +37,6 @@ vi.mock("next", () => {
   };
 });
 
-// 2. Real bounded local admission, with no external Redis dependency.
 vi.mock("../lib/redis-rate-limit", async (importOriginal) => {
   const actual =
     await importOriginal<typeof import("../lib/redis-rate-limit")>();
@@ -61,12 +58,9 @@ vi.mock("../lib/room-logic", async (importOriginal) => {
   };
 });
 
-// We force Redis fallback to in-memory mode for these tests by mocking getRedisClient to null.
-
 let ioServerPath = "";
 let httpServer: NetServer;
 
-// 3. Intercept HTTP server creation to force ephemeral port instead of :3000
 vi.mock("http", async (importOriginal) => {
   const actual: any = await importOriginal();
   return {
@@ -76,7 +70,6 @@ vi.mock("http", async (importOriginal) => {
       httpServer = server;
       const originalListen = server.listen.bind(server);
       server.listen = (...args: any[]) => {
-        // Force listen on ephemeral port 0
         return originalListen(0, args[1]);
       };
       return server;
@@ -84,7 +77,6 @@ vi.mock("http", async (importOriginal) => {
   };
 });
 
-// 4. Test Utility for AAA compliant assertions
 const waitForSocketEvent = (
   socket: ClientSocket,
   event: string,
@@ -138,21 +130,17 @@ describe("server.ts Real Socket.IO Integration", () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("JWT_SECRET", "default_local_secret_dont_use_in_prod");
     vi.stubEnv("NEXT_PUBLIC_APP_URL", TEST_ORIGIN);
-    // Exercise the local repository without inheriting developer DB credentials.
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "");
     vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "");
     vi.stubEnv("SUPABASE_SERVICE_KEY", "");
-    // Import server.ts to trigger app.prepare().then(...)
     await import("../server");
 
-    // Wait for the server to actually start listening
     await new Promise<void>((resolve) => {
       if (httpServer && httpServer.listening) {
         resolve();
       } else if (httpServer) {
         httpServer.on("listening", resolve);
       } else {
-        // Fallback polling if httpServer isn't captured immediately
         const interval = setInterval(() => {
           if (httpServer && httpServer.listening) {
             clearInterval(interval);
@@ -359,7 +347,6 @@ describe("server.ts Real Socket.IO Integration", () => {
   });
 
   it("TC-01: Connects and joins a room, establishing owner role", async () => {
-    // Arrange
     const JWT_SECRET = new TextEncoder().encode(
       "default_local_secret_dont_use_in_prod",
     );
@@ -379,10 +366,8 @@ describe("server.ts Real Socket.IO Integration", () => {
 
     await waitForSocketEvent(clientSocket, "connect");
 
-    // Arrange: Prepare to capture the async response
     const roomStatePromise = waitForSocketEvent(clientSocket, "room_state");
 
-    // Act
     clientSocket.emit("join_room", {
       roomId: "test-room-1",
       nickname: "OwnerUser",
@@ -391,7 +376,6 @@ describe("server.ts Real Socket.IO Integration", () => {
 
     const payload = await roomStatePromise;
 
-    // Assert
     expect(payload.room.id).toBe("test-room-1");
     expect(Object.keys(payload.room.participants)).toHaveLength(1);
 
@@ -441,7 +425,6 @@ describe("server.ts Real Socket.IO Integration", () => {
   });
 
   it("TC-03: Invalid Zod command payload types are rejected immediately", async () => {
-    // Arrange: Setup malicious authenticated client
     const JWT_SECRET = new TextEncoder().encode(
       "default_local_secret_dont_use_in_prod",
     );
@@ -461,7 +444,6 @@ describe("server.ts Real Socket.IO Integration", () => {
 
     await waitForSocketEvent(hostileSocket, "connect");
 
-    // Arrange: Join room (Precondition)
     const roomStatePromise = waitForSocketEvent(hostileSocket, "room_state");
     hostileSocket.emit("join_room", {
       roomId: "test-room-3",
@@ -470,10 +452,8 @@ describe("server.ts Real Socket.IO Integration", () => {
     });
     await roomStatePromise;
 
-    // Arrange: Capture the expected error event
     const errorPromise = waitForSocketEvent(hostileSocket, "error");
 
-    // Act: Dispatch structurally malformed command
     hostileSocket.emit("command", {
       roomId: "test-room-3",
       type: "play",
@@ -483,17 +463,14 @@ describe("server.ts Real Socket.IO Integration", () => {
 
     const err = await errorPromise;
 
-    // Assert: Ensure Zod parsing blocked the payload
     expect(err).toBeDefined();
     expect(err.message).toContain("Invalid command payload format");
   });
 
   it("TC-04: Existing session token recovers owner privileges upon reconnection", async () => {
-    // Arrange: Setup recovered socket with earlier valid token
     const JWT_SECRET = new TextEncoder().encode(
       "default_local_secret_dont_use_in_prod",
     );
-    // Use the same participantId to simulate recovery
     const token = await new SignJWT({ participantId: "user-1" })
       .setProtectedHeader({ alg: "HS256" })
       .sign(JWT_SECRET);
@@ -510,24 +487,21 @@ describe("server.ts Real Socket.IO Integration", () => {
 
     await waitForSocketEvent(recoverySocket, "connect");
 
-    // Arrange: Prepare to capture room state event
     const roomStatePromise = waitForSocketEvent(recoverySocket, "room_state");
 
-    // Act: Rejoin the same room using the recovered socket
     recoverySocket.emit("join_room", {
-      roomId: "test-room-1", // Re-joining the same room created in TC-01
+      roomId: "test-room-1",
       nickname: "OwnerUserRecovered",
       participantId: "user-1",
     });
 
     const payload = await roomStatePromise;
 
-    // Assert: Verify server maintained state associations
     expect(payload.room.id).toBe("test-room-1");
     const participant = payload.room.participants["user-1"];
     expect(participant).toBeDefined();
-    expect(participant.role).toBe("owner"); // Should remain owner
-    expect(participant.nickname).toBe("OwnerUserRecovered"); // Should update nickname
+    expect(participant.role).toBe("owner");
+    expect(participant.nickname).toBe("OwnerUserRecovered");
   });
 
   it("publishes participant-local health without changing room playback", async () => {

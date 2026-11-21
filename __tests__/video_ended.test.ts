@@ -93,7 +93,6 @@ describe("room-logic: video_ended command", () => {
     expect(room.currentMediaId).toBe("item-2");
     expect(room.playback.status).toBe("playing");
     expect(room.playback.basePosition).toBe(0);
-    // Verifies saving the previous position
     expect(room.playlist[0].lastPosition).toBeCloseTo(99, 1);
   });
 
@@ -145,7 +144,7 @@ describe("room-logic: video_ended command", () => {
   });
 
   it("ignores video_ended if the mediaId doesn't match the current active media", () => {
-    room.currentMediaId = "item-2"; // Room already advanced!
+    room.currentMediaId = "item-2";
 
     const changed = applyVideoEnded(
       room,
@@ -155,7 +154,7 @@ describe("room-logic: video_ended command", () => {
     );
 
     expect(changed).toBe(false);
-    expect(room.currentMediaId).toBe("item-2"); // Unchanged
+    expect(room.currentMediaId).toBe("item-2");
   });
 
   it("allows viewer video_ended when no leader is active", () => {

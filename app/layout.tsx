@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Outfit } from "next/font/google";
 import { Toaster } from "sonner";
-import "./globals.css"; // Global styles
+import "./globals.css";
 
 const outfit = Outfit({
   subsets: ["latin"],
@@ -32,7 +32,6 @@ export default function RootLayout({
         className="bg-theme-bg text-theme-text font-theme selection:bg-theme-accent/30 antialiased transition-colors duration-500"
         suppressHydrationWarning
       >
-        {/* Subtle cinematic noise overlay */}
         <div
           className="pointer-events-none fixed inset-0 z-50 h-full w-full opacity-[0.03] mix-blend-overlay"
           style={{

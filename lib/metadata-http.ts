@@ -6,10 +6,6 @@ import { isBogon } from "./ip";
 
 export class UnsafeMetadataDestination extends Error {}
 
-/** Resolve through the OS, validate every candidate, and dial only that pin.
- * The original URL retains Host, TLS SNI and certificate validation.
- * Neither pooling nor redirects can introduce an unvalidated destination.
- */
 export async function getMetadataText(url: URL): Promise<string> {
   if (
     !["http:", "https:"].includes(url.protocol) ||

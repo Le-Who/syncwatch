@@ -7,7 +7,6 @@ import type { RoomEvent } from "@/lib/room-events";
 import type { CommandAcknowledgement } from "@/lib/room-command-contract";
 import { useStore } from "@/lib/store";
 
-/** Connects this Player instance to every correlated completion signal. */
 export function usePlaybackIntentAcknowledgement(
   intentManager: PlaybackIntentManager,
 ) {

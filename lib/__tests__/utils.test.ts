@@ -69,17 +69,14 @@ describe("calculateDrift", () => {
       15.0,
       1.0,
     );
-    expect(result.drift).toBe(5.0); // Absolute value check
-    expect(result.expectedPosition).toBe(10.0); // Baseline expects 10.0
+    expect(result.drift).toBe(5.0);
+    expect(result.expectedPosition).toBe(10.0);
   });
 
   it("should calculate correct playing drift by adding elapsed server time", () => {
     const baseTime = 100000;
-    const currentTime = 105000; // 5 seconds later
+    const currentTime = 105000;
 
-    // Server says we started at 10.0s, 5 seconds ago
-    // Local player thinks it's at 12.0s
-    // Therefore expected is 15.0s, and drift is 3 seconds
     const result = calculateDrift(
       "playing",
       10.0,
@@ -94,11 +91,8 @@ describe("calculateDrift", () => {
 
   it("should scale the projected time drift correctly if payback rate is 2x", () => {
     const baseTime = 100000;
-    const currentTime = 105000; // 5 seconds later
+    const currentTime = 105000;
 
-    // At 2x speed, 5 seconds of real time is 10 seconds of video time.
-    // Base 10 + 10 = 20s expected
-    // Local is at 20s. Drift = 0.
     const result = calculateDrift(
       "playing",
       10.0,

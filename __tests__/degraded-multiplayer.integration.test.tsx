@@ -478,8 +478,6 @@ async function runRecentSeekScenario(
   scenario: RecentSeekScenario,
   participantCount: number,
 ) {
-  // Wrong branches: blanket recent-seek suppression loses a permitted intent;
-  // bypassing health, event identity, permissions or other providers leaks fallout.
   const acknowledgement =
     scenario === "resume-after-ack"
       ? vi.spyOn(PlaybackIntentManager.prototype, "acknowledgeServerNonce")
@@ -591,8 +589,6 @@ async function runRecentSeekScenario(
     };
     if (scenario !== "resume-before-ack")
       return service.execute(context, envelope);
-    // Hold transport delivery, preserving send-time envelopes and Pause→Play
-    // ordering. Real command execution and canonical publication happen on release.
     const delivery = orderedDelivery.then(async () => {
       if (type === "pause") await heldPauseDelivery;
       if (["pause", "play"].includes(type)) servicePlaybackOrder.push(type);
@@ -634,7 +630,6 @@ async function runRecentSeekScenario(
   expect(timeline.seeks).toEqual([scenario === "paused-seek-play" ? 40 : 40.5]);
   expect(providerPlaying.get(url)).toBe(scenario !== "paused-seek-play");
   await act(() => vi.advanceTimersByTimeAsync(1308));
-  // Seek happened at 10_500; Pause arrives at 11_808, not after guard expiry.
   expect(Date.now()).toBe(11_808);
   expect(timeline.seeks).toEqual([scenario === "paused-seek-play" ? 40 : 40.5]);
   const before = (await repository.get(initial.id))!;
@@ -674,11 +669,9 @@ async function runRecentSeekScenario(
       );
       expect(acknowledgement.status).toBe("applied");
     });
-    // The retained callback is stale too, independently of the pending debounce.
     act(() => callbacks.onPause());
   }
   if (scenario === "stale-epoch") {
-    // Retry advances the provider epoch while preserving the media ID/sequence.
     vi.spyOn(console, "error").mockImplementation(() => {});
     act(() => callbacks.onError(new Error("provider unavailable")));
     fireEvent.click(screen.getByRole("button", { name: /retry video/i }));
@@ -726,7 +719,6 @@ async function runRecentSeekScenario(
       });
     }
     if (scenario === "resume-new-seek") {
-      // A later canonical paused seek must not inherit the earlier native intent.
       timeline.position = 0;
       timeline.at = Date.now();
       await act(() => vi.advanceTimersByTimeAsync(792));
@@ -760,7 +752,6 @@ async function runRecentSeekScenario(
       act(() => providerCallbacks.get(url)!.onWaiting());
     await act(() => vi.advanceTimersByTimeAsync(1));
     if (scenario === "resume-before-ack") {
-      // Seek at 10_500; Pause at 11_808; Play at 11_959: seek age 1459ms.
       expect(Date.now()).toBe(11_959);
       expect(useStore.getState().room).toMatchObject({
         sequence: before.sequence,
@@ -813,7 +804,6 @@ async function runRecentSeekScenario(
     "resume-after-waiting",
   ].includes(scenario);
   if (scenario === "pause") {
-    // Hand-derived: one Pause changes playing→paused and increments sequence once.
     expect(nativeCommands).toEqual([
       {
         type: "pause",
@@ -875,7 +865,6 @@ async function runRecentSeekScenario(
     expect(events).toHaveLength(eventCountBeforeDebounce);
     expect(after.sequence).toBe(beforeDebounce.sequence);
     expect(after.playback).toEqual(beforeDebounce.playback);
-    // A direct unauthorized command must also be rejected by the real service.
     if (scenario === "unauthorized") {
       expect(await execute(actor, "pause", { position: 41.808 })).toMatchObject(
         { status: "rejected", code: "NOT_PERMITTED" },
@@ -886,7 +875,6 @@ async function runRecentSeekScenario(
     }
   }
 
-  // Healthy friends apply the delivered canonical state through the production sync hook.
   const healthy: HealthyClientObservation[] = [];
   const healthyView = render(
     <>
@@ -929,7 +917,6 @@ async function runRecentSeekScenario(
     expect(timeline.position).toBe(41.808);
   }
   if (scenario === "resume-before-ack") {
-    // Pause freezes at 41.808; Play resumes at 11_959; 500ms later it is 42.308.
     expect(timeline.running).toBe(true);
     expect(timeline.position + (Date.now() - timeline.at) / 1_000).toBeCloseTo(
       42.308,
@@ -977,7 +964,6 @@ async function runScenario(
   ) {
     const observation = { delayMs, runs: 0 };
     pauseDebounces.push(observation);
-    // Keep production timer ownership; only observe its actual invocation.
     setPauseDebounce.call(
       this,
       () => {
@@ -1080,14 +1066,12 @@ async function runScenario(
   authoritativeEvents.length = 0;
 
   if (scenario === "canonical-echo" || scenario === "delayed-pause-ack") {
-    // The next canonical sync tick is at 14_500 ms; place it inside debounce.
     await act(() => vi.advanceTimersByTimeAsync(1_300));
   }
 
   const before = await repository.get(initial.id);
   expect(before).not.toBeNull();
   const callbacks = providerCallbacks.get(url)!;
-  // Capture the real Player-owned manager without changing its guards.
   const intentManager = setMediaTransition.mock
     .contexts[0] as PlaybackIntentManager;
   expect(intentManager).toBeInstanceOf(PlaybackIntentManager);
@@ -1153,8 +1137,6 @@ async function runScenario(
     if (scenario === "pause-before-waiting") {
       act(() => callbacks.onWaiting?.());
       expect(screen.getByLabelText("Local buffering")).toBeInTheDocument();
-      // Only local health changes before the callback: its epoch, media,
-      // sequence, and expected playing status must still permit emission.
       expect(intentManager.currentProviderEventEpoch()).toBe(deferredEpoch);
       expect(useStore.getState().room).toMatchObject({
         currentMediaId: before?.currentMediaId,
@@ -1178,8 +1160,6 @@ async function runScenario(
     expect(escapedPlaybackCommands).toEqual(["pause"]);
     expect(intentManager.isAwaitingServerAck()).toBe(true);
     expect(useStore.getState().room?.playback.status).toBe("playing");
-    // The scheduled retry reaches reconciliation while the old canonical
-    // frame is still current and RoomCommandService has not executed Pause.
     await act(() => vi.advanceTimersByTimeAsync(300));
     expect(providerPlaying.get(url)).toBe(false);
     expect(escapedPlaybackCommands).toEqual(["pause"]);

@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// Mock socket service before importing store
 vi.mock("../lib/socket", () => {
   return {
     roomSocketService: {
@@ -23,7 +22,6 @@ import { roomSocketService } from "../lib/socket";
 
 describe("Zustand Store & OCC Flashback", () => {
   beforeEach(() => {
-    // Reset store state
     useStore.setState({
       room: null,
       isConnected: false,
@@ -35,7 +33,6 @@ describe("Zustand Store & OCC Flashback", () => {
     });
     vi.clearAllMocks();
 
-    // Polyfill crypto.randomUUID for testing environment
     if (!global.crypto) {
       global.crypto = {
         randomUUID: () => "mock-uuid",
@@ -46,7 +43,6 @@ describe("Zustand Store & OCC Flashback", () => {
   it("TC-01: Should initialize and attach to roomSocketService", () => {
     const { init } = useStore.getState();
 
-    // We mock localStorage
     const mockStorage: Record<string, string> = {
       participantId: "mock-storage-id",
     };
@@ -86,8 +82,6 @@ describe("Zustand Store & OCC Flashback", () => {
     });
     const { sendCommand } = useStore.getState();
 
-    // Nonce is now injected by emitCommand (Player.tsx), not sendCommand.
-    // sendCommand should pass the payload through as-is.
     sendCommand("play", { position: 10, nonce: "upstream-nonce" });
 
     expect(roomSocketService.sendCommand).toHaveBeenCalledWith(
@@ -119,13 +113,11 @@ describe("Zustand Store & OCC Flashback", () => {
     const { init } = useStore.getState();
     init();
 
-    // Not connected initially
     useStore.getState().setNickname("NewName");
     expect(useStore.getState().nickname).toBe("NewName");
     expect(localStorage.getItem("nickname")).toBe("NewName");
     expect(roomSocketService.sendCommand).not.toHaveBeenCalled();
 
-    // Fake connected state and room
     useStore.setState({
       isConnected: true,
       room: { id: "test", sequence: 1 } as any,

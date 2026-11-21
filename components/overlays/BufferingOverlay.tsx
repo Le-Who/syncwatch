@@ -1,6 +1,5 @@
 "use client";
 
-/** Describes a provider stall on this browser only. Room playback continues. */
 export function BufferingOverlay() {
   return (
     <div

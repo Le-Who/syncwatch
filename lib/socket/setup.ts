@@ -5,8 +5,6 @@ import { jwtVerify } from "jose";
 import { getJwtSecret } from "../jwt-config";
 
 export function setupSocketAuth(io: Server) {
-  // This runs after the custom server has loaded `.env*`, rather than during
-  // module evaluation while the custom server is still bootstrapping.
   const jwtSecret = getJwtSecret();
   io.use(async (socket, next) => {
     try {

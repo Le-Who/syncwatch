@@ -1,14 +1,3 @@
-/**
- * room-logic.ts — Pure, synchronous room state mutation functions.
- *
- * These functions encapsulate business logic for room commands
- * (playlist edits, video_ended, settings, etc.) that were previously
- * handled by the async redis-queue-worker.
- *
- * Each function takes a room state and command payload, mutates the room
- * in-place, and returns whether the state changed. The caller is
- * responsible for version bumps, persistence, and broadcasting.
- */
 
 import { randomUUID } from "crypto";
 import { PlaylistItem, RoomState } from "./types";
@@ -34,9 +23,7 @@ export function isFastCommand(type: string): type is FastCommandType {
   return (FAST_COMMAND_TYPES as readonly string[]).includes(type);
 }
 
-// ─── Helpers ───────────────────────────────────────────────────────────
 
-/** Clamp start position: if within 5s of end, reset to 0. */
 function clampStart(item: {
   lastPosition?: number;
   startPosition?: number;
@@ -50,7 +37,6 @@ function clampStart(item: {
   return start;
 }
 
-/** Snapshot the current playback position into the active playlist item. */
 function snapshotActiveItemPosition(room: RoomState): void {
   const activeItem = room.playlist.find((i) => i.id === room.currentMediaId);
   if (activeItem) {
@@ -87,8 +73,6 @@ export function applyFastCommand(
   const { canControlPlayback } = getParticipantPermissions(room, participantId);
   if (!canControlPlayback) return "unauthorized";
 
-  // Legacy clients may still send this wire command. Buffering is strictly a
-  // participant-local condition, so authorized compatibility input is a no-op.
   if (type === "buffering") return "unchanged";
 
   if (type === "play" || type === "seek") {
@@ -234,7 +218,6 @@ function setInitialMediaIfNeeded(
   resetReadiness(room);
 }
 
-// ─── Command Handlers ──────────────────────────────────────────────────
 
 export function applyAddItem(
   room: RoomState,
@@ -339,7 +322,6 @@ export function applyRemoveItem(
     if (room.nextMediaId === room.currentMediaId) room.nextMediaId = null;
     room.playback.status =
       room.playback.status === "playing" ? "playing" : "paused";
-    // Optimization: Directly access index 0 for O(1) access since we just set currentMediaId to playlist[0].id
     const newHead = room.currentMediaId ? room.playlist[0] : null;
     room.playback.basePosition = newHead ? clampStart(newHead) : 0;
     room.playback.baseTimestamp = Date.now();
@@ -367,7 +349,6 @@ export function applyReorderPlaylist(
       itemMap.delete(newItem.id);
     }
   }
-  // Append concurrently added items
   for (const leftoverItem of itemMap.values()) {
     reconciled.push(leftoverItem);
   }
@@ -416,7 +397,6 @@ export function applyNext(
   return advanceQueue(room, false, participantNickname);
 }
 
-/** One queue policy for explicit Next and a successfully accepted natural end. */
 function advanceQueue(
   room: RoomState,
   natural: boolean,
@@ -816,12 +796,7 @@ export function applyKickParticipant(
   return false;
 }
 
-// ─── Dispatcher ────────────────────────────────────────────────────────
 
-/**
- * Apply any slow-path command to a room state.
- * Returns true if state was mutated.
- */
 export function applySlowCommand(
   room: RoomState,
   type: string,

@@ -4,8 +4,6 @@ import type { Redis } from "ioredis";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { roomWithParticipants } from "./helpers/room-fixtures";
 
-// Keep redis-actor's real cache/normalization. Only Redis and RPC transport are
-// replaced, so queue membership and the persisted snapshots are observable.
 class RedisTransport {
   pending = new Map<string, number>();
   rooms = new Map<string, string>();
@@ -19,8 +17,6 @@ class RedisTransport {
   async zrem(_key: string, member: string) {
     return Number(this.pending.delete(member));
   }
-  // Model the transport contract for deterministic worker interleavings. The
-  // companion real-Redis check validates the production Lua itself.
   async eval(
     script: string,
     keys: number,

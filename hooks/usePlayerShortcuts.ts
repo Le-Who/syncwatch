@@ -7,7 +7,6 @@ interface UsePlayerShortcutsProps {
   handlePlay: () => void;
   handlePause: () => void;
   setMuted: (muted: boolean) => void;
-  // C1: New props for extended shortcuts
   handleSeek?: (delta: number) => void;
   setVolume?: (volume: number) => void;
   getVolume?: () => number;
@@ -30,7 +29,6 @@ export function usePlayerShortcuts({
 }: UsePlayerShortcutsProps) {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ignore if currently typing in an input
       const target = e.target as HTMLElement;
       if (
         e.defaultPrevented ||
@@ -61,7 +59,6 @@ export function usePlayerShortcuts({
         case "ArrowLeft":
           e.preventDefault();
           if (canControl && handleSeek) {
-            // Shift+Arrow = ±10s, Arrow = ±5s
             handleSeek(e.shiftKey ? -10 : -5);
           }
           break;

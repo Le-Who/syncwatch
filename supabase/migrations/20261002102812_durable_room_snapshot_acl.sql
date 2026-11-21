@@ -1,8 +1,5 @@
--- Durable canonical snapshot, with relational compatibility retained atomically.
 ALTER TABLE public.rooms ADD COLUMN IF NOT EXISTS state jsonb;
 
--- Reconstruct only data the legacy writer actually stored. Connection IDs,
--- readiness and active leadership are ephemeral and deliberately not revived.
 UPDATE public.rooms r SET state = jsonb_build_object(
   'name', r.name, 'settings', r.settings, 'chat', '[]'::jsonb,
   'flashbacks', '{}'::jsonb, 'leaderId', null, 'mediaRun', 0,
@@ -31,7 +28,6 @@ CREATE OR REPLACE FUNCTION public.sync_room_state(p_room_id uuid, p_owner_id uui
 RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
 BEGIN
   PERFORM pg_advisory_xact_lock(hashtext(p_room_id::text));
-  -- A delayed write-behind job must not overwrite a newer persisted snapshot.
   IF EXISTS (SELECT 1 FROM public.rooms WHERE id=p_room_id
     AND COALESCE((state->>'version')::bigint,0) > COALESCE((p_state->>'version')::bigint,0)) THEN
     RETURN;
@@ -53,7 +49,6 @@ BEGIN
       title=EXCLUDED.title,duration=EXCLUDED.duration,added_by=EXCLUDED.added_by,
       position=EXCLUDED.position,last_position=EXCLUDED.last_position,thumbnail_url=EXCLUDED.thumbnail_url;
 
-  -- Persist null media too: clearing the queue clears the compatibility snapshot.
   INSERT INTO public.playback_snapshots(room_id,media_item_id,status,base_position,base_timestamp,rate,version,updated_by,updated_at)
     VALUES(p_room_id,(p_state->'playback'->>'mediaItemId')::uuid,
       p_state->'playback'->>'status',(p_state->'playback'->>'basePosition')::numeric,
@@ -65,7 +60,6 @@ BEGIN
 END;
 $$;
 
--- Declare the service-only boundary after the final function replacement.
 REVOKE EXECUTE ON FUNCTION public.sync_room_state(uuid,uuid,jsonb) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.sync_room_state(uuid,uuid,jsonb) TO service_role;
 GRANT USAGE ON SCHEMA public TO service_role;

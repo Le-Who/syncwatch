@@ -13,23 +13,19 @@ export const subClient = () => {
 
 import { LRUCache } from "./lru-cache";
 
-// LRU Cache for fallback when Redis is unavailable to prevent OOM
 const rawLocalRooms = new LRUCache<string, any>(500);
 const localRoomExpiryTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 const localRooms = {
   get: (key: string) => {
     const val = rawLocalRooms.get(key);
-    return val ? JSON.parse(JSON.stringify(val)) : null; // Clone to prevent mutation
+    return val ? JSON.parse(JSON.stringify(val)) : null;
   },
   set: (key: string, value: any) => {
     rawLocalRooms.set(key, JSON.parse(JSON.stringify(value)));
   },
 };
 
-/**
- * Load room state from Redis cache
- */
 export async function getRedisRoom(roomId: string): Promise<any | null> {
   const redisClient = getRedisClient();
   if (!redisClient) {
@@ -40,9 +36,6 @@ export async function getRedisRoom(roomId: string): Promise<any | null> {
   return data ? normalizeRoomState(JSON.parse(data)) : null;
 }
 
-/**
- * Save room state to Redis cache
- */
 export async function setRedisRoom(roomId: string, state: any): Promise<void> {
   const redisClient = getRedisClient();
   if (!redisClient) {
@@ -55,7 +48,7 @@ export async function setRedisRoom(roomId: string, state: any): Promise<void> {
     return;
   }
   await redisClient.set(`room_state:${roomId}`, JSON.stringify(state));
-  await redisClient.expire(`room_state:${roomId}`, 86400); // 1 day
+  await redisClient.expire(`room_state:${roomId}`, 86400);
 }
 
 export async function expireRedisRoom(
@@ -78,10 +71,6 @@ export async function expireRedisRoom(
   localRoomExpiryTimers.set(roomId, timer);
 }
 
-/**
- * Save room state to Redis cache with OCC Version Check
- * Returns true if successful, false if version conflict
- */
 export async function setRedisRoomCAS(
   roomId: string,
   state: any,
@@ -89,7 +78,6 @@ export async function setRedisRoomCAS(
 ): Promise<boolean> {
   const redisClient = getRedisClient();
   if (!redisClient) {
-    // Local memory fallback CAS
     const existing = localRooms.get(roomId);
     if (
       (!existing && expectedVersion === 0) ||

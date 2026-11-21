@@ -29,7 +29,6 @@ describe("Fast-Path OCC Logic", () => {
   beforeAll(async () => {
     redis = getRedisClient();
     if (!redis) {
-      // CI fallback: use in-process Redis mock
       installRedisMock();
       redis = getRedisClient();
       usingMock = true;
@@ -38,8 +37,6 @@ describe("Fast-Path OCC Logic", () => {
 
   beforeEach(async () => {
     vi.restoreAllMocks();
-    // Arrange: Setup initial fast-path room for each test so leader/position
-    // mutations cannot leak between cases.
     await setRedisRoom(roomId, {
       id: roomId,
       version: 1,
@@ -107,7 +104,6 @@ describe("Fast-Path OCC Logic", () => {
   });
 
   it("TC-Fast-1: Should correctly update state via Lua script on fast-path play mutation", async () => {
-    // Act: Send 'play' mutation
     const result = await executeFastMutation(
       roomId,
       "play",
@@ -115,7 +111,6 @@ describe("Fast-Path OCC Logic", () => {
       "u1",
     );
 
-    // Assert: Mutation completed successfully inside Lua and matched return state
     expect(result.success).toBe(true);
     expect(result.state).toBeDefined();
 
@@ -377,7 +372,6 @@ describe("Fast-Path OCC Logic", () => {
   });
 
   it("TC-Fast-4: Should handle sync_correction with nonce", async () => {
-    // First set to playing
     await executeFastMutation(
       roomId,
       "play",
@@ -417,7 +411,6 @@ describe("Fast-Path OCC Logic", () => {
   });
 
   it("TC-Fast-5: Should return NO_CHANGE when pausing an already-paused room", async () => {
-    // Ensure paused first
     await executeFastMutation(
       roomId,
       "pause",

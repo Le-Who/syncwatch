@@ -3,12 +3,10 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import Participants from "../../components/Participants";
 import { useStore } from "../../lib/store";
 
-// Mock Zustand Store
 vi.mock("../../lib/store", () => ({
   useStore: vi.fn(),
 }));
 
-// Mock Framer Motion
 vi.mock("motion/react", () => ({
   motion: {
     div: ({ children, className, onClick }: any) => (
@@ -48,11 +46,9 @@ describe("Participants Component (Unit Tests)", () => {
   it("TC-UI-09: Renders participants sorted by role (Owner > Mod > Guest)", () => {
     render(<Participants />);
 
-    // The order in the DOM should match the sort logic in the component
     const items = document.querySelectorAll(".participant-item");
     expect(items.length).toBe(3);
 
-    // Extract textual name from each item (either from <p> or <input value>)
     const getParticipantName = (el: Element) => {
       const input = el.querySelector("input");
       if (input) return input.value;
@@ -68,7 +64,6 @@ describe("Participants Component (Unit Tests)", () => {
   it("TC-UI-10: Shows 'Manage user' menu only for Owner", () => {
     render(<Participants />);
 
-    // Owner should see two "Manage user" buttons (one for Bob, one for Charlie, not themselves)
     const manageBtns = screen.getAllByRole("button", { name: "Manage user" });
     expect(manageBtns.length).toBe(2);
   });
@@ -83,7 +78,6 @@ describe("Participants Component (Unit Tests)", () => {
   });
 
   it("TC-UI-12: Prevents Guests from seeing the manage menu", () => {
-    // Change current user to viewer
     (useStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
       room: {
         participants: {
@@ -103,18 +97,15 @@ describe("Participants Component (Unit Tests)", () => {
     render(<Participants />);
 
     const manageBtns = screen.queryAllByRole("button", { name: "Manage user" });
-    expect(manageBtns.length).toBe(0); // Guests cannot manage anyone
+    expect(manageBtns.length).toBe(0);
   });
 
   it("TC-UI-13: Emits update_role command when Owner promotes a Guest", () => {
     render(<Participants />);
 
-    // Click manage button on Charlie (Guest)
-    // We mock the click that opens the menu
     const manageBtns = screen.getAllByRole("button", { name: "Manage user" });
-    fireEvent.click(manageBtns[1]); // Assuming 2nd button is for Charlie (Guest) based on sorting
+    fireEvent.click(manageBtns[1]);
 
-    // Click Make Moderator
     const promoteBtn = screen.getByText(/Make Moderator/i);
     fireEvent.click(promoteBtn);
 
@@ -128,7 +119,7 @@ describe("Participants Component (Unit Tests)", () => {
     render(<Participants />);
 
     const manageBtns = screen.getAllByRole("button", { name: "Manage user" });
-    fireEvent.click(manageBtns[0]); // Button for Bob (Mod)
+    fireEvent.click(manageBtns[0]);
 
     const demoteBtn = screen.getByText(/Remove Mod/i);
     fireEvent.click(demoteBtn);

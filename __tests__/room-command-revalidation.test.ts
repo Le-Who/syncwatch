@@ -25,8 +25,6 @@ function fixture() {
   return room;
 }
 
-// Commit a competing writer's actual snapshot on the first CAS. The service
-// must rerun its mutation against that snapshot instead of trusting preflight.
 class CompetingRepository extends InMemoryRoomRepository {
   private raced = false;
   winner: RoomState | null = null;

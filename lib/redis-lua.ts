@@ -9,7 +9,6 @@ function waitForAuthorizationRetry(attempt: number) {
   return new Promise((resolve) => setTimeout(resolve, delayMs));
 }
 
-// Centralized Lua scripts for atomic fast-path mutations
 const LUA_FAST_MUTATION = `
   local room_key = KEYS[1]
   local mutation_type = ARGV[1]
@@ -40,9 +39,6 @@ const LUA_FAST_MUTATION = `
     end
   end
 
-  -- The shared TypeScript permission policy authorizes the mutation before
-  -- this script runs. These snapshots make that authorization atomic without
-  -- maintaining a second role/leader policy in Lua.
   local active_leader_id = ""
   if type(room.leaderId) == "string" and room.participants[room.leaderId] ~= nil then
     active_leader_id = room.leaderId
@@ -62,12 +58,9 @@ const LUA_FAST_MUTATION = `
   end
 
   if mutation_type == "buffering" then
-     -- Compatibility input only. Provider stalls never mutate room playback.
   elseif mutation_type == "play" or mutation_type == "seek" then
      if type(mutation_payload.position) == "number" and mutation_payload.position >= 0 then
-        -- If already playing and just hitting play again, do nothing to prevent timestamp shift
         if mutation_type == "play" and room.playback.status == "playing" and not mutation_payload.forceSeek then
-           -- strictly ignore
         else
            if mutation_type == "play" then room.playback.status = "playing" end
            room.playback.basePosition = mutation_payload.position
@@ -106,7 +99,6 @@ const LUA_FAST_MUTATION = `
         room.playback.basePosition = mutation_payload.position
         room.playback.baseTimestamp = now
         room.playback.updatedBy = participant_id
-        -- Update the nonce but do not change the underlying playing/paused status
         if mutation_payload.nonce then room.playback.lastActionNonce = mutation_payload.nonce end
         changed = true
      end

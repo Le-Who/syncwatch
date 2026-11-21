@@ -108,7 +108,6 @@ describe("Room Handler Security & Auth Boundary", () => {
       to: vi.fn().mockReturnValue({ emit: vi.fn() }),
     };
 
-    // Initialize handlers
     registerRoomHandlers(mockIo as Server, mockSocket as Socket, null);
   });
 
@@ -653,9 +652,6 @@ describe("Room Handler Security & Auth Boundary", () => {
   });
 
   it("TC-U02: Fallback users command passes socket validation (Guest concept removed)", async () => {
-    // ==========================================
-    // ARRANGE: Setup an established room and a Fallback user
-    // ==========================================
     const roomId = "test-room-auth";
     const fallbackId = "fallback_123";
 
@@ -674,16 +670,11 @@ describe("Room Handler Security & Auth Boundary", () => {
     (redisActor.getRedisRoom as any).mockResolvedValue(mockRoom);
     (redisActor.setRedisRoomCAS as any).mockResolvedValue(true);
 
-    // Simulate join_room to set current keys
     mockSocket.data.participantId = fallbackId;
     await socketEventHandlers["join_room"]({ roomId, nickname: "Fallback123" });
 
-    // Ensure mock room was fetched and the user successfully joined
     expect(mockSocket.join).toHaveBeenCalledWith(roomId);
 
-    // ==========================================
-    // ACT: Fallback attempts a slow-path mutation (e.g. add_item)
-    // ==========================================
     const payload = {
       roomId,
       type: "add_item",
@@ -691,15 +682,10 @@ describe("Room Handler Security & Auth Boundary", () => {
       sequence: 1,
     };
 
-    // Clear emit logs to isolate command response
     mockSocket.emit.mockClear();
 
     await socketEventHandlers["command"](payload);
 
-    // ==========================================
-    // ASSERT: Payload must not be rejected at the socket layer.
-    // It should proceed to Lua/Queue checks (which are mocked).
-    // ==========================================
     expect(mockSocket.emit).not.toHaveBeenCalledWith(
       "error",
       expect.anything(),

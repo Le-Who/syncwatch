@@ -11,7 +11,6 @@ vi.mock("yt-search", () => {
 });
 vi.mock("@/lib/redis-rate-limit");
 
-// Mocking Worker Threads to prevent actual execution of yt-search in isolated context
 vi.mock("worker_threads", () => {
   const { EventEmitter } = require("events");
   class MockWorker extends EventEmitter {
@@ -46,7 +45,6 @@ describe("GET /api/youtube/search", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(rateLimit.checkRedisRateLimit).mockResolvedValue(true);
-    // Force fallback to scraped worker by omitting the API key in test environment
     delete process.env.YOUTUBE_API_KEY;
   });
 
@@ -100,11 +98,10 @@ describe("GET /api/youtube/search", () => {
           url: "https://youtube.com/watch?v=456",
           seconds: 60,
           thumbnail: "https://img.youtube.com/vi/456/0.jpg",
-        }, // Missing author intentionally to test Zod fallback
+        },
       ],
     };
 
-    // @ts-ignore - Mocking yts default export
     vi.mocked(yts).mockResolvedValue(mockYtsResponse as any);
 
     const req = createRequest(
@@ -124,7 +121,6 @@ describe("GET /api/youtube/search", () => {
       author: "Test Author",
     });
 
-    // Verify Zod catch fallback on author mapping
     expect(data.videos[1].author).toBe("Unknown");
   });
 

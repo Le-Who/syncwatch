@@ -42,7 +42,6 @@ test("reselecting the same queue item preserves its position in a new seekable p
     await expect(
       client.page.getByRole("slider", { name: "Playback position" }),
     ).toHaveAttribute("aria-disabled", "false");
-    // Selecting an item resumes its saved position; mediaRun owns the remount.
     await expect
       .poll(async () =>
         Math.abs((await mediaPosition(client.page)) - savedPosition),
@@ -134,7 +133,6 @@ test("three same-NAT friends retain signed identities across repeated reloads", 
   const room = `same-nat-${randomUUID()}`;
   try {
     for (let n = 0; n < 3; n++) {
-      // No distributed-IP fixture marker: these contexts share the proxy peer IP.
       const context = await browser.newContext();
       contexts.push(context);
       const page = await context.newPage();
@@ -152,7 +150,6 @@ test("three same-NAT friends retain signed identities across repeated reloads", 
     for (let round = 0; round < 4; round++)
       for (let n = 0; n < pages.length; n++) {
         await pages[n].reload();
-        // Wait for persisted nickname hydration before interacting with the form.
         await expect(
           pages[n].getByRole("textbox", { name: "Your name" }),
         ).toHaveValue(`NAT ${n}`);

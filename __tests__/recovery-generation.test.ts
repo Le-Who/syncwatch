@@ -56,7 +56,6 @@ it("recovers seq100 from a correlated lower hydrated lifetime and retires old fr
   const request = transport.emit.mock.calls
     .filter(([event]) => event === "join_room")
     .at(-1)![1];
-  // The migration-backed suite separately verifies this exact state column.
   const durable = {
     name: "Restored",
     version: 12,
@@ -110,7 +109,6 @@ it("recovers seq100 from a correlated lower hydrated lifetime and retires old fr
     serverTime: Date.now(),
   });
   expect(useStore.getState().room).toEqual(stable);
-  // Replayed consumed responses cannot reauthorize a retired generation.
   transport.receive("room_state", {
     room: old,
     serverTime: Date.now(),

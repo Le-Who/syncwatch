@@ -9,7 +9,6 @@ let runner: Vitest;
 const eslint = new ESLint({ cwd: root });
 
 beforeAll(async () => {
-  // Loading Next's lint configuration is setup, not a per-path assertion.
   await eslint.calculateConfigForFile(path.join(root, "server.ts"));
   runner = await createVitest("test", {
     root,

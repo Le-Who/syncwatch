@@ -20,8 +20,6 @@ function getDeterministicUUID(roomId: string): string {
 
 const writeBehindQueue = new Set<string>();
 
-// Each mark changes the score even within one millisecond. A mark during a
-// retry deadline preserves that deadline (plus 1ms), rather than bypassing it.
 const MARK_DIRTY = `
   local previous = redis.call("ZSCORE", KEYS[1], ARGV[1])
   local score = tonumber(ARGV[2])
@@ -29,7 +27,6 @@ const MARK_DIRTY = `
   return redis.call("ZADD", KEYS[1], score, ARGV[1])
 `;
 
-// Ack/backoff only the mark we read. A newer mark belongs to another write.
 const COMPLETE_DIRTY = `
   if redis.call("ZSCORE", KEYS[1], ARGV[1]) ~= ARGV[2] then return 0 end
   if ARGV[3] == "" then
@@ -201,8 +198,6 @@ export async function loadRoomFromDB(
 
     return normalizeRoomState({
       id: roomId,
-      // A recovered snapshot begins a new cache authority, not a new identity.
-      // The winning CAS stores this value; normalization never regenerates it.
       generation: crypto.randomUUID(),
       name: dbState.name || `Room ${roomId}`,
       settings: {
@@ -317,17 +312,13 @@ export function startDbSyncWorker(supabase: SupabaseClient | null) {
     for (let i = 0; i < queue.length; i += BATCH_SIZE) {
       const batch = queue.slice(i, i + BATCH_SIZE);
 
-      // 1. Fetch all room states concurrently first
       const roomStrs = await Promise.allSettled(
         batch.map(({ roomId }) => getRedisRoom(roomId)),
       );
 
-      // 2. Process the batch
       const promises = batch.map(async ({ roomId, score }, index) => {
         let room;
         const result = roomStrs[index];
-        // A failed cache read says nothing about whether the room still exists.
-        // Keep its dirty marker so a later worker can retry the read.
         if (result.status === "rejected") {
           if (!redisClient) writeBehindQueue.add(roomId);
           return;
@@ -405,8 +396,6 @@ export async function flushDbSyncQueue(supabase: SupabaseClient | null) {
   }
 
   for (const { roomId, score } of queue) {
-    // Claim local work before awaiting: a new mark during persistence remains
-    // queued for the next flush instead of being cleared by this write's ack.
     if (!redisClient) writeBehindQueue.delete(roomId);
     try {
       const room = await getRedisRoom(roomId);
@@ -417,8 +406,6 @@ export async function flushDbSyncQueue(supabase: SupabaseClient | null) {
           .catch(() => {});
       }
     } catch {
-      // Both transient reads and failed writes must remain retryable. Continue
-      // with other rooms so one failure cannot block the shutdown flush.
       if (!redisClient) writeBehindQueue.add(roomId);
     }
   }

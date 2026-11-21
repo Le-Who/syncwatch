@@ -12,7 +12,7 @@ const ytPlaylistVideoSchema = z.object({
   duration: z
     .object({ seconds: z.number().int().nonnegative().catch(0) })
     .catch({ seconds: 0 }),
-  thumbnail: z.string().url().catch(""), // Fallback if missing
+  thumbnail: z.string().url().catch(""),
 });
 
 const ytPlaylistResponseSchema = z.object({

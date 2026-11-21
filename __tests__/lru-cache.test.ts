@@ -44,7 +44,6 @@ describe("LRUCache", () => {
     cache.set("a", 1);
     cache.set("b", 2);
 
-    // Access 'a', making 'b' the least recently used
     cache.get("a");
 
     cache.set("c", 3);
@@ -59,7 +58,6 @@ describe("LRUCache", () => {
     cache.set("a", 1);
     cache.set("b", 2);
 
-    // Update 'a', making 'b' the least recently used
     cache.set("a", 10);
 
     cache.set("c", 3);

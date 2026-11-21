@@ -46,12 +46,10 @@ export interface Participant {
   connection: ConnectionState;
   playbackHealth: PlaybackHealth;
   readyMediaId: string | null;
-  /** Server-only Socket.IO connection IDs currently owning this identity. */
   connectionIds?: string[];
   lastDriftSeconds?: number;
   sessionToken?: string;
   ready?: boolean;
-  /** P7: Set to true when participant is disconnected but within reconnection window */
   disconnected?: boolean;
 }
 
@@ -70,7 +68,6 @@ export interface RoomSettings {
   playlistMode?: "editable" | "append_only";
   requestLeaderOnPause?: boolean;
   unpauseWithoutLeader?: boolean;
-  /** Legacy persisted rooms may still contain this value; runtime permissions ignore it. */
   controlMode?: "open" | "controlled" | "hybrid";
 }
 
@@ -82,9 +79,7 @@ export interface RoomState {
   playlist: PlaylistItem[];
   chat: ChatMessage[];
   currentMediaId: string | null;
-  /** Playback-run identity; legacy snapshots start at zero. */
   mediaRun?: number;
-  /** Authority lifetime: regenerated only when a room is created or hydrated. */
   generation?: string;
   nextMediaId?: string | null;
   shufflePlayedIds?: string[];
@@ -94,7 +89,6 @@ export interface RoomState {
   version: number;
   sequence: number;
   lastActivity: number;
-  /** Server-only bounded idempotency window for acknowledged room commands. */
   processedCommandNonces?: string[];
 }
 
@@ -205,10 +199,6 @@ function normalizeParticipant(
   };
 }
 
-/**
- * Converts persisted and wire-compatible room state into the canonical
- * in-memory representation used by room logic and UI snapshots.
- */
 export function normalizeRoomState(input: LegacyRoomStateInput): RoomState {
   const now = Date.now();
   const playback = input.playback ?? {};

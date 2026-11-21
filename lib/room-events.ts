@@ -25,7 +25,6 @@ export type RoomEvent =
       room: RoomState;
       serverTime: number;
       excludeSocketId?: string;
-      /** Client-local, set only by a current transport/request correlation. */
       authoritativeRecovery?: boolean;
     }
   | {

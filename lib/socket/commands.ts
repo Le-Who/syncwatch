@@ -35,8 +35,6 @@ function emitAcknowledgement(
   socket.emit("command_ack", ack);
   if (typeof callback === "function") callback(ack);
 
-  // Transitional compatibility for surfaces still subscribed to `error`.
-  // The correlated acknowledgement is the authoritative response.
   if (ack.status === "rejected") {
     socket.emit("error", {
       message:
@@ -65,7 +63,6 @@ function extractRequestNonce(raw: unknown): string {
   return parsed.success ? parsed.data : "invalid";
 }
 
-/** Converts the pre-envelope Socket.IO API into the shared contract. */
 export function adaptLegacyCommandEnvelope(raw: unknown): unknown {
   if (!raw || typeof raw !== "object") return raw;
   if ("command" in raw) return raw;
@@ -112,8 +109,6 @@ async function handleSessionUpgrade(
     return rejected(envelope.nonce, "INVALID_COMMAND");
   }
 
-  // Keep this operation bound to the identity that requested it, including
-  // while token verification and Redis operations are suspended.
   const roomId = context.currentRoomId;
   const sourceParticipantId = context.currentParticipantId;
   const isConnected = () =>
@@ -173,8 +168,6 @@ async function handleSessionUpgrade(
 
     persistRoomState(next, supabase);
     if (!isCurrent()) {
-      // CAS may have committed after the original disconnect cleanup already
-      // looked for the old identity. Remove only this socket from its new one.
       if (
         !isConnected() ||
         context.currentRoomId !== roomId ||
@@ -230,8 +223,6 @@ export function handleCommandEvents(
   commandService: RoomCommandService,
   eventBus?: RoomEventBus,
 ) {
-  // Read the configured secret at handler setup, after server bootstrap. Keep
-  // it in this socket's closure so ordinary commands do not reparse it.
   const jwtSecret = getJwtSecret();
   socket.on(
     "command",

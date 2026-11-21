@@ -20,8 +20,6 @@ import { RoomEventBus } from "../lib/room-event-bus";
 import { joinParticipant } from "../lib/participant-lifecycle";
 import { COMMAND_REJECTION_MESSAGES } from "../lib/room-command-service";
 
-// Only the network transport is replaced: store handlers, join correlation,
-// command construction, queue ownership, and recovery sequencing stay real.
 const transport = vi.hoisted(() => {
   const handlers = new Map<string, Set<(data?: any) => void>>();
   const sent: Array<{ event: string; data: any }> = [];
@@ -64,7 +62,6 @@ function commands(type?: string): RoomCommandEnvelope[] {
 }
 
 function acknowledge(ack: CommandAcknowledgement) {
-  // Match emitAcknowledgement's ordering and compatibility event exactly.
   transport.receive("command_ack", ack);
   if (ack.status === "rejected")
     transport.receive("error", { message: ack.message });
@@ -84,7 +81,6 @@ function finishJoin(room = useStore.getState().room!) {
 function queueSeek() {
   useStore.getState().sendCommand("seek", { position: 42 });
   const original = commands("seek").at(-1)!;
-  // This is the exact envelope retained by the unauthorized-command handler.
   roomSocketService.commandQueue.push(roomSocketService.lastCommand);
   roomSocketService.lastCommand = null;
   transport.sent.length = 0;
@@ -354,7 +350,6 @@ it.each(["unrelated-nonce", "inactive-room"])(
     const original = commands("seek")[0];
     if (kind === "inactive-room") {
       roomSocketService.connect("other-room", "Other", "p0", "other-session");
-      // A stale surface still targets the old room; it must not authorize this socket.
       useStore.getState().sendCommand("seek", { position: 32 });
     }
     let authRequests = 0;

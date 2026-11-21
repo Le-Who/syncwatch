@@ -15,7 +15,6 @@ import {
   normalizeAppOrigin,
 } from "./lib/server-config";
 
-// Load environment variables manually for the custom server
 import { loadEnvConfig } from "@next/env";
 const projectDir = process.cwd();
 loadEnvConfig(projectDir);
@@ -24,7 +23,6 @@ const dev = process.env.NODE_ENV !== "production";
 const app = next({ dev });
 const handle = app.getRequestHandler();
 
-// Supabase Setup
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 const SUPABASE_SERVICE_ROLE_KEY =
   process.env.SUPABASE_SERVICE_ROLE_KEY ||
@@ -50,10 +48,8 @@ if (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
   console.warn("=======================================================\n");
 }
 
-// Start Background DB Worker
 const workerInterval = startDbSyncWorker(supabase);
 
-// Graceful Shutdown Sequence
 let isShuttingDown = false;
 async function gracefulShutdown() {
   if (isShuttingDown) return;
@@ -76,7 +72,6 @@ app.prepare().then(async () => {
       applyAuthoritativeClientIp(req.headers, req.socket.remoteAddress);
       const parsedUrl = new URL(req.url || "/", "http://localhost");
 
-      // Next.js expects { pathname, query } shape originally from url.parse
       const query = Object.fromEntries(parsedUrl.searchParams.entries());
       handle(req, res, {
         pathname: parsedUrl.pathname,

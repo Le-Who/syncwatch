@@ -4,8 +4,6 @@ import { Scrubber } from "../../components/Scrubber";
 
 afterEach(() => {
   cleanup();
-  // Finish any drag even when an assertion failed, so leaked listeners cannot
-  // turn a later test into a false positive.
   fireEvent(document, new MouseEvent("pointerup", { bubbles: true }));
   vi.restoreAllMocks();
 });

@@ -1,9 +1,5 @@
--- Migration 00010: Hybrid Solutions for sync_room_state (Systematic Debugging Audit)
-
--- Drop the old jsonb-only version if it exists
 DROP FUNCTION IF EXISTS public.sync_room_state(jsonb);
 
--- New signature with STRICT TYPES for IDs (Defense-in-depth against Type Poisoning DDoS)
 CREATE OR REPLACE FUNCTION public.sync_room_state(
   p_room_id uuid,
   p_owner_id uuid,
@@ -15,13 +11,8 @@ SECURITY DEFINER
 SET search_path = ''
 AS $$
 BEGIN
-  -- 1. Hybrid Deadlock Prevention: Session-level Advisory Lock
-  -- This provides a 100% guarantee against AB/BA blockages on the same room
-  -- without relying on a yet-to-be-created row in the rooms table.
-  -- hashtext converts uuid text to int4.
   PERFORM pg_advisory_xact_lock(hashtext(p_room_id::text));
 
-  -- 2. Upsert Room (Implicit Row Lock)
   INSERT INTO public.rooms (id, name, settings, owner_id)
   VALUES (
     p_room_id,
@@ -34,11 +25,10 @@ BEGIN
     settings = EXCLUDED.settings,
     owner_id = EXCLUDED.owner_id;
 
-  -- 3. Sync Playlist: Optimized O(1) CTE with NOT EXISTS (NULL Poisoning immune)
   WITH current_playlist AS (
     SELECT (elem->>'id')::uuid AS item_id
     FROM jsonb_array_elements(COALESCE(p_state->'playlist', '[]'::jsonb)) elem
-    WHERE elem->>'id' IS NOT NULL -- Defense against NULL poisoning
+    WHERE elem->>'id' IS NOT NULL
   )
   DELETE FROM public.playlist_items
   WHERE room_id = p_room_id
@@ -46,7 +36,6 @@ BEGIN
     SELECT 1 FROM current_playlist cp WHERE cp.item_id = playlist_items.id
   );
 
-  -- Bulk Upsert Playlist
   INSERT INTO public.playlist_items (
     id, room_id, url, provider, title, duration, added_by, position, last_position, thumbnail_url
   )
@@ -67,7 +56,6 @@ BEGIN
     position = EXCLUDED.position,
     last_position = EXCLUDED.last_position;
 
-  -- 4. Sync Playback Snapshot (Safe from NULLs)
   IF p_state->'playback'->>'mediaItemId' IS NOT NULL THEN
     INSERT INTO public.playback_snapshots (
       room_id, media_item_id, status, base_position, base_timestamp, rate, version, updated_by, updated_at

@@ -203,7 +203,6 @@ export default function Playlist() {
                   })()}
                 </div>
 
-                {/* Progress Bar inside card */}
                 {(() => {
                   let progress = 0;
                   if (room.currentMediaId === item.id) {

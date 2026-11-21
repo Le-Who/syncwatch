@@ -6,24 +6,19 @@ coverage/
 .env*
 !.env.example
 
-# Package Manager Lockfiles (Enforcing pnpm)
 package-lock.json
 yarn.lock
 
-# Build output
 dist/
 *.tsbuildinfo
 
-# Testing
 test-results/
 playwright-report/
 playwright/.cache/
 blob-report/
 
-# IDE & Caches
 .vscode/
 .idea/
-# Track only the compatibility entry points for repository instructions.
 !.agents/
 .agents/*
 !.agents/rules/
@@ -32,6 +27,7 @@ blob-report/
 !.agents/workflows/
 .agents/workflows/*
 !.agents/workflows/full-audit-readme.md
+!.agents/workflows/delete-comment.md
 .worktrees/
 .eslintcache
 .stylelintcache
@@ -41,7 +37,9 @@ yarn-error.log*
 pnpm-debug.log*
 .prettiercache
 
-# Custom AI Skills and Workflows
 skills/
+!/.agents/skills/
+/.agents/skills/*
+!/.agents/skills/delete-comment/
 .gemini/
 .kilocode/.env.example

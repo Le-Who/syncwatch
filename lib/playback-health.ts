@@ -25,10 +25,6 @@ type PlaybackHealthControllerOptions = {
   onHealthChange?: (health: PlaybackHealth) => void;
 };
 
-/**
- * Owns one participant's provider health. It never receives or mutates room
- * playback, which makes it safe to instantiate independently for every friend.
- */
 export class PlaybackHealthController {
   private health: PlaybackHealth = "idle";
   private stallStartedAt: number | null = null;
@@ -235,10 +231,6 @@ function canonicalTarget(
     : Math.max(0, target);
 }
 
-/**
- * Holds the newest compact playback frame for exactly one media epoch and
- * derives provider actions without ever writing back to the room timeline.
- */
 export class PlaybackCoordinator {
   private mediaId: string | null = null;
   private generation = "legacy";

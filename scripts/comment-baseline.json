@@ -1,0 +1,68 @@
+{
+  "__tests__/db-sync-worker.test.ts": ["/** @vitest-environment node */"],
+  "__tests__/integration/db-sync-redis.test.ts": [
+    "/** @vitest-environment node */"
+  ],
+  "__tests__/integration/final-wave-redis.test.ts": [
+    "/** @vitest-environment node */"
+  ],
+  "__tests__/metadata-egress.test.ts": ["/** @vitest-environment node */"],
+  "__tests__/persistence-migrations.test.ts": [
+    "/** @vitest-environment node */"
+  ],
+  "__tests__/persistence-read-failure.test.ts": [
+    "/** @vitest-environment node */"
+  ],
+  "__tests__/project-tooling.test.ts": ["// @vitest-environment node"],
+  "__tests__/room-event-bus.test.ts": ["/**\n * @vitest-environment node\n */"],
+  "__tests__/room-handler.test.ts": ["/**\n * @vitest-environment node\n */"],
+  "__tests__/room-repository-serialization.test.ts": [
+    "/**\n * @vitest-environment node\n */"
+  ],
+  "__tests__/same-nat.test.ts": ["/** @vitest-environment node */"],
+  "__tests__/server.test.ts": ["/**\n * @vitest-environment node\n */"],
+  "__tests__/session-auth.test.ts": ["/**\n * @vitest-environment node\n */"],
+  "__tests__/session-upgrade-lifecycle.test.ts": [
+    "/** @vitest-environment node */"
+  ],
+  "__tests__/socket-connection-lifecycle.test.ts": [
+    "/** @vitest-environment node */"
+  ],
+  "__tests__/socket-env-order.test.ts": [
+    "/**\n * @vitest-environment node\n */"
+  ],
+  "__tests__/socket-input-validation.test.ts": [
+    "/** @vitest-environment node */"
+  ],
+  "__tests__/tooling-scope.test.ts": ["// @vitest-environment node"],
+  "__tests__/youtube-search-worker.test.ts": [
+    "/**\n * @vitest-environment node\n */"
+  ],
+  "app/page.tsx": [
+    "// eslint-disable-next-line react-hooks/set-state-in-effect"
+  ],
+  "app/room/[id]/page.tsx": [
+    "// eslint-disable-next-line react-hooks/set-state-in-effect"
+  ],
+  "components/MediaComposer.tsx": [
+    "/* eslint-disable @next/next/no-img-element */"
+  ],
+  "components/Player.tsx": [
+    "// eslint-disable-next-line react-hooks/exhaustive-deps"
+  ],
+  "components/Playlist.tsx": ["/* eslint-disable @next/next/no-img-element */"],
+  "components/ThemeProvider.tsx": [
+    "// eslint-disable-next-line react-hooks/set-state-in-effect"
+  ],
+  "lib/__tests__/playback-intent-manager.test.ts": [
+    "// @ts-ignore",
+    "// @ts-ignore",
+    "// @ts-ignore",
+    "// @ts-ignore",
+    "// @ts-ignore"
+  ],
+  "lib/types.ts": [
+    "/** @deprecated Use CanonicalPlaybackStatus for in-memory room state. */"
+  ],
+  "postcss.config.mjs": ["/** @type {import('postcss-load-config').Config} */"]
+}

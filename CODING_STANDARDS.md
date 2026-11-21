@@ -22,6 +22,13 @@ decision justifies changing them; account for compatibility and migration.
 Follow project conventions; justify new dependencies and convention changes.
 Update affected tests and documentation with changed behavior or contracts.
 
+**Comments.** Record important implementation decisions in
+[docs/adr/](docs/adr/). For a comment audit or cleanup, use the
+[`/delete-comment` workflow](.agents/workflows/delete-comment.md) or the
+[`$delete-comment` Codex skill](.agents/skills/delete-comment/SKILL.md).
+Run `pnpm lint:comments` to check the worktree and
+`pnpm lint:comments --base <ref>` to compare against the starting revision.
+
 **Completion.** A change is complete when the requested outcome is demonstrated,
 affected invariants and critical paths are checked, relevant regression risks
 are addressed, and code, tests, and documentation agree. A review is complete

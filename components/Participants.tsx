@@ -154,7 +154,6 @@ export default function Participants() {
                   <User className="h-5 w-5" />
                 )}
 
-                {/* Live Presence Dot */}
                 <span className="absolute -right-1 -bottom-1 flex h-3.5 w-3.5 items-center justify-center">
                   {p.disconnected ? (
                     <span className="border-theme-bg relative inline-flex h-2.5 w-2.5 rounded-full border-2 bg-red-500"></span>
@@ -205,7 +204,6 @@ export default function Participants() {
               </div>
             </div>
 
-            {/* Admin Controls */}
             {isOwner && p.id !== participantId && (
               <div
                 className="relative ml-2"

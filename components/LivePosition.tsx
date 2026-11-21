@@ -22,13 +22,6 @@ function computePosition(
   return basePosition + elapsed * rate;
 }
 
-/**
- * P10: Ticks the displayed position forward every second during playback.
- *
- * Architecture: Both initial state and interval updates call computePosition
- * inside callbacks (useState initializer + setInterval callback), never
- * during render, satisfying react-hooks/purity and set-state-in-effect rules.
- */
 export function LivePosition({
   basePosition,
   baseTimestamp,
@@ -41,17 +34,14 @@ export function LivePosition({
   );
 
   useEffect(() => {
-    // Immediate sync in an interval callback (not synchronous effect body)
     const update = () =>
       setCurrentPos(
         computePosition(basePosition, baseTimestamp, rate, isPlaying),
       );
 
-    // Sync to latest props immediately via a 0ms timeout
     const immediate = setTimeout(update, 0);
 
     if (!isPlaying) {
-      // When paused, just do the single update
       return () => clearTimeout(immediate);
     }
 

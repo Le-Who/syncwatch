@@ -94,7 +94,6 @@ describe("OCC Thrashing Simulation (Phase 1)", () => {
   });
 
   it("should apply 10 playlist additions via CAS without read-modify-write collisions", async () => {
-    // Apply 10 add_item mutations sequentially via CAS (matching production path)
     for (let i = 0; i < 10; i++) {
       let retries = 10;
       while (retries > 0) {

@@ -19,7 +19,6 @@ import { parseReaction } from "../reactions";
 
 const roomRequestSchema = z.object({
   roomId: z.string().min(1).max(128),
-  // Ignore unusable optional correlation, as older clients omit it entirely.
   snapshotRequestId: z.string().max(64).optional().catch(undefined),
 });
 const joinRoomSchema = roomRequestSchema.extend({
@@ -156,8 +155,6 @@ export function handleConnectionEvents(
         socket.id,
       );
       if (nextRoom === room) {
-        // A lost CAS reply can leave the socket already removed, before this
-        // task had the chance to retain its grace cleanup.
         const participant = room.participants[participantId];
         if (participant.connection !== "connected") {
           scheduleGraceCleanup(
@@ -403,8 +400,6 @@ export function handleConnectionEvents(
           console.error("Failed publishing expired departure", error),
         );
     }
-    // A disconnect can happen while hydration, CAS, or departure publication
-    // is pending, before this join has installed the socket's room context.
     if (disconnected) {
       await disconnectParticipant(roomId, pId);
       if (ownerRolesChanged) {
@@ -475,8 +470,6 @@ export function handleConnectionEvents(
       return Promise.resolve();
     }
 
-    // Reserve before the first await. Same-room requests run in order so a
-    // slower hydration cannot replace a newer snapshot or clear its reservation.
     joiningRoomId = roomId;
     const operation = joinOperations
       .then(() => {

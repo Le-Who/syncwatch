@@ -15,7 +15,6 @@ export function UpNextOverlay({
 }: UpNextOverlayProps) {
   return (
     <div className="bg-theme-bg/95 border-theme-border/50 rounded-theme animate-in fade-in slide-in-from-right-8 pointer-events-auto absolute right-4 bottom-24 z-40 flex items-center space-x-4 border p-4 shadow-[0_10px_40px_rgba(0,0,0,0.5)] backdrop-blur-md">
-      {/* Dismiss button */}
       <button
         onClick={(e) => {
           e.stopPropagation();

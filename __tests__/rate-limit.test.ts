@@ -62,28 +62,23 @@ describe("rate-limit", () => {
     const ip1 = "192.168.1.6";
     const ip2 = "192.168.1.7";
 
-    // Max out IP1
     for (let i = 0; i < 20; i++) {
       expect(checkRateLimit(ip1)).toBe(true);
     }
     expect(checkRateLimit(ip1)).toBe(false);
 
-    // IP2 should still be allowed
     expect(checkRateLimit(ip2)).toBe(true);
   });
 
   it("should clean up old entries occasionally when map grows too large", () => {
-    vi.spyOn(Math, "random").mockReturnValue(0.005); // Force the cleanup condition to be true
+    vi.spyOn(Math, "random").mockReturnValue(0.005);
 
-    // Fill with entries that will expire quickly
     for (let i = 0; i < 10005; i++) {
       checkRateLimit(`10.0.0.${i}`, 1, 10);
     }
 
-    // Advance time so all of those expire
     vi.advanceTimersByTime(20);
 
-    // Trigger one more check which should trigger the cleanup
     expect(checkRateLimit("10.0.0.99999", 1, 1000)).toBe(true);
   });
 });

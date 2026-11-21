@@ -24,7 +24,6 @@ describe("applyTwitchEventProxy", () => {
     playerRef = { current: null };
     realPlayerRef = { current: null };
 
-    // Clear console mocks
     vi.restoreAllMocks();
   });
 
@@ -47,7 +46,6 @@ describe("applyTwitchEventProxy", () => {
     );
     expect(mockTwitchEl.dataset.proxyAttached).toBe("true");
 
-    // Trigger events
     mockTwitchEl.dispatchEvent(new Event("play"));
     expect(handleNativePlay).toHaveBeenCalledTimes(1);
     expect(logSpy).toHaveBeenCalledWith("[TWITCH PROXY] play event fired");
@@ -78,7 +76,7 @@ describe("applyTwitchEventProxy", () => {
   });
 
   it("should fallback to playerRef.current if getInternalPlayer is not a function", () => {
-    realPlayerRef.current = {} as unknown as PlayerMethods; // No getInternalPlayer
+    realPlayerRef.current = {} as unknown as PlayerMethods;
     playerRef.current = mockTwitchEl as unknown as PlayerMethods;
 
     applyTwitchEventProxy(
